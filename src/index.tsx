@@ -10946,9 +10946,10 @@ app.post('/api/notifications/read-all', requireAuth, async (c) => {
 app.get('/api/field-reports', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const managerRoles = ['admin','owner','office_manager','division_manager']
-  const isManager = managerRoles.includes(rep?.role)
+  const isManager = managerRoles.includes(role)
   const status = c.req.query('status') || null
   const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200)
 
@@ -10960,7 +10961,7 @@ app.get('/api/field-reports', requireAuth, async (c) => {
 
   if (!isManager) {
     query += ` AND fr.rep_id = ?`
-    params.push(rep.id)
+    params.push(repId)
   }
   if (status) {
     query += ` AND fr.status = ?`
@@ -10977,7 +10978,8 @@ app.get('/api/field-reports', requireAuth, async (c) => {
 app.post('/api/field-reports', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const body = await c.req.json() as any
 
   const { report_type, title, description, priority, crew_id, asset_id, photo_url, work_order_id } = body
@@ -10987,15 +10989,20 @@ app.post('/api/field-reports', requireAuth, async (c) => {
   await db.prepare(`
     INSERT INTO field_reports (id, company_id, rep_id, crew_id, report_type, title, description, priority, status, asset_id, photo_url, work_order_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-  `).bind(id, companyId, rep.id, crew_id||null, report_type||'equipment', title, description, priority||'normal', 'open', asset_id||null, photo_url||null, work_order_id||null).run()
+  `).bind(id, companyId, repId, crew_id||null, report_type||'equipment', title, description, priority||'normal', 'open', asset_id||null, photo_url||null, work_order_id||null).run()
 
   // Notify managers
   try {
+    // The session carries the rep's id, not their name — this line used to read
+    // `rep.name` off a context variable that was never set, so it was always
+    // undefined and the notification always said "A field employee".
+    const me: any = await db.prepare(`SELECT name FROM reps WHERE id=? AND company_id=? LIMIT 1`).bind(repId, companyId).first()
+    const submitterName = me?.name || 'A field employee'
     const managers = await db.prepare(`SELECT id FROM reps WHERE company_id=? AND role IN ('admin','owner','office_manager','division_manager') AND active=1`).bind(companyId).all()
     for (const mgr of (managers.results || []) as any[]) {
       const nid = `notif-fr-${Date.now()}-${Math.random().toString(36).slice(2,6)}`
-      await db.prepare(`INSERT OR IGNORE INTO notifications (id, company_id, rep_id, type, title, body, link) VALUES (?,?,?,?,?,?,?)`)
-        .bind(nid, companyId, mgr.id, 'field_report', `Field Report: ${title}`, `${rep.name || 'A field employee'} submitted a ${report_type||'equipment'} report.`, '/field-reports').run()
+      await db.prepare(`INSERT OR IGNORE INTO notifications (id, company_id, rep_id, type, title, body, action_url) VALUES (?,?,?,?,?,?,?)`)
+        .bind(nid, companyId, mgr.id, 'field_report', `Field Report: ${title}`, `${submitterName} submitted a ${report_type||'equipment'} report.`, '/field-reports').run()
     }
   } catch(_) {}
 
@@ -11006,9 +11013,10 @@ app.post('/api/field-reports', requireAuth, async (c) => {
 app.patch('/api/field-reports/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const managerRoles = ['admin','owner','office_manager','division_manager']
-  if (!managerRoles.includes(rep?.role)) return c.json({ error: 'Insufficient permissions' }, 403)
+  if (!managerRoles.includes(role)) return c.json({ error: 'Insufficient permissions' }, 403)
 
   const id = c.req.param('id')
   const body = await c.req.json() as any
@@ -11018,7 +11026,7 @@ app.patch('/api/field-reports/:id', requireAuth, async (c) => {
     UPDATE field_reports SET status=COALESCE(?,status), resolved_by=COALESCE(?,resolved_by),
     resolved_note=COALESCE(?,resolved_note), updated_at=datetime('now')
     WHERE id=? AND company_id=?
-  `).bind(status||null, status==='resolved' ? rep.id : null, resolved_note||null, id, companyId).run()
+  `).bind(status||null, status==='resolved' ? repId : null, resolved_note||null, id, companyId).run()
 
   return c.json({ ok: true })
 })
@@ -11057,9 +11065,10 @@ app.get('/api/aar-template', requireAuth, async (c) => {
 app.put('/api/aar-template', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const allowed = ['admin','owner','office_manager','division_manager']
-  if (!allowed.includes(rep?.role)) return c.json({ error: 'Insufficient permissions' }, 403)
+  if (!allowed.includes(role)) return c.json({ error: 'Insufficient permissions' }, 403)
 
   const body = await c.req.json() as any
   const { title, intro_text, questions, require_before_clockout } = body
@@ -11072,7 +11081,7 @@ app.put('/api/aar-template', requireAuth, async (c) => {
     ON CONFLICT(company_id) DO UPDATE SET
       title=excluded.title, intro_text=excluded.intro_text, questions=excluded.questions,
       require_before_clockout=excluded.require_before_clockout, updated_at=datetime('now')
-  `).bind(id, companyId, title||'End-of-Day Field Report', intro_text||'', JSON.stringify(questions), require_before_clockout===false?0:1, rep.id).run()
+  `).bind(id, companyId, title||'End-of-Day Field Report', intro_text||'', JSON.stringify(questions), require_before_clockout===false?0:1, repId).run()
 
   return c.json({ ok: true })
 })
@@ -11083,9 +11092,10 @@ app.put('/api/aar-template', requireAuth, async (c) => {
 app.get('/api/aar-submissions', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const managerRoles = ['admin','owner','office_manager','division_manager']
-  const isManager = managerRoles.includes(rep?.role)
+  const isManager = managerRoles.includes(role)
   const date = c.req.query('date') || null
   const repFilter = c.req.query('rep_id') || null
   const limit = Math.min(parseInt(c.req.query('limit')||'50'), 200)
@@ -11097,7 +11107,7 @@ app.get('/api/aar-submissions', requireAuth, async (c) => {
 
   if (!isManager) {
     query += ` AND s.rep_id = ?`
-    params.push(rep.id)
+    params.push(repId)
   } else if (repFilter) {
     query += ` AND s.rep_id = ?`
     params.push(repFilter)
@@ -11118,7 +11128,8 @@ app.get('/api/aar-submissions', requireAuth, async (c) => {
 app.post('/api/aar-submissions', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const body = await c.req.json() as any
 
   const { answers, time_entry_id, work_date } = body
@@ -11128,7 +11139,7 @@ app.post('/api/aar-submissions', requireAuth, async (c) => {
   const dateKey = work_date || today
 
   // Prevent duplicate submission for same rep+date
-  const existing: any = await db.prepare(`SELECT id FROM aar_submissions WHERE rep_id=? AND company_id=? AND work_date=?`).bind(rep.id, companyId, dateKey).first()
+  const existing: any = await db.prepare(`SELECT id FROM aar_submissions WHERE rep_id=? AND company_id=? AND work_date=?`).bind(repId, companyId, dateKey).first()
   if (existing) {
     // Update instead of duplicate
     await db.prepare(`UPDATE aar_submissions SET answers=?, time_entry_id=COALESCE(?,time_entry_id), submitted_at=datetime('now') WHERE id=?`)
@@ -11140,7 +11151,7 @@ app.post('/api/aar-submissions', requireAuth, async (c) => {
   await db.prepare(`
     INSERT INTO aar_submissions (id, company_id, rep_id, time_entry_id, work_date, answers)
     VALUES (?,?,?,?,?,?)
-  `).bind(id, companyId, rep.id, time_entry_id||null, dateKey, JSON.stringify(answers)).run()
+  `).bind(id, companyId, repId, time_entry_id||null, dateKey, JSON.stringify(answers)).run()
 
   return c.json({ ok: true, id })
 })
@@ -11149,9 +11160,10 @@ app.post('/api/aar-submissions', requireAuth, async (c) => {
 app.patch('/api/aar-submissions/:id/review', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const allowed = ['admin','owner','office_manager','division_manager']
-  if (!allowed.includes(rep?.role)) return c.json({ error: 'Insufficient permissions' }, 403)
+  if (!allowed.includes(role)) return c.json({ error: 'Insufficient permissions' }, 403)
 
   const id = c.req.param('id')
   const body = await c.req.json() as any
@@ -11160,7 +11172,7 @@ app.patch('/api/aar-submissions/:id/review', requireAuth, async (c) => {
   await db.prepare(`
     UPDATE aar_submissions SET flagged=COALESCE(?,flagged), review_note=COALESCE(?,review_note),
     reviewed_by=?, reviewed_at=datetime('now') WHERE id=? AND company_id=?
-  `).bind(flagged!==undefined?Number(flagged):null, review_note||null, rep.id, id, companyId).run()
+  `).bind(flagged!==undefined?Number(flagged):null, review_note||null, repId, id, companyId).run()
 
   return c.json({ ok: true })
 })
@@ -11169,9 +11181,10 @@ app.patch('/api/aar-submissions/:id/review', requireAuth, async (c) => {
 app.get('/api/aar-check-today', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const rep: any = c.var.rep
+  const repId = c.var.repId as string
+  const role = c.var.role as string
   const today = new Date().toISOString().slice(0, 10)
-  const row: any = await db.prepare(`SELECT id FROM aar_submissions WHERE rep_id=? AND company_id=? AND work_date=?`).bind(rep.id, companyId, today).first()
+  const row: any = await db.prepare(`SELECT id FROM aar_submissions WHERE rep_id=? AND company_id=? AND work_date=?`).bind(repId, companyId, today).first()
   const tmpl: any = await db.prepare(`SELECT require_before_clockout FROM aar_templates WHERE company_id=? LIMIT 1`).bind(companyId).first()
   return c.json({ submitted: !!row, required: tmpl ? Boolean(tmpl.require_before_clockout) : true })
 })
@@ -12966,14 +12979,14 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b008">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b008">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b008">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b002">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b002">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b027">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b023">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b025">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12996,22 +13009,22 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260814b008"></script>
-  <script src="/js/client_portal.js?v=20260814b008"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b008"></script>
-  <script src="/js/client_portal.js?v=20260814b008"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b008"></script>
-  <script src="/js/client_portal.js?v=20260814b008"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b002"></script>
-  <script src="/js/client_portal.js?v=20260814b002"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b002"></script>
-  <script src="/js/client_portal.js?v=20260814b002"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b027"></script>
-  <script src="/js/client_portal.js?v=20260814b027"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b023"></script>
-  <script src="/js/client_portal.js?v=20260814b023"></script>  <script>
-  <script src="/js/platform_core.js?v=20260814b025"></script>
-  <script src="/js/client_portal.js?v=20260814b025"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260816b002"></script>
+  <script src="/js/client_portal.js?v=20260816b002"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13645,38 +13658,38 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b008">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b008">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b008">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b008">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b002">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b002">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b002">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b002">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b027">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b027">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b027">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b027">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b023">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b023">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b023">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b023">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b025">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b025">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b025">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b025">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260816b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260816b002">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14331,326 +14344,326 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260814b008"></script>
-<script src="/js/gw-icons.js?v=20260814b008"></script>
-<script src="/js/sales-process.js?v=20260814b008"></script>
-<script src="/js/richtext.js?v=20260814b008"></script>
-<script src="/js/db.js?v=20260814b008"></script>
-<script src="/js/data.js?v=20260814b008"></script>
-<script src="/js/reps.js?v=20260814b008"></script>
-<script src="/js/record-page.js?v=20260814b008"></script>
-<script src="/js/academy.js?v=20260814b008"></script>
-<script src="/js/task_engine.js?v=20260814b008"></script>
-<script src="/js/gw_i18n.js?v=20260814b008"></script>
-<script src="/js/app_premium.js?v=20260814b008"></script>
-<script src="/js/estimates.js?v=20260814b008"></script>
-<script src="/js/multiday.js?v=20260814b008"></script>
-<script src="/js/proposals.js?v=20260814b008"></script>
-<script src="/js/pricing.js?v=20260814b008"></script>
-<script src="/js/invoices.js?v=20260814b008"></script>
-<script src="/js/csv_import.js?v=20260814b008"></script>
-<script src="/js/onboarding.js?v=20260814b008"></script>
-<script src="/js/gw_copilot.js?v=20260814b008"></script>
-<script src="/js/groundwork_ai.js?v=20260814b008"></script>
-<script src="/js/recurring_plans.js?v=20260814b008"></script>
-<script src="/js/reviews.js?v=20260814b008"></script>
-<script src="/js/stripe.js?v=20260814b008"></script>
-<script src="/js/email.js?v=20260814b008"></script>
-<script src="/js/notifications.js?v=20260814b008"></script>
-<script src="/js/integrations.js?v=20260814b008"></script>
-<script src="/js/sms.js?v=20260814b008"></script>
-<script src="/js/calendar_sync.js?v=20260814b008"></script>
-<script src="/js/ai_followup.js?v=20260814b008"></script>
-<script src="/js/user_management.js?v=20260814b008"></script>
-<script src="/js/platform_admin.js?v=20260814b008"></script>
-<script src="/js/time_tracker.js?v=20260814b008"></script>
-<script src="/js/field_workday.js?v=20260814b008"></script>
-<script src="/js/platform_core.js?v=20260814b008"></script>
-<script src="/js/approval_engine.js?v=20260814b008"></script>
-<script src="/js/automation_engine.js?v=20260814b008"></script>
-<script src="/js/client_portal.js?v=20260814b008"></script>
-<script src="/js/field_mode.js?v=20260814b008"></script>
-<script src="/js/assets_hub.js?v=20260814b008"></script><script src="/js/marketing.js?v=20260814b008"></script><script>
-<script src="/js/gw_date.js?v=20260814b008"></script>
-<script src="/js/gw-icons.js?v=20260814b008"></script>
-<script src="/js/sales-process.js?v=20260814b008"></script>
-<script src="/js/richtext.js?v=20260814b008"></script>
-<script src="/js/db.js?v=20260814b008"></script>
-<script src="/js/data.js?v=20260814b008"></script>
-<script src="/js/reps.js?v=20260814b008"></script>
-<script src="/js/record-page.js?v=20260814b008"></script>
-<script src="/js/academy.js?v=20260814b008"></script>
-<script src="/js/task_engine.js?v=20260814b008"></script>
-<script src="/js/gw_i18n.js?v=20260814b008"></script>
-<script src="/js/app_premium.js?v=20260814b008"></script>
-<script src="/js/estimates.js?v=20260814b008"></script>
-<script src="/js/multiday.js?v=20260814b008"></script>
-<script src="/js/proposals.js?v=20260814b008"></script>
-<script src="/js/pricing.js?v=20260814b008"></script>
-<script src="/js/invoices.js?v=20260814b008"></script>
-<script src="/js/csv_import.js?v=20260814b008"></script>
-<script src="/js/onboarding.js?v=20260814b008"></script>
-<script src="/js/gw_copilot.js?v=20260814b008"></script>
-<script src="/js/groundwork_ai.js?v=20260814b008"></script>
-<script src="/js/recurring_plans.js?v=20260814b008"></script>
-<script src="/js/reviews.js?v=20260814b008"></script>
-<script src="/js/stripe.js?v=20260814b008"></script>
-<script src="/js/email.js?v=20260814b008"></script>
-<script src="/js/notifications.js?v=20260814b008"></script>
-<script src="/js/integrations.js?v=20260814b008"></script>
-<script src="/js/sms.js?v=20260814b008"></script>
-<script src="/js/calendar_sync.js?v=20260814b008"></script>
-<script src="/js/ai_followup.js?v=20260814b008"></script>
-<script src="/js/user_management.js?v=20260814b008"></script>
-<script src="/js/platform_admin.js?v=20260814b008"></script>
-<script src="/js/time_tracker.js?v=20260814b008"></script>
-<script src="/js/field_workday.js?v=20260814b008"></script>
-<script src="/js/platform_core.js?v=20260814b008"></script>
-<script src="/js/approval_engine.js?v=20260814b008"></script>
-<script src="/js/automation_engine.js?v=20260814b008"></script>
-<script src="/js/client_portal.js?v=20260814b008"></script>
-<script src="/js/field_mode.js?v=20260814b008"></script>
-<script src="/js/assets_hub.js?v=20260814b008"></script><script src="/js/marketing.js?v=20260814b008"></script><script>
-<script src="/js/gw_date.js?v=20260814b008"></script>
-<script src="/js/gw-icons.js?v=20260814b008"></script>
-<script src="/js/sales-process.js?v=20260814b008"></script>
-<script src="/js/richtext.js?v=20260814b008"></script>
-<script src="/js/db.js?v=20260814b008"></script>
-<script src="/js/data.js?v=20260814b008"></script>
-<script src="/js/reps.js?v=20260814b008"></script>
-<script src="/js/record-page.js?v=20260814b008"></script>
-<script src="/js/academy.js?v=20260814b008"></script>
-<script src="/js/task_engine.js?v=20260814b008"></script>
-<script src="/js/gw_i18n.js?v=20260814b008"></script>
-<script src="/js/app_premium.js?v=20260814b008"></script>
-<script src="/js/estimates.js?v=20260814b008"></script>
-<script src="/js/multiday.js?v=20260814b008"></script>
-<script src="/js/proposals.js?v=20260814b008"></script>
-<script src="/js/pricing.js?v=20260814b008"></script>
-<script src="/js/invoices.js?v=20260814b008"></script>
-<script src="/js/csv_import.js?v=20260814b008"></script>
-<script src="/js/onboarding.js?v=20260814b008"></script>
-<script src="/js/gw_copilot.js?v=20260814b008"></script>
-<script src="/js/groundwork_ai.js?v=20260814b008"></script>
-<script src="/js/recurring_plans.js?v=20260814b008"></script>
-<script src="/js/reviews.js?v=20260814b008"></script>
-<script src="/js/stripe.js?v=20260814b008"></script>
-<script src="/js/email.js?v=20260814b008"></script>
-<script src="/js/notifications.js?v=20260814b008"></script>
-<script src="/js/integrations.js?v=20260814b008"></script>
-<script src="/js/sms.js?v=20260814b008"></script>
-<script src="/js/calendar_sync.js?v=20260814b008"></script>
-<script src="/js/ai_followup.js?v=20260814b008"></script>
-<script src="/js/user_management.js?v=20260814b008"></script>
-<script src="/js/platform_admin.js?v=20260814b008"></script>
-<script src="/js/time_tracker.js?v=20260814b008"></script>
-<script src="/js/field_workday.js?v=20260814b008"></script>
-<script src="/js/platform_core.js?v=20260814b008"></script>
-<script src="/js/approval_engine.js?v=20260814b008"></script>
-<script src="/js/automation_engine.js?v=20260814b008"></script>
-<script src="/js/client_portal.js?v=20260814b008"></script>
-<script src="/js/field_mode.js?v=20260814b008"></script>
-<script src="/js/assets_hub.js?v=20260814b008"></script><script src="/js/marketing.js?v=20260814b008"></script><script>
-<script src="/js/gw_date.js?v=20260814b002"></script>
-<script src="/js/gw-icons.js?v=20260814b002"></script>
-<script src="/js/sales-process.js?v=20260814b002"></script>
-<script src="/js/richtext.js?v=20260814b002"></script>
-<script src="/js/db.js?v=20260814b002"></script>
-<script src="/js/data.js?v=20260814b002"></script>
-<script src="/js/reps.js?v=20260814b002"></script>
-<script src="/js/record-page.js?v=20260814b002"></script>
-<script src="/js/academy.js?v=20260814b002"></script>
-<script src="/js/task_engine.js?v=20260814b002"></script>
-<script src="/js/gw_i18n.js?v=20260814b002"></script>
-<script src="/js/app_premium.js?v=20260814b002"></script>
-<script src="/js/estimates.js?v=20260814b002"></script>
-<script src="/js/multiday.js?v=20260814b002"></script>
-<script src="/js/proposals.js?v=20260814b002"></script>
-<script src="/js/pricing.js?v=20260814b002"></script>
-<script src="/js/invoices.js?v=20260814b002"></script>
-<script src="/js/csv_import.js?v=20260814b002"></script>
-<script src="/js/onboarding.js?v=20260814b002"></script>
-<script src="/js/gw_copilot.js?v=20260814b002"></script>
-<script src="/js/groundwork_ai.js?v=20260814b002"></script>
-<script src="/js/recurring_plans.js?v=20260814b002"></script>
-<script src="/js/reviews.js?v=20260814b002"></script>
-<script src="/js/stripe.js?v=20260814b002"></script>
-<script src="/js/email.js?v=20260814b002"></script>
-<script src="/js/notifications.js?v=20260814b002"></script>
-<script src="/js/integrations.js?v=20260814b002"></script>
-<script src="/js/sms.js?v=20260814b002"></script>
-<script src="/js/calendar_sync.js?v=20260814b002"></script>
-<script src="/js/ai_followup.js?v=20260814b002"></script>
-<script src="/js/user_management.js?v=20260814b002"></script>
-<script src="/js/platform_admin.js?v=20260814b002"></script>
-<script src="/js/time_tracker.js?v=20260814b002"></script>
-<script src="/js/field_workday.js?v=20260814b002"></script>
-<script src="/js/platform_core.js?v=20260814b002"></script>
-<script src="/js/approval_engine.js?v=20260814b002"></script>
-<script src="/js/automation_engine.js?v=20260814b002"></script>
-<script src="/js/client_portal.js?v=20260814b002"></script>
-<script src="/js/field_mode.js?v=20260814b002"></script>
-<script src="/js/assets_hub.js?v=20260814b002"></script><script src="/js/marketing.js?v=20260814b002"></script><script>
-<script src="/js/gw_date.js?v=20260814b002"></script>
-<script src="/js/gw-icons.js?v=20260814b002"></script>
-<script src="/js/sales-process.js?v=20260814b002"></script>
-<script src="/js/richtext.js?v=20260814b002"></script>
-<script src="/js/db.js?v=20260814b002"></script>
-<script src="/js/data.js?v=20260814b002"></script>
-<script src="/js/reps.js?v=20260814b002"></script>
-<script src="/js/record-page.js?v=20260814b002"></script>
-<script src="/js/academy.js?v=20260814b002"></script>
-<script src="/js/task_engine.js?v=20260814b002"></script>
-<script src="/js/gw_i18n.js?v=20260814b002"></script>
-<script src="/js/app_premium.js?v=20260814b002"></script>
-<script src="/js/estimates.js?v=20260814b002"></script>
-<script src="/js/multiday.js?v=20260814b002"></script>
-<script src="/js/proposals.js?v=20260814b002"></script>
-<script src="/js/pricing.js?v=20260814b002"></script>
-<script src="/js/invoices.js?v=20260814b002"></script>
-<script src="/js/csv_import.js?v=20260814b002"></script>
-<script src="/js/onboarding.js?v=20260814b002"></script>
-<script src="/js/gw_copilot.js?v=20260814b002"></script>
-<script src="/js/groundwork_ai.js?v=20260814b002"></script>
-<script src="/js/recurring_plans.js?v=20260814b002"></script>
-<script src="/js/reviews.js?v=20260814b002"></script>
-<script src="/js/stripe.js?v=20260814b002"></script>
-<script src="/js/email.js?v=20260814b002"></script>
-<script src="/js/notifications.js?v=20260814b002"></script>
-<script src="/js/integrations.js?v=20260814b002"></script>
-<script src="/js/sms.js?v=20260814b002"></script>
-<script src="/js/calendar_sync.js?v=20260814b002"></script>
-<script src="/js/ai_followup.js?v=20260814b002"></script>
-<script src="/js/user_management.js?v=20260814b002"></script>
-<script src="/js/platform_admin.js?v=20260814b002"></script>
-<script src="/js/time_tracker.js?v=20260814b002"></script>
-<script src="/js/field_workday.js?v=20260814b002"></script>
-<script src="/js/platform_core.js?v=20260814b002"></script>
-<script src="/js/approval_engine.js?v=20260814b002"></script>
-<script src="/js/automation_engine.js?v=20260814b002"></script>
-<script src="/js/client_portal.js?v=20260814b002"></script>
-<script src="/js/field_mode.js?v=20260814b002"></script>
-<script src="/js/assets_hub.js?v=20260814b002"></script><script src="/js/marketing.js?v=20260814b002"></script><script>
-<script src="/js/gw_date.js?v=20260814b027"></script>
-<script src="/js/gw-icons.js?v=20260814b027"></script>
-<script src="/js/sales-process.js?v=20260814b027"></script>
-<script src="/js/richtext.js?v=20260814b027"></script>
-<script src="/js/db.js?v=20260814b027"></script>
-<script src="/js/data.js?v=20260814b027"></script>
-<script src="/js/reps.js?v=20260814b027"></script>
-<script src="/js/record-page.js?v=20260814b027"></script>
-<script src="/js/academy.js?v=20260814b027"></script>
-<script src="/js/task_engine.js?v=20260814b027"></script>
-<script src="/js/gw_i18n.js?v=20260814b027"></script>
-<script src="/js/app_premium.js?v=20260814b027"></script>
-<script src="/js/estimates.js?v=20260814b027"></script>
-<script src="/js/multiday.js?v=20260814b027"></script>
-<script src="/js/proposals.js?v=20260814b027"></script>
-<script src="/js/pricing.js?v=20260814b027"></script>
-<script src="/js/invoices.js?v=20260814b027"></script>
-<script src="/js/csv_import.js?v=20260814b027"></script>
-<script src="/js/onboarding.js?v=20260814b027"></script>
-<script src="/js/gw_copilot.js?v=20260814b027"></script>
-<script src="/js/groundwork_ai.js?v=20260814b027"></script>
-<script src="/js/recurring_plans.js?v=20260814b027"></script>
-<script src="/js/reviews.js?v=20260814b027"></script>
-<script src="/js/stripe.js?v=20260814b027"></script>
-<script src="/js/email.js?v=20260814b027"></script>
-<script src="/js/notifications.js?v=20260814b027"></script>
-<script src="/js/integrations.js?v=20260814b027"></script>
-<script src="/js/sms.js?v=20260814b027"></script>
-<script src="/js/calendar_sync.js?v=20260814b027"></script>
-<script src="/js/ai_followup.js?v=20260814b027"></script>
-<script src="/js/user_management.js?v=20260814b027"></script>
-<script src="/js/platform_admin.js?v=20260814b027"></script>
-<script src="/js/time_tracker.js?v=20260814b027"></script>
-<script src="/js/field_workday.js?v=20260814b027"></script>
-<script src="/js/platform_core.js?v=20260814b027"></script>
-<script src="/js/approval_engine.js?v=20260814b027"></script>
-<script src="/js/automation_engine.js?v=20260814b027"></script>
-<script src="/js/client_portal.js?v=20260814b027"></script>
-<script src="/js/field_mode.js?v=20260814b027"></script>
-<script src="/js/assets_hub.js?v=20260814b027"></script><script src="/js/marketing.js?v=20260814b027"></script><script>
-<script src="/js/gw_date.js?v=20260814b023"></script>
-<script src="/js/gw-icons.js?v=20260814b023"></script>
-<script src="/js/sales-process.js?v=20260814b023"></script>
-<script src="/js/richtext.js?v=20260814b023"></script>
-<script src="/js/db.js?v=20260814b023"></script>
-<script src="/js/data.js?v=20260814b023"></script>
-<script src="/js/reps.js?v=20260814b023"></script>
-<script src="/js/record-page.js?v=20260814b023"></script>
-<script src="/js/academy.js?v=20260814b023"></script>
-<script src="/js/task_engine.js?v=20260814b023"></script>
-<script src="/js/gw_i18n.js?v=20260814b023"></script>
-<script src="/js/app_premium.js?v=20260814b023"></script>
-<script src="/js/estimates.js?v=20260814b023"></script>
-<script src="/js/multiday.js?v=20260814b023"></script>
-<script src="/js/proposals.js?v=20260814b023"></script>
-<script src="/js/pricing.js?v=20260814b023"></script>
-<script src="/js/invoices.js?v=20260814b023"></script>
-<script src="/js/csv_import.js?v=20260814b023"></script>
-<script src="/js/onboarding.js?v=20260814b023"></script>
-<script src="/js/gw_copilot.js?v=20260814b023"></script>
-<script src="/js/groundwork_ai.js?v=20260814b023"></script>
-<script src="/js/recurring_plans.js?v=20260814b023"></script>
-<script src="/js/reviews.js?v=20260814b023"></script>
-<script src="/js/stripe.js?v=20260814b023"></script>
-<script src="/js/email.js?v=20260814b023"></script>
-<script src="/js/notifications.js?v=20260814b023"></script>
-<script src="/js/integrations.js?v=20260814b023"></script>
-<script src="/js/sms.js?v=20260814b023"></script>
-<script src="/js/calendar_sync.js?v=20260814b023"></script>
-<script src="/js/ai_followup.js?v=20260814b023"></script>
-<script src="/js/user_management.js?v=20260814b023"></script>
-<script src="/js/platform_admin.js?v=20260814b023"></script>
-<script src="/js/time_tracker.js?v=20260814b023"></script>
-<script src="/js/field_workday.js?v=20260814b023"></script>
-<script src="/js/platform_core.js?v=20260814b023"></script>
-<script src="/js/approval_engine.js?v=20260814b023"></script>
-<script src="/js/automation_engine.js?v=20260814b023"></script>
-<script src="/js/client_portal.js?v=20260814b023"></script>
-<script src="/js/field_mode.js?v=20260814b023"></script>
-<script src="/js/assets_hub.js?v=20260814b023"></script><script src="/js/marketing.js?v=20260814b023"></script><script>
-<script src="/js/gw_date.js?v=20260814b025"></script>
-<script src="/js/gw-icons.js?v=20260814b025"></script>
-<script src="/js/sales-process.js?v=20260814b025"></script>
-<script src="/js/richtext.js?v=20260814b025"></script>
-<script src="/js/db.js?v=20260814b025"></script>
-<script src="/js/data.js?v=20260814b025"></script>
-<script src="/js/reps.js?v=20260814b025"></script>
-<script src="/js/record-page.js?v=20260814b025"></script>
-<script src="/js/academy.js?v=20260814b025"></script>
-<script src="/js/task_engine.js?v=20260814b025"></script>
-<script src="/js/gw_i18n.js?v=20260814b025"></script>
-<script src="/js/app_premium.js?v=20260814b025"></script>
-<script src="/js/estimates.js?v=20260814b025"></script>
-<script src="/js/multiday.js?v=20260814b025"></script>
-<script src="/js/proposals.js?v=20260814b025"></script>
-<script src="/js/pricing.js?v=20260814b025"></script>
-<script src="/js/invoices.js?v=20260814b025"></script>
-<script src="/js/csv_import.js?v=20260814b025"></script>
-<script src="/js/onboarding.js?v=20260814b025"></script>
-<script src="/js/gw_copilot.js?v=20260814b025"></script>
-<script src="/js/groundwork_ai.js?v=20260814b025"></script>
-<script src="/js/recurring_plans.js?v=20260814b025"></script>
-<script src="/js/reviews.js?v=20260814b025"></script>
-<script src="/js/stripe.js?v=20260814b025"></script>
-<script src="/js/email.js?v=20260814b025"></script>
-<script src="/js/notifications.js?v=20260814b025"></script>
-<script src="/js/integrations.js?v=20260814b025"></script>
-<script src="/js/sms.js?v=20260814b025"></script>
-<script src="/js/calendar_sync.js?v=20260814b025"></script>
-<script src="/js/ai_followup.js?v=20260814b025"></script>
-<script src="/js/user_management.js?v=20260814b025"></script>
-<script src="/js/platform_admin.js?v=20260814b025"></script>
-<script src="/js/time_tracker.js?v=20260814b025"></script>
-<script src="/js/field_workday.js?v=20260814b025"></script>
-<script src="/js/platform_core.js?v=20260814b025"></script>
-<script src="/js/approval_engine.js?v=20260814b025"></script>
-<script src="/js/automation_engine.js?v=20260814b025"></script>
-<script src="/js/client_portal.js?v=20260814b025"></script>
-<script src="/js/field_mode.js?v=20260814b025"></script>
-<script src="/js/assets_hub.js?v=20260814b025"></script><script src="/js/marketing.js?v=20260814b025"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
+<script src="/js/gw_date.js?v=20260816b002"></script>
+<script src="/js/gw-icons.js?v=20260816b002"></script>
+<script src="/js/sales-process.js?v=20260816b002"></script>
+<script src="/js/richtext.js?v=20260816b002"></script>
+<script src="/js/db.js?v=20260816b002"></script>
+<script src="/js/data.js?v=20260816b002"></script>
+<script src="/js/reps.js?v=20260816b002"></script>
+<script src="/js/record-page.js?v=20260816b002"></script>
+<script src="/js/academy.js?v=20260816b002"></script>
+<script src="/js/task_engine.js?v=20260816b002"></script>
+<script src="/js/gw_i18n.js?v=20260816b002"></script>
+<script src="/js/app_premium.js?v=20260816b002"></script>
+<script src="/js/estimates.js?v=20260816b002"></script>
+<script src="/js/multiday.js?v=20260816b002"></script>
+<script src="/js/proposals.js?v=20260816b002"></script>
+<script src="/js/pricing.js?v=20260816b002"></script>
+<script src="/js/invoices.js?v=20260816b002"></script>
+<script src="/js/csv_import.js?v=20260816b002"></script>
+<script src="/js/onboarding.js?v=20260816b002"></script>
+<script src="/js/gw_copilot.js?v=20260816b002"></script>
+<script src="/js/groundwork_ai.js?v=20260816b002"></script>
+<script src="/js/recurring_plans.js?v=20260816b002"></script>
+<script src="/js/reviews.js?v=20260816b002"></script>
+<script src="/js/stripe.js?v=20260816b002"></script>
+<script src="/js/email.js?v=20260816b002"></script>
+<script src="/js/notifications.js?v=20260816b002"></script>
+<script src="/js/integrations.js?v=20260816b002"></script>
+<script src="/js/sms.js?v=20260816b002"></script>
+<script src="/js/calendar_sync.js?v=20260816b002"></script>
+<script src="/js/ai_followup.js?v=20260816b002"></script>
+<script src="/js/user_management.js?v=20260816b002"></script>
+<script src="/js/platform_admin.js?v=20260816b002"></script>
+<script src="/js/time_tracker.js?v=20260816b002"></script>
+<script src="/js/field_workday.js?v=20260816b002"></script>
+<script src="/js/platform_core.js?v=20260816b002"></script>
+<script src="/js/approval_engine.js?v=20260816b002"></script>
+<script src="/js/automation_engine.js?v=20260816b002"></script>
+<script src="/js/client_portal.js?v=20260816b002"></script>
+<script src="/js/field_mode.js?v=20260816b002"></script>
+<script src="/js/assets_hub.js?v=20260816b002"></script><script src="/js/marketing.js?v=20260816b002"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
