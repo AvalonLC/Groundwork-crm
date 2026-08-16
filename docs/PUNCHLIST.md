@@ -259,14 +259,19 @@ section. Highest-risk guesses, ranked:
 6. Local commit identity in this repo is auto-derived
    (`tylerjohnson@mac.mynetworksettings.com`) — worth setting explicitly
    before pushing anywhere shared.
-7. **`package.json`'s `dev:local`/`preview` scripts pass a `--d1=DB` flag
-   to `wrangler pages dev` that silently binds to an empty, disconnected
+7. ~~**`package.json`'s `dev:local` script passes a `--d1=DB` flag to
+   `wrangler pages dev` that silently binds to an empty, disconnected
    local D1 instead of the configured `avalon-sales-hub-production`
-   database** — found while building the finance-spa-integration branch's
+   database**~~ — **FIXED** on `schedule-workstation`: the `--d1=DB`
+   override is gone, so the binding resolves from `wrangler.jsonc` and
+   reaches the same local D1 that `npm run db:migrate:local` migrates.
+
+   Originally found while building the finance-spa-integration branch's
    real-browser test (`docs/STAGE-FINANCE-SPA-INTEGRATION-STATUS.md` has
-   the full repro). Local dev via these scripts currently can't log in
-   against a migrated local D1 at all. Not fixed here (out of scope for
-   that branch) — dropping the `--d1=DB` override fixes it.
+   the full repro) and left unfixed as out of scope; hit again while
+   verifying the equipment-booking endpoints, which is what finally paid
+   for fixing it. Note the entry used to name `preview` as well — that
+   script never carried the flag, so only `dev:local` was ever affected.
 8. **`config-admin.tsx`'s config-JSON textarea is double HTML-escaped**
    (its own `escapeHtml()` plus Hono JSX's default escaping of the
    `{expression}` child) — reading the textarea's live value back in a

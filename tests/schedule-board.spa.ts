@@ -33,7 +33,7 @@ const SUNDAY = '2026-09-06';
 const MONDAY = '2026-09-07';
 const TUESDAY = '2026-09-08';
 
-type Ctx = { crewA: string; crewB: string };
+type Ctx = { crewA: string; crewB: string; exId: string; skId: string };
 
 async function api(request: APIRequestContext, method: 'get' | 'post' | 'put' | 'delete', path: string, data?: unknown) {
   const res = await request[method](path, data === undefined ? undefined : { data });
@@ -47,7 +47,7 @@ async function login(page: Page) {
 }
 
 /** Two crews with one person each, so a roster swap is visible in the payload. */
-async function ensureCrews(request: APIRequestContext): Promise<Ctx> {
+async function ensureCrews(request: APIRequestContext): Promise<Pick<Ctx, 'crewA' | 'crewB'>> {
   const crews = await api(request, 'get', '/api/crews');
   const find = (name: string) => (crews.data || []).find((c: any) => c.name === name);
   const mk = async (name: string) => {
@@ -77,12 +77,59 @@ async function makeJob(request: APIRequestContext, fields: Record<string, unknow
   return made.id as string;
 }
 
+/** Two machines, so "book one, the other stays pickable" is observable. */
+async function ensureAssets(request: APIRequestContext): Promise<{ exId: string; skId: string }> {
+  const mk = async (name: string, tag: string) => {
+    const list = await api(request, 'get', '/api/assets');
+    const found = (list.data?.assets || []).find((a: any) => a.name === name);
+    if (found) return found.id as string;
+    const made = await api(request, 'post', '/api/assets', { name, assetTag: tag, category: 'heavy' });
+    return (made.data?.id || made.id) as string;
+  };
+  return { exId: await mk(`${TAG} Excavator`, 'E2E-114'), skId: await mk(`${TAG} Skid steer`, 'E2E-220') };
+}
+
+/** Open the rail for a job, then expand Materials & equipment by clicking it. */
+async function openEquipmentSection(page: Page, woId: string) {
+  await openBoard(page);
+  await page.locator(`.sb-job-card[onclick*="${woId}"]`).first().click();
+  await page.waitForSelector('.sb-rail-sec', { timeout: 10_000 });
+  // The picker needs /api/assets, which loads after the bookings.
+  await page.waitForTimeout(1200);
+  const head = page.locator('.sb-rail-sec').filter({ hasText: 'Materials' }).locator('.sb-rail-sec-head').first();
+  const alreadyOpen = await page.evaluate(() => {
+    const secs = [...(globalThis as any).document.querySelectorAll('.sb-rail-sec')] as any[];
+    return !!secs.find((s) => (s.textContent || '').toLowerCase().includes('equipment') && s.classList.contains('is-open'));
+  });
+  if (!alreadyOpen) await head.click();
+  await page.waitForTimeout(500);
+}
+
+function readEquipment(page: Page) {
+  return page.evaluate(() => {
+    const doc = (globalThis as any).document;
+    const secs = [...doc.querySelectorAll('.sb-rail-sec')] as any[];
+    return {
+      open: !!secs.find((s) => (s.textContent || '').toLowerCase().includes('equipment') && s.classList.contains('is-open')),
+      booked: ([...doc.querySelectorAll('.sb-rail-kit-booked')] as any[]).map((li) => String(li.innerText).replace(/\s+/g, ' ').trim()),
+      options: ([...doc.querySelectorAll('.sb-rail-eqsel option')] as any[]).map((o) => String(o.textContent || '').trim()),
+      warn: (doc.querySelector('.sb-rail-eqwarn')?.innerText as string) || null,
+    };
+  });
+}
+
 async function cleanup(request: APIRequestContext) {
   const list = await api(request, 'get', '/api/work-orders?limit=1000');
   for (const w of list.data || []) {
     if (String(w.title || '').includes(TAG) || String(w.client_name || '').includes(TAG)) {
       await request.delete(`/api/work-orders/${w.id}`);
     }
+  }
+  // Deleting a work order cascades its wo_day_equipment rows (0071's FK), so the
+  // assets are all that is left to clear.
+  const assets = await api(request, 'get', '/api/assets');
+  for (const a of assets.data?.assets || []) {
+    if (String(a.name || '').includes(TAG)) await request.delete(`/api/assets/${a.id}`);
   }
 }
 
@@ -149,7 +196,7 @@ test.describe('schedule board', () => {
     const request = await playwright.request.newContext({ baseURL });
     await request.post('/api/auth/login', { data: REP_LOGIN });
     await cleanup(request);
-    ctx = await ensureCrews(request);
+    ctx = { ...(await ensureCrews(request)), ...(await ensureAssets(request)) };
     await request.dispose();
   });
 
@@ -288,5 +335,103 @@ test.describe('schedule board', () => {
     const truth = await serverTruth(page, woId);
     expect(truth.scheduled_date).toBe(MONDAY); // did not budge
     expect(truth.md_day_date).toBe(MONDAY);
+  });
+
+  // ── Equipment booking ──────────────────────────────────────────────────────
+  //
+  // wo_day_equipment (migration 0071) had no reader in src/ at all until this
+  // branch; the rail rendered the work order's free-text `equipment` notes
+  // instead. These cover the real table, and the same refresh rule applies.
+
+  test('EQB-01 booking a machine survives a reload, and the picker drops it', async ({ page }) => {
+    const woId = await makeJob(page.request, { client_name: 'Booking', crew_id: ctx.crewA, scheduled_date: MONDAY });
+    await openEquipmentSection(page, woId);
+
+    const before = await readEquipment(page);
+    expect(before.booked).toEqual([]);
+    expect(before.options.join(' ')).toContain('Excavator');
+
+    await page.selectOption('.sb-rail-eqsel', ctx.exId);
+    await page.waitForTimeout(1200);
+
+    // Reload before believing any of it — the optimistic paint proves nothing.
+    await openEquipmentSection(page, woId);
+    const after = await readEquipment(page);
+    expect(after.booked.join(' ')).toContain('Excavator');
+    expect(after.booked.join(' ')).toContain('NEEDED');
+    // Already booked, so it must not still be offered.
+    expect(after.options.join(' ')).not.toContain('Excavator');
+    expect(after.options.join(' ')).toContain('Skid steer');
+  });
+
+  test('EQB-02 booking does not collapse the section you are working in', async ({ page }) => {
+    // The regression guard. Open state lived only in the `is-open` DOM class, so
+    // every _sbRender() reset it: booking a machine shut the panel you booked it
+    // from. Every rail section had the defect; equipment re-renders often enough
+    // to make it visible.
+    const woId = await makeJob(page.request, { client_name: 'StayOpen', crew_id: ctx.crewA, scheduled_date: MONDAY });
+    await openEquipmentSection(page, woId);
+    expect((await readEquipment(page)).open).toBe(true);
+
+    await page.selectOption('.sb-rail-eqsel', ctx.exId);
+    await page.waitForTimeout(1200);
+    expect((await readEquipment(page)).open, 'section closed itself on booking').toBe(true);
+
+    // And again on a status change, which re-renders the same way.
+    await page.locator('.sb-rail-kit-booked button.sb-rail-kit-status').first().click();
+    await page.waitForTimeout(1000);
+    expect((await readEquipment(page)).open, 'section closed itself on a status tap').toBe(true);
+  });
+
+  test('EQB-03 the status pill cycles, and the new status outlives a reload', async ({ page }) => {
+    const woId = await makeJob(page.request, { client_name: 'Status', crew_id: ctx.crewA, scheduled_date: MONDAY });
+    await openEquipmentSection(page, woId);
+    await page.selectOption('.sb-rail-eqsel', ctx.exId);
+    await page.waitForTimeout(1200);
+
+    const pill = () => page.locator('.sb-rail-kit-booked button.sb-rail-kit-status').first();
+    await pill().click(); await page.waitForTimeout(900);   // needed -> loaded
+    await pill().click(); await page.waitForTimeout(900);   // loaded -> on site
+
+    await openEquipmentSection(page, woId);
+    expect((await readEquipment(page)).booked.join(' ')).toContain('ON SITE');
+  });
+
+  test('EQB-04 the same machine on two jobs one day warns, and does not block', async ({ page }) => {
+    // 0071's header promises exactly this: impossible per day ROW, a warning
+    // across two different jobs on one DATE. An excavator really can do two jobs
+    // in a day, and refusing it would make the honest answer unrecordable.
+    const a = await makeJob(page.request, { client_name: 'ConflictA', crew_id: ctx.crewA, scheduled_date: MONDAY });
+    const b = await makeJob(page.request, { client_name: 'ConflictB', crew_id: ctx.crewB, scheduled_date: MONDAY });
+
+    await openEquipmentSection(page, a);
+    await page.selectOption('.sb-rail-eqsel', ctx.skId);
+    await page.waitForTimeout(1200);
+    expect((await readEquipment(page)).warn, 'one job is not a conflict').toBeNull();
+
+    await openEquipmentSection(page, b);
+    await page.selectOption('.sb-rail-eqsel', ctx.skId);
+    await page.waitForTimeout(1200);
+
+    await openEquipmentSection(page, b);
+    const seen = await readEquipment(page);
+    expect(seen.warn, 'expected a double-booking warning').toContain('Skid steer');
+    // Warned, not refused: the booking is still there.
+    expect(seen.booked.join(' ')).toContain('Skid steer');
+  });
+
+  test('EQB-05 releasing a machine puts it back in the picker, after a reload', async ({ page }) => {
+    const woId = await makeJob(page.request, { client_name: 'Release', crew_id: ctx.crewA, scheduled_date: MONDAY });
+    await openEquipmentSection(page, woId);
+    await page.selectOption('.sb-rail-eqsel', ctx.exId);
+    await page.waitForTimeout(1200);
+
+    await page.locator('.sb-rail-kit-x').first().click();
+    await page.waitForTimeout(1200);
+
+    await openEquipmentSection(page, woId);
+    const after = await readEquipment(page);
+    expect(after.booked).toEqual([]);
+    expect(after.options.join(' ')).toContain('Excavator');
   });
 });
