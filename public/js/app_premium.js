@@ -18049,12 +18049,146 @@ async function _sbLoadRail(woId, dayNumber) {
     window._sbState.selectedRail = wo;
     _sbRender();
     _sbLoadHours(woId);
+    // Equipment is a separate read because it is a separate TABLE — the work
+    // order's `equipment` field is free text somebody typed, wo_day_equipment is
+    // what is actually booked to this day. The rail showed the former for months
+    // because nothing read the latter.
+    if (wo.md_day_id) _sbLoadDayEquipment(wo.md_day_id);
   } catch (e) { /* rail simply stays in its loading state */ }
 }
 
+async function _sbLoadDayEquipment(dayId) {
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment`, { credentials: 'include' });
+    const d = await r.json();
+    if (!d || !d.ok) return;
+    // Keyed by day so a fast click through three cards cannot leave the second
+    // card's equipment showing under the third card's heading.
+    window._sbState.dayEquipment = { day_id: dayId, ...d };
+    _sbRender();
+    // Needed to populate the picker; render again once it lands rather than
+    // blocking the bookings behind the catalogue.
+    if (!window._sbState.assets) { await _sbLoadAssets(); _sbRender(); }
+  } catch (e) { /* the section falls back to the job's free-text notes */ }
+}
+
+async function _sbLoadAssets() {
+  // Fetched once per board session. The catalogue is small and changes rarely,
+  // and re-fetching it on every card click would put a request behind an
+  // interaction that should feel instant.
+  if (window._sbState.assets) return window._sbState.assets;
+  try {
+    const r = await fetch('/api/assets', { credentials: 'include' });
+    const d = await r.json();
+    window._sbState.assets = (d && d.ok && d.data && d.data.assets) ? d.data.assets : [];
+  } catch (e) { window._sbState.assets = []; }
+  return window._sbState.assets;
+}
+
+window._sbBookEquipment = async function(dayId, assetId) {
+  if (!assetId) return;
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ asset_id: assetId }),
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error || 'Could not book that equipment', 'error'); return; }
+    window._sbState.dayEquipment = { day_id: dayId, ...d };
+    _sbRender();
+    // The double-booking warning is the whole reason this returns the full day
+    // rather than the one row — booking is exactly when somebody needs to hear
+    // that the machine is already spoken for.
+    if (d.conflicts && d.conflicts.length) showToast(d.conflicts[d.conflicts.length - 1].message, 'warning');
+  } catch (e) { showToast('Could not book that equipment', 'error'); }
+};
+
+/**
+ * Advance a booking: needed -> loaded -> on site -> needed.
+ *
+ * A cycle rather than a dropdown because this gets tapped on a phone at 6am by
+ * somebody standing next to the trailer, and three states do not justify a
+ * menu. It wraps so a mis-tap is one more tap to fix, not a dead end.
+ */
+window._sbCycleEquipmentStatus = async function(dayId, assetId, current) {
+  const order = ['needed', 'loaded', 'on_site'];
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ asset_id: assetId, status: next }),
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error || 'Could not update that equipment', 'error'); return; }
+    window._sbState.dayEquipment = { day_id: dayId, ...d };
+    _sbRender();
+  } catch (e) { showToast('Could not update that equipment', 'error'); }
+};
+
+window._sbUnbookEquipment = async function(dayId, assetId) {
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment/${encodeURIComponent(assetId)}`,
+      { method: 'DELETE', credentials: 'include' });
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error || 'Could not release that equipment', 'error'); return; }
+    _sbLoadDayEquipment(dayId);
+  } catch (e) { showToast('Could not release that equipment', 'error'); }
+};
+
+/**
+ * The "book a machine" control.
+ *
+ * Renders nothing without a day id — an unsaved or unscheduled day has nothing
+ * to book against, and an inert dropdown that silently fails is worse than no
+ * dropdown. Already-booked machines are filtered out rather than disabled: the
+ * list is short, and a menu of things you cannot pick is noise.
+ */
+function _sbEquipmentPickerHtml(eq, bookings) {
+  if (!eq || !eq.day_id) return '';
+  const all = window._sbState.assets;
+  if (!all) return '<p class="sb-rail-eqhint">Loading equipment&hellip;</p>';
+  const taken = new Set((bookings || []).map(b => b.asset_id));
+  const free = all.filter(a => !taken.has(a.id));
+  if (!free.length) {
+    return all.length
+      ? '<p class="sb-rail-eqhint">Everything in the yard is on this day.</p>'
+      : '<p class="sb-rail-eqhint">No equipment on file yet.</p>';
+  }
+  return `<div class="sb-rail-eqadd">
+    <select class="sb-rail-eqsel" onchange="_sbBookEquipment('${escapeHtml(eq.day_id)}', this.value); this.value='';">
+      <option value="">+ Book equipment&hellip;</option>
+      ${free.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name || a.asset_tag || 'Untitled')}${a.asset_tag && a.name ? ` &middot; ${escapeHtml(a.asset_tag)}` : ''}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
+/**
+ * One collapsible section of the day rail.
+ *
+ * Which sections are open is STATE, not DOM. It used to live only in the
+ * `is-open` class, so any _sbRender() — booking a machine, cycling a status,
+ * the capacity refresh — silently collapsed everything the user had opened.
+ * Found by booking equipment in a browser: the section you were working in
+ * shut itself the moment you used it.
+ *
+ * The key is derived from the title so it survives re-render without every
+ * caller having to invent an id.
+ */
+window._sbToggleRailSec = function(el, key) {
+  const open = el.parentElement.classList.toggle('is-open');
+  (window._sbState.railSecs || (window._sbState.railSecs = {}))[key] = open;
+};
+
 function _sbRailSection(title, count, body, open) {
-  return `<section class="sb-rail-sec${open === false ? '' : ' is-open'}">
-    <header class="sb-rail-sec-head" onclick="this.parentElement.classList.toggle('is-open')">
+  const key = String(title).replace(/&[a-z]+;/g, '').replace(/[^a-z]/gi, '').toLowerCase();
+  const remembered = (window._sbState.railSecs || {})[key];
+  // A remembered choice wins over the caller's default in both directions —
+  // a section the user closed stays closed too.
+  const isOpen = remembered === undefined ? open !== false : remembered;
+  return `<section class="sb-rail-sec${isOpen ? ' is-open' : ''}">
+    <header class="sb-rail-sec-head" onclick="_sbToggleRailSec(this,'${key}')">
       <h4>${title}</h4>${count != null ? `<span class="sb-rail-count">${count}</span>` : ''}
       <span class="sb-rail-caret" aria-hidden="true">&rsaquo;</span>
     </header>
@@ -18081,8 +18215,16 @@ function _sbDayRailHtml() {
   const people = assignment?.employees || [];
   const checklist = Array.isArray(wo.checklist) ? wo.checklist : [];
   const doneCount = checklist.filter(x => x && (x.done || x.checked)).length;
-  const equipment = Array.isArray(wo.equipment) ? wo.equipment : [];
   const materials = Array.isArray(wo.materials) ? wo.materials : [];
+  // Real bookings from wo_day_equipment, but only if they belong to THIS day —
+  // otherwise a slow response repaints the previous card's equipment here.
+  const eqState = window._sbState.dayEquipment;
+  const eq = (eqState && eqState.day_id && eqState.day_id === wo.md_day_id) ? eqState : {};
+  const bookings = Array.isArray(eq.bookings) ? eq.bookings : [];
+  // Free text typed before the table existed. Shown as "Note only" so nobody
+  // mistakes a word somebody typed for a machine that is actually reserved.
+  const notes = Array.isArray(eq.unbooked_notes) ? eq.unbooked_notes
+    : (Array.isArray(wo.equipment) ? wo.equipment.map(e => typeof e === 'string' ? e : (e && e.name) || '').filter(Boolean) : []);
   const photos = [...(Array.isArray(wo.before_photos) ? wo.before_photos : []), ...(Array.isArray(wo.after_photos) ? wo.after_photos : [])];
 
   const sib = (target) => (sb.workOrders || []).find(w => w.id === wo.id && Number(w.md_day_number) === target);
@@ -18135,13 +18277,23 @@ function _sbDayRailHtml() {
         ? `<ul class="sb-rail-check">${checklist.map(x => `<li class="${x && (x.done || x.checked) ? 'is-done' : ''}"><span class="sb-rail-box" aria-hidden="true"></span>${escapeHtml((x && (x.text || x.label)) || String(x))}</li>`).join('')}</ul>`
         : '<p class="sb-rail-empty">No checklist items.</p>')}
 
-      ${_sbRailSection('Materials &amp; equipment', (materials.length + equipment.length) || null,
-        (materials.length || equipment.length)
-          ? `<ul class="sb-rail-kit">
+      ${_sbRailSection('Materials &amp; equipment', (materials.length + bookings.length + notes.length) || null,
+        (materials.length || bookings.length || notes.length)
+          ? `${eq.conflicts && eq.conflicts.length ? `<div class="sb-rail-eqwarn">${eq.conflicts.map(x => escapeHtml(x.message)).join('<br>')}</div>` : ''}
+             <ul class="sb-rail-kit">
               ${materials.map(m => `<li><span class="sb-rail-kit-name">${escapeHtml(m.name || String(m))}</span>${m.status ? `<span class="sb-rail-kit-status">${escapeHtml(m.status)}</span>` : ''}</li>`).join('')}
-              ${equipment.map(e => `<li><span class="sb-rail-kit-name">${escapeHtml(typeof e === 'string' ? e : (e.name || ''))}</span>${(e && e.status) ? `<span class="sb-rail-kit-status">${escapeHtml(e.status)}</span>` : ''}</li>`).join('')}
-             </ul>`
-          : '<p class="sb-rail-empty">Nothing recorded for this day.</p>', false)}
+              ${bookings.map(b => `<li class="sb-rail-kit-booked${b.conflict ? ' is-conflict' : ''}">
+                  <span class="sb-rail-kit-name">${escapeHtml(b.asset_name || b.asset_tag || 'Equipment')}</span>
+                  <button type="button" class="sb-rail-kit-status sb-eq-${escapeHtml(b.status)}"
+                          title="Mark as ${b.status === 'needed' ? 'loaded' : b.status === 'loaded' ? 'on site' : 'needed'}"
+                          onclick="_sbCycleEquipmentStatus('${escapeHtml(eq.day_id)}','${escapeHtml(b.asset_id)}','${escapeHtml(b.status)}')">${escapeHtml(b.status_label)}</button>
+                  <button type="button" class="sb-rail-kit-x" title="Release this equipment"
+                          onclick="_sbUnbookEquipment('${escapeHtml(eq.day_id)}','${escapeHtml(b.asset_id)}')">&times;</button>
+                </li>`).join('')}
+              ${notes.map(n => `<li class="sb-rail-kit-note"><span class="sb-rail-kit-name">${escapeHtml(n)}</span><span class="sb-rail-kit-status">Note only</span></li>`).join('')}
+             </ul>
+             ${_sbEquipmentPickerHtml(eq, bookings)}`
+          : `<p class="sb-rail-empty">Nothing recorded for this day.</p>${_sbEquipmentPickerHtml(eq, bookings)}`, false)}
 
       ${_sbRailSection('Client update', photos.length || null, `
         <div class="sb-rail-photos">
@@ -18179,6 +18331,16 @@ const _GW_POOL_TABS = [
   { id: 'tentative',        label: 'Tentative' },
 ];
 
+const _GW_POOL_SORTS = [
+  { id: 'priority', label: 'Priority' },
+  { id: 'deadline', label: 'Deadline' },
+  { id: 'hours',    label: 'Sold hours' },
+  { id: 'client',   label: 'Client' },
+];
+
+/** Urgent first. Anything unset sorts BELOW everything stated. */
+const _GW_PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
 function _sbPoolFiltered() {
   const sb = window._sbState;
   const pool = sb.pool || [];
@@ -18191,8 +18353,44 @@ function _sbPoolFiltered() {
     if (!q) return true;
     return [w.wo_number, w.client_name, w.title, w.property_addr, w.type]
       .some(v => String(v || '').toLowerCase().includes(q));
-  });
+  }).sort(_sbPoolComparator(sb.poolSort || 'priority'));
 }
+
+/**
+ * Pool ordering.
+ *
+ * Every comparator pushes UNSET values to the bottom rather than treating them
+ * as zero or as an empty string. A job with no deadline is not due first, and a
+ * job with no priority is not the least urgent thing in the list — both are
+ * simply unstated, and the list should show what IS stated first.
+ *
+ * Ties break on wo_number so the order never reshuffles between renders.
+ */
+function _sbPoolComparator(sort) {
+  const last = (v) => (v === null || v === undefined || v === '');
+  const tie = (a, b) => String(a.wo_number || '').localeCompare(String(b.wo_number || ''));
+  return (a, b) => {
+    if (sort === 'deadline') {
+      const av = a.required_completion_date, bv = b.required_completion_date;
+      if (last(av) !== last(bv)) return last(av) ? 1 : -1;
+      if (!last(av) && av !== bv) return av < bv ? -1 : 1;
+    } else if (sort === 'hours') {
+      const av = a.budget_minutes, bv = b.budget_minutes;
+      if (last(av) !== last(bv)) return last(av) ? 1 : -1;
+      if (av !== bv) return (bv || 0) - (av || 0); // biggest first: it needs the most planning
+    } else if (sort === 'client') {
+      const c = String(a.client_name || '').localeCompare(String(b.client_name || ''));
+      if (c) return c;
+    } else {
+      const ar = _GW_PRIORITY_RANK[String(a.priority || '').toLowerCase()];
+      const br = _GW_PRIORITY_RANK[String(b.priority || '').toLowerCase()];
+      if ((ar === undefined) !== (br === undefined)) return ar === undefined ? 1 : -1;
+      if (ar !== undefined && ar !== br) return ar - br;
+    }
+    return tie(a, b);
+  };
+}
+window._sbSetPoolSort = function(v) { window._sbState.poolSort = v; _sbRender(); };
 
 function _sbPoolCard(w) {
   const hrs = w.budget_minutes != null ? (w.budget_minutes / 60) : (w.duration_minutes != null ? w.duration_minutes / 60 : null);
@@ -18213,6 +18411,10 @@ function _sbPoolCard(w) {
         ${w.scheduled_date ? `<span>${escapeHtml(gwDateFormat(w.scheduled_date, { month:'short', day:'numeric' }))}</span>` : ''}
       </div>
       ${w.property_addr ? `<div class="sb-pool-addr">${escapeHtml(w.property_addr)}</div>` : ''}
+      ${(w.priority || w.required_completion_date) ? `<div class="sb-pool-flags">
+        ${w.priority ? `<span class="sb-pool-pri sb-pool-pri--${escapeHtml(String(w.priority).toLowerCase())}">${escapeHtml(w.priority)}</span>` : ''}
+        ${w.required_completion_date ? `<span class="sb-pool-due" title="Must be finished by">by ${escapeHtml(gwDateFormat(w.required_completion_date, { month:'short', day:'numeric' }))}</span>` : ''}
+      </div>` : ''}
       <span class="sb-pool-state">${stateLabel}</span>
     </article>`;
 }
@@ -18317,6 +18519,9 @@ function _sbPoolHtml() {
     <div class="sb-pool-filters">
       <input class="sb-pool-search" type="search" placeholder="Search jobs" value="${escapeHtml(sb.poolQuery || '')}"
              oninput="_sbSetPoolQuery(this.value)" aria-label="Search the Job Pool">
+      <select class="sb-pool-sort" onchange="_sbSetPoolSort(this.value)" aria-label="Sort the Job Pool" title="Sort the Job Pool">
+        ${_GW_POOL_SORTS.map(o => `<option value="${o.id}"${(sb.poolSort||'priority')===o.id?' selected':''}>${o.label}</option>`).join('')}
+      </select>
       ${types.length ? `<select class="sb-pool-type" onchange="_sbSetPoolType(this.value)" aria-label="Filter by service type">
         <option value="">All types</option>
         ${types.map(t => `<option value="${escapeHtml(t)}"${sb.poolType === t ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}
@@ -18519,6 +18724,31 @@ function _sbJobCard(wo, crews, draggable) {
   return `
     <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}${(window._sbState?.selectedDayId === `${wo.id}:${isMd ? Number(wo.md_day_number||0) : 0}`) ? ' is-selected' : ''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--type-color:${_sbTypeColor(wo.type)};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenDayRail('${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})">
+      ${(() => {
+        // Quick production details, on hover and on keyboard focus.
+        //
+        // Everything here is already in memory from the week payload — no
+        // request, no fetch on hover. Only fields that actually have a value
+        // are rendered: an empty row would teach people the panel is broken
+        // rather than that the data is missing.
+        const a = (window._sbState?.capacity?.assignments || []).find(x => x.day_id === wo.md_day_id);
+        const rows = [];
+        if (a && a.employees && a.employees.length) {
+          const fm = a.employees.find(e => e.crew_role === 'foreman');
+          rows.push(['Crew', `${a.employees.length} on site${fm ? ' · ' + escapeHtml(fm.rep_name) : ''}`]);
+        }
+        if (a && a.planned_minutes > 0) rows.push(['Planned', (a.planned_minutes / 60).toFixed(1) + 'h']);
+        if (a && a.budget_minutes != null) rows.push(['Sold', (a.budget_minutes / 60).toFixed(1) + 'h']);
+        if (wo.required_completion_date) rows.push(['Due', escapeHtml(gwDateFormat(wo.required_completion_date, { month:'short', day:'numeric' }))]);
+        if (wo.access_notes) rows.push(['Access', escapeHtml(String(wo.access_notes).slice(0, 90))]);
+        if (mdWarn) rows.push(['Warning', escapeHtml(mdWarn)]);
+        if (!rows.length) return '';
+        return `<div class="sb-card-hover" role="tooltip">
+          <strong>${escapeHtml(wo.client_name || wo.title || 'Job')}</strong>
+          ${wo.property_addr ? `<em>${escapeHtml(wo.property_addr)}</em>` : ''}
+          <dl>${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+        </div>`;
+      })()}
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
@@ -18531,7 +18761,16 @@ function _sbJobCard(wo, crews, draggable) {
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
         ${isMd ? `<span class="sb-card-md-pill" title="Multi-day plan">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
-        ${mdWarn ? `<span class="sb-card-md-warn" title="${escapeHtml(mdWarn)}">${escapeHtml(mdWarn)}</span>` : ''}
+        ${mdWarn ? `<span class="sb-card-md-warn" title="${escapeHtml(mdWarn)}" aria-label="${escapeHtml(mdWarn)}"></span>` : ''}
+        ${(() => {
+          // Planned people-hours for THIS day, from the week payload that is
+          // already loaded. Not calendar duration — the whole point of the four
+          // numbers. Silent when nobody is on the day yet, because "0.0h" on a
+          // card reads as a claim rather than an absence.
+          const a = (window._sbState?.capacity?.assignments || []).find(x => x.day_id === wo.md_day_id);
+          const mins = a ? a.planned_minutes : 0;
+          return mins > 0 ? `<span class="sb-card-labor" title="Planned people-hours for this day">${(mins/60).toFixed(mins%60?1:0)}h</span>` : '';
+        })()}
       </div>
       ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
@@ -18708,8 +18947,24 @@ function _sbRender() {
         }).join('');
         return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
-            <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
-            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small title="Booked is calendar time on the grid; the second figure is people-hours against this crew's capacity">${scheduledHours.toFixed(1)}h booked · ${escapeHtml(utilLabel)}</small><i><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i></span>
+            <span class="sb-lane-crew-head">
+              <span class="sb-lane-crew-badge" style="background:${cr.color}">${escapeHtml((cr.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase())}</span>
+              <span class="sb-lane-crew-id">
+                <b>${escapeHtml(cr.name)}</b>
+                <!-- Foreman and headcount: who to call, and how many bodies.
+                     Both come from the crew roster the capacity figure is
+                     already derived from, so they cost no extra request. -->
+                <em>${capMeta && capMeta.members && capMeta.members.length
+                  ? escapeHtml((capMeta.members.find(m=>m.crew_role==='foreman')||{}).rep_name || 'No foreman')
+                    + ' · ' + capMeta.members.length + (capMeta.members.length===1?' person':' people')
+                  : 'No crew members'}</em>
+              </span>
+            </span>
+            <span class="sb-lane-cap" title="Planned people-hours against this crew's productive capacity. Booked is calendar time on the grid — a different number.">
+              <span class="sb-lane-cap-nums">${capMeta ? (capMeta.week_planned_minutes/60).toFixed(1) + 'h / ' + (capMeta.week_capacity_minutes/60).toFixed(0) + 'h' : scheduledHours.toFixed(1) + 'h booked'}</span>
+              ${utilization !== null ? `<span class="sb-lane-cap-pct${utilization > 100 ? ' is-over' : ''}">${utilization}%</span>` : ''}
+            </span>
+            <i class="sb-lane-bar"><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i>
           </div>
           ${dayCells}`;
       }).join('');

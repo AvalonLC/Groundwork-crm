@@ -17762,6 +17762,8 @@ h1.pl-title,
 .sb-workspace {
   flex: 1 1 auto;
   min-height: 0;
+  /* The anchor for the overlay rail below ~1360px — see that breakpoint. */
+  position: relative;
   display: grid;
   grid-template-columns: var(--sb-pool-w) minmax(0, 1fr);
   gap: 12px;
@@ -17971,10 +17973,20 @@ h1.pl-title,
   .sb-rail-actions-right { flex: 1 1 100%; }
   .sb-rail-danger { flex: 1 1 100%; }
 }
-@media (max-width: 1560px) {
-  /* Below this the pool and the rail cannot both sit beside a seven-day grid
-     without squeezing it to uselessness. The rail wins — it is what you opened
-     — and the pool collapses to its rail. */
+/* Threshold arrived at by measuring, not by guessing.
+   The board needs ~692px for seven legible day columns (104px crew label +
+   7 x 84px). What is left for it is:
+
+       viewport - 260 nav - 300 pool - 380 rail - ~40 gaps
+
+   which only clears 692 at about 1770px. The first version of this rule used
+   1560px, and at 1600 the board would have been squeezed to ~620px and
+   overflowed — measured at 1394px with all three panes forced open, where the
+   board got 412px against the 692 it needs.
+
+   So: three panes only above 1800px. Below that the rail wins, because it is
+   what you just opened, and the pool collapses to its rail. */
+@media (max-width: 1800px) {
   .sb-workspace.has-rail { grid-template-columns: 46px minmax(0, 1fr) var(--sb-rail-w); }
   .sb-workspace.has-rail .sb-pool { width: 46px; }
   .sb-workspace.has-rail .sb-pool-head,
@@ -17983,8 +17995,204 @@ h1.pl-title,
   .sb-workspace.has-rail .sb-pool-list,
   .sb-workspace.has-rail .sb-pool-foot { display: none; }
 }
+/* Between the phone layout and ~1360px the rail cannot have its own column.
+   Measured, not guessed: day columns floor at 72px and the crew label takes 92,
+   so a seven-day grid needs 596px, and
+
+       board = viewport - 264 nav - 46 collapsed pool - 306 rail - ~136 gaps
+
+   only clears 596 at about 1348px. Below that the rail was silently eating the
+   end of the week: at 1280 the grid overflowed its board by 70px, at 1150 by
+   200px. Nothing said so — the week just stopped short.
+
+   So down here the rail stops being a column and becomes an overlay, which is
+   what it was before the workstation layout existed. The board keeps its full
+   width and the rail covers part of it, because on a screen this size you are
+   looking at one day OR at the week, not both at once. Above 1360px it goes
+   back to being a real third pane. */
+@media (min-width: 1101px) and (max-width: 1360px) {
+  .sb-workspace.has-rail { grid-template-columns: 46px minmax(0, 1fr); }
+  .sb-workspace.has-rail .sb-rail {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: min(var(--sb-rail-w, 306px), 46vw);
+    z-index: 30;
+    box-shadow: -14px 0 34px rgba(15, 23, 42, .18);
+  }
+}
 @media (max-width: 1100px) {
   .sb-workstation { height: auto; }
   .sb-workspace, .sb-workspace.has-rail, .sb-workspace.is-pool-collapsed { grid-template-columns: minmax(0, 1fr); }
   .sb-rail { max-height: 70vh; }
 }
+
+/* ── Crew row identity ──────────────────────────────────────────────────── */
+/* Three lines, in the order a scheduler reads them: who the crew is, who to
+   call, and how full they are. */
+.sb-workstation .sb-lane-label {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 9px; justify-content: center;
+}
+.sb-lane-crew-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.sb-lane-crew-badge {
+  width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+  display: grid; place-items: center;
+  color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+}
+.sb-lane-crew-id { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.sb-lane-crew-id b { font-size: 12px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-lane-crew-id em {
+  font-style: normal; font-size: 10px; color: var(--gw-text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sb-lane-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; white-space: nowrap; }
+.sb-lane-cap-nums {
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gw-text);
+  /* Never wrap "16.0h / 38h" onto two lines — a broken number reads as a
+     broken figure, and the lane label is only ~100px wide. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sb-lane-cap-pct { font-size: 10.5px; font-weight: 800; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+.sb-lane-cap-pct.is-over { color: #d84b42; }
+.sb-lane-bar {
+  display: block; height: 4px; border-radius: 999px;
+  background: var(--gw-border); overflow: hidden;
+}
+.sb-lane-bar b { display: block; height: 100%; background: var(--gw-pine-500); border-radius: 999px; }
+
+/* ── Card signals ───────────────────────────────────────────────────────── */
+.sb-workstation .sb-card-labor {
+  margin-left: auto;
+  font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--gw-text-muted);
+}
+/* A dot, not a sentence. The warning text lives in the tooltip and the strip
+   above the board; a chip on the card pushes the client name out of a cell
+   that is already 84px wide. */
+.sb-workstation .sb-card-md-warn {
+  width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%;
+  background: #D99A05; font-size: 0; flex-shrink: 0;
+}
+/* Multi-day continuity: a tick on the leading edge of every day after the
+   first, so a run reads as one job without merging the days into a fake block
+   that would hide their independent crews and dates. */
+.sb-workstation .sb-job-card--multiday::before {
+  content: ''; position: absolute; left: -5px; top: 50%;
+  width: 5px; height: 2px; background: var(--md-color, var(--crew-color));
+  opacity: .55;
+}
+.sb-workstation .sb-job-card { position: relative; }
+
+/* ── Job Pool: sort + priority/deadline flags ───────────────────────────── */
+.sb-pool-sort {
+  min-height: 34px; padding: 6px 8px; min-width: 0; flex: 0 1 104px;
+  border: 1px solid var(--gw-border); border-radius: 8px;
+  background: var(--gw-bg, #fff); color: var(--gw-text); font-size: 12px;
+}
+.sb-pool-filters { flex-wrap: wrap; }
+.sb-pool-flags { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.sb-pool-pri {
+  font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  border-radius: 4px; padding: 2px 6px;
+  color: var(--gw-text-muted); background: var(--gw-border);
+}
+/* Only urgent and high get colour. Colouring "normal" and "low" too would make
+   every card shout and leave nothing standing out — which is the failure mode
+   a priority field is supposed to prevent. */
+.sb-pool-pri--urgent { color: #fff; background: #C94B43; }
+.sb-pool-pri--high   { color: #8a5a00; background: color-mix(in srgb, #D99A05 22%, transparent); }
+.sb-pool-due { font-size: 10.5px; font-weight: 700; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Card hover: quick production details ───────────────────────────────── */
+/* Appears on hover AND on keyboard focus, so it is not mouse-only. Positioned
+   to open downward-right from the card and pinned above everything, because it
+   has to clear neighbouring cards in a dense week. */
+.sb-card-hover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  min-width: 208px; max-width: 260px; padding: 9px 11px;
+  border: 1px solid var(--gw-border); border-radius: 10px;
+  background: var(--gw-surface, #fff);
+  box-shadow: 0 12px 30px rgba(17, 57, 49, .18);
+  opacity: 0; visibility: hidden; transform: translateY(-3px);
+  transition: opacity .12s ease, transform .12s ease, visibility .12s;
+  pointer-events: none; /* never blocks the drag it sits on top of */
+  text-align: left;
+}
+.sb-job-card:hover > .sb-card-hover,
+.sb-job-card:focus-visible > .sb-card-hover { opacity: 1; visibility: visible; transform: translateY(0); }
+/* Cards in the last two columns would push the panel off the right edge. */
+.sb-lane-cell:nth-child(8n) .sb-card-hover,
+.sb-lane-cell:nth-child(8n+7) .sb-card-hover { left: auto; right: 0; }
+/* A card near the bottom opens upward instead of off the board. */
+.sb-lane-label:last-of-type ~ .sb-lane-cell .sb-card-hover { top: auto; bottom: calc(100% + 6px); }
+
+.sb-card-hover strong { display: block; font-size: 12.5px; font-weight: 800; line-height: 1.25; }
+.sb-card-hover em {
+  display: block; font-style: normal; font-size: 11px; color: var(--gw-text-muted);
+  margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sb-card-hover dl { margin: 7px 0 0; display: flex; flex-direction: column; gap: 3px; }
+.sb-card-hover dl > div { display: flex; gap: 8px; font-size: 11.5px; line-height: 1.4; }
+.sb-card-hover dt { flex: 0 0 52px; color: var(--gw-text-muted); font-weight: 600; }
+.sb-card-hover dd { margin: 0; color: var(--gw-text); min-width: 0; }
+
+/* The panel must be able to escape its cell. The board is still the scroll
+   container, so a panel near the edge is clipped by the board rather than by
+   the 84px cell it lives in. */
+.sb-workstation .sb-lane-cell { overflow: visible; }
+.sb-workstation .sb-lane-grid { overflow: visible; }
+
+/* ── Day rail: booked equipment ───────────────────────────────────────────────
+   Three visually distinct things share this list, and conflating them is the
+   bug this styling exists to prevent:
+
+     a material          somebody's line item
+     a booked machine    a row in wo_day_equipment, releasable, status-tracked
+     a note              free text typed before bookings existed — NOT reserved
+
+   The note is deliberately the quietest of the three. It looks like what it is:
+   a reminder, not a reservation. */
+.sb-rail-eqwarn {
+  margin: 0 0 8px; padding: 7px 9px; border-radius: 7px;
+  background: var(--sb-warn-bg, rgba(217, 119, 6, .1));
+  border: 1px solid var(--sb-warn-bd, rgba(217, 119, 6, .3));
+  color: var(--sb-warn-fg, #b45309);
+  font-size: 11.5px; line-height: 1.45;
+}
+.sb-rail-kit-booked { display: flex; align-items: center; gap: 6px; }
+.sb-rail-kit-booked.is-conflict .sb-rail-kit-name { color: var(--sb-warn-fg, #b45309); font-weight: 600; }
+.sb-rail-kit-booked .sb-rail-kit-x {
+  margin-left: auto; border: 0; background: none; cursor: pointer;
+  color: var(--gwp-text-dim, #94a3b8); font-size: 15px; line-height: 1;
+  padding: 0 2px; border-radius: 4px;
+}
+.sb-rail-kit-booked .sb-rail-kit-x:hover { color: var(--gwp-danger, #dc2626); background: rgba(220, 38, 38, .1); }
+.sb-rail-kit-booked .sb-eq-needed  { color: var(--gwp-text-dim, #64748b); }
+.sb-rail-kit-booked .sb-eq-loaded  { color: var(--gwp-info, #1d4ed8); background: rgba(37, 99, 235, .14); }
+.sb-rail-kit-booked .sb-eq-on_site { color: var(--gwp-success, #15803d); background: rgba(22, 163, 74, .15); }
+/* A note is not a booking. It gets no status colour and no release button,
+   because there is nothing to release. */
+.sb-rail-kit-note .sb-rail-kit-name { opacity: .72; font-style: italic; }
+.sb-rail-kit-note .sb-rail-kit-status { opacity: .6; }
+
+/* The status pill is now a button — it cycles needed -> loaded -> on site.
+   It has to keep looking like the pill it replaced, so this strips the button
+   chrome rather than restyling from scratch. */
+.sb-rail-kit-booked button.sb-rail-kit-status {
+  /* Strip the BUTTON chrome only. `background: none` was here first and it
+     flattened the badge into plain text — the pill's fill comes from
+     .sb-rail-kit-status, and overriding it undid the thing this rule exists to
+     preserve. Font is inherited from the base class, not from the button. */
+  border: 0; cursor: pointer; font-family: inherit; line-height: inherit;
+}
+.sb-rail-kit-booked button.sb-rail-kit-status:hover { filter: brightness(.94); }
+.sb-rail-kit-booked button.sb-rail-kit-status:focus-visible {
+  outline: 2px solid var(--gwp-accent, #2563eb); outline-offset: 1px;
+}
+.sb-rail-eqadd { margin-top: 8px; }
+.sb-rail-eqsel {
+  width: 100%; padding: 5px 7px; font-size: 11.5px;
+  border: 1px dashed var(--gwp-border, #cbd5e1); border-radius: 6px;
+  background: transparent; color: var(--gwp-text-dim, #64748b); cursor: pointer;
+}
+.sb-rail-eqsel:hover { border-style: solid; color: var(--gwp-text, #0f172a); }
+.sb-rail-eqhint { margin: 8px 0 0; font-size: 11px; color: var(--gwp-text-dim, #94a3b8); font-style: italic; }
