@@ -434,4 +434,58 @@ test.describe('schedule board', () => {
     expect(after.booked).toEqual([]);
     expect(after.options.join(' ')).toContain('Excavator');
   });
+
+  // ── Responsive ladder ──────────────────────────────────────────────────────
+
+  test('RSP-01 the week is never cut off, at any width this page is used at', async ({ page }) => {
+    // This existed only as an assumption for most of the redesign: the display
+    // it was built on cannot produce a CSS viewport above ~1400px, so "it should
+    // scale" was an inference. Playwright can set a real one, which is what
+    // finally caught the three-pane threshold being 240px too low — at 1600 the
+    // board would have been squeezed to ~620px against the ~692 seven legible
+    // day columns need, and the back of the week would have gone behind a
+    // scrollbar on exactly the monitors this page is FOR.
+    //
+    // So the invariant, not the arithmetic: all seven days visible, nothing
+    // clipped, nothing scrolling sideways, with the day rail OPEN — which is
+    // when the three panes actually compete for width.
+    const woId = await makeJob(page.request, { client_name: 'Widths', crew_id: ctx.crewA, scheduled_date: MONDAY });
+
+    for (const width of [1280, 1400, 1600, 1790, 1810, 1920, 2560]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await openBoard(page);
+      await page.locator(`.sb-job-card[onclick*="${woId}"]`).first().click();
+      await page.waitForTimeout(900);
+
+      const m = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        const heads = [...doc.querySelectorAll('.sb-lane-day-head')] as any[];
+        const board = doc.querySelector('.sb-board');
+        const wrap = doc.querySelector('.sb-lane-wrap');
+        const pool = doc.querySelector('.sb-pool');
+        return {
+          railOpen: !!doc.querySelector('.sb-rail'),
+          days: heads.length,
+          clipped: heads.length && board
+            ? Math.round(heads[heads.length - 1].getBoundingClientRect().right) > Math.round(board.getBoundingClientRect().right) + 1
+            : false,
+          gridScrollsX: wrap ? wrap.scrollWidth > wrap.clientWidth + 1 : false,
+          pageScrollsX: doc.documentElement.scrollWidth > doc.documentElement.clientWidth + 1,
+          poolWidth: pool ? Math.round(pool.getBoundingClientRect().width) : 0,
+        };
+      });
+
+      expect(m.railOpen, `${width}px: rail did not open`).toBe(true);
+      expect(m.days, `${width}px: not a full week`).toBe(7);
+      expect(m.clipped, `${width}px: the last day is cut off`).toBe(false);
+      expect(m.gridScrollsX, `${width}px: the grid scrolls sideways`).toBe(false);
+      expect(m.pageScrollsX, `${width}px: the PAGE scrolls sideways`).toBe(false);
+
+      // Above the threshold all three panes are open; at or below it the pool
+      // collapses to its rail so the board keeps its room. The rail wins because
+      // it is what you just opened.
+      if (width > 1800) expect(m.poolWidth, `${width}px: expected the pool open`).toBeGreaterThan(100);
+      else if (width > 1100) expect(m.poolWidth, `${width}px: expected the pool collapsed`).toBeLessThan(100);
+    }
+  });
 });

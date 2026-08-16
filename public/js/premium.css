@@ -17762,6 +17762,8 @@ h1.pl-title,
 .sb-workspace {
   flex: 1 1 auto;
   min-height: 0;
+  /* The anchor for the overlay rail below ~1360px — see that breakpoint. */
+  position: relative;
   display: grid;
   grid-template-columns: var(--sb-pool-w) minmax(0, 1fr);
   gap: 12px;
@@ -17992,6 +17994,30 @@ h1.pl-title,
   .sb-workspace.has-rail .sb-pool-filters,
   .sb-workspace.has-rail .sb-pool-list,
   .sb-workspace.has-rail .sb-pool-foot { display: none; }
+}
+/* Between the phone layout and ~1360px the rail cannot have its own column.
+   Measured, not guessed: day columns floor at 72px and the crew label takes 92,
+   so a seven-day grid needs 596px, and
+
+       board = viewport - 264 nav - 46 collapsed pool - 306 rail - ~136 gaps
+
+   only clears 596 at about 1348px. Below that the rail was silently eating the
+   end of the week: at 1280 the grid overflowed its board by 70px, at 1150 by
+   200px. Nothing said so — the week just stopped short.
+
+   So down here the rail stops being a column and becomes an overlay, which is
+   what it was before the workstation layout existed. The board keeps its full
+   width and the rail covers part of it, because on a screen this size you are
+   looking at one day OR at the week, not both at once. Above 1360px it goes
+   back to being a real third pane. */
+@media (min-width: 1101px) and (max-width: 1360px) {
+  .sb-workspace.has-rail { grid-template-columns: 46px minmax(0, 1fr); }
+  .sb-workspace.has-rail .sb-rail {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: min(var(--sb-rail-w, 306px), 46vw);
+    z-index: 30;
+    box-shadow: -14px 0 34px rgba(15, 23, 42, .18);
+  }
 }
 @media (max-width: 1100px) {
   .sb-workstation { height: auto; }
