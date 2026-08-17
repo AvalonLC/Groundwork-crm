@@ -140,7 +140,15 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    overhead recovery cannot produce a real number for any tenant — confirmed
    while investigating why `postTimeEntryToLedger` was hitting
    `no_rate_resolves` in production (2026-08-09).
-9. **The Stripe webhook's payments-table insert references two columns
+9. ~~**The Stripe webhook's payments-table insert references two columns
+   that don't exist.**~~ — **FIXED** on `stripe-payments`, along with a
+   worse defect it was hiding: because the invoice UPDATE ran before the
+   throw and Stripe retries a 400, every retry credited the invoice again.
+   Three deliveries of one $500 payment left `amount_paid_cents` at 150000
+   with zero payments rows. The handler is now idempotent on the payment
+   intent. Original note follows.
+
+   **The Stripe webhook's payments-table insert references two columns
    that don't exist.** `src/index.tsx`, `checkout.session.completed`
    handler (search `INSERT OR IGNORE INTO payments`) writes `method` and
    `paid_at` — the real columns are `payment_method` (no `paid_at` at all).
