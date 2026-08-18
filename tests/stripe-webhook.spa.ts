@@ -220,4 +220,99 @@ test.describe('stripe webhook', () => {
     expect(res.status()).toBe(400);
     expect(Number((await invoiceOf(request, victim)).amount_paid_cents)).toBe(0);
   });
+
+  // ── Money coming back out ──────────────────────────────────────────────────
+  //
+  // None of this was handled. A refund left the invoice reading "paid", a
+  // chargeback did nothing, and a failed payment was silent.
+
+  const chargeRefunded = (pi: string, refundedTotal: number, refundId: string) => ({
+    type: 'charge.refunded',
+    data: { object: { id: 'ch_1', payment_intent: pi, amount: 50_000,
+      amount_refunded: refundedTotal, refunds: { data: [{ id: refundId }] } } },
+  });
+
+  test('SW-08 a refund takes the invoice back out of paid', async ({ request }) => {
+    const invoiceId = await makeInvoice(request, 50_000);
+    const pi = `pi_${TAG}_08_${Date.now()}`;
+    await postEvent(request, checkoutEvent(invoiceId, pi, 50_000));
+    expect((await invoiceOf(request, invoiceId)).status).toBe('paid');
+
+    expect((await postEvent(request, chargeRefunded(pi, 50_000, `re_08_${Date.now()}`))).status()).toBe(200);
+
+    const inv = await invoiceOf(request, invoiceId);
+    expect(Number(inv.amount_paid_cents), 'refund did not reduce amount_paid').toBe(0);
+    expect(inv.status, 'a refunded invoice still reads as paid').toBe('sent');
+  });
+
+  test('SW-09 a partial refund leaves it partial', async ({ request }) => {
+    const invoiceId = await makeInvoice(request, 50_000);
+    const pi = `pi_${TAG}_09_${Date.now()}`;
+    await postEvent(request, checkoutEvent(invoiceId, pi, 50_000));
+    await postEvent(request, chargeRefunded(pi, 20_000, `re_09_${Date.now()}`));
+
+    const inv = await invoiceOf(request, invoiceId);
+    expect(Number(inv.amount_paid_cents)).toBe(30_000);
+    expect(inv.status).toBe('partial');
+  });
+
+  test('SW-10 two partial refunds use the running total, not a delta', async ({ request }) => {
+    // Stripe sends amount_refunded as a cumulative figure: 20,000 then 50,000.
+    // Subtracting each as a delta would over-refund by the first amount.
+    const invoiceId = await makeInvoice(request, 50_000);
+    const pi = `pi_${TAG}_10_${Date.now()}`;
+    const stamp = Date.now();
+    await postEvent(request, checkoutEvent(invoiceId, pi, 50_000));
+    await postEvent(request, chargeRefunded(pi, 20_000, `re_10a_${stamp}`));
+    await postEvent(request, chargeRefunded(pi, 50_000, `re_10b_${stamp}`));
+
+    const inv = await invoiceOf(request, invoiceId);
+    expect(Number(inv.amount_paid_cents)).toBe(0);
+    expect(inv.status).toBe('sent');
+  });
+
+  test('SW-11 replaying an OLD refund event does not undo a newer one', async ({ request }) => {
+    // The regression guard. Stripe redelivers old events after new ones, and
+    // reconciling against the event's own running total let a replayed
+    // "20,000 refunded" move a fully-refunded invoice back to partial. The
+    // ledger is the authority, and a replay adds nothing to it.
+    const invoiceId = await makeInvoice(request, 50_000);
+    const pi = `pi_${TAG}_11_${Date.now()}`;
+    const stamp = Date.now();
+    await postEvent(request, checkoutEvent(invoiceId, pi, 50_000));
+    await postEvent(request, chargeRefunded(pi, 20_000, `re_11a_${stamp}`));
+    await postEvent(request, chargeRefunded(pi, 50_000, `re_11b_${stamp}`));
+    await postEvent(request, chargeRefunded(pi, 20_000, `re_11a_${stamp}`)); // the replay
+
+    const inv = await invoiceOf(request, invoiceId);
+    expect(Number(inv.amount_paid_cents), 'a replayed old refund reopened the invoice').toBe(0);
+    expect(inv.status).toBe('sent');
+  });
+
+  test('SW-12 a dispute is recorded and does NOT quietly unpay the invoice', async ({ request }) => {
+    // A dispute is a case with a deadline, not a movement. The money may come
+    // back, so the paid state is left alone and the case is made visible.
+    const invoiceId = await makeInvoice(request, 50_000);
+    const pi = `pi_${TAG}_12_${Date.now()}`;
+    await postEvent(request, checkoutEvent(invoiceId, pi, 50_000));
+
+    const res = await postEvent(request, { type: 'charge.dispute.created',
+      data: { object: { id: `dp_12_${Date.now()}`, payment_intent: pi, amount: 50_000, status: 'warning_needs_response' } } });
+    expect(res.status()).toBe(200);
+
+    const inv = await invoiceOf(request, invoiceId);
+    expect(inv.dispute_status).toBe('warning_needs_response');
+    expect(Number(inv.disputed_amount_cents)).toBe(50_000);
+    expect(Number(inv.amount_paid_cents), 'a dispute silently unpaid the invoice').toBe(50_000);
+    expect(inv.status).toBe('paid');
+  });
+
+  test('SW-13 an unknown event type is acknowledged, not 500ed', async ({ request }) => {
+    // A webhook that errors on an event nobody subscribed to gets retried for
+    // three days and then disabled by Stripe.
+    for (const type of ['customer.updated', 'invoice.created', 'payment_intent.payment_failed']) {
+      const res = await postEvent(request, { type, data: { object: { id: 'x' } } });
+      expect(res.status(), type).toBe(200);
+    }
+  });
 });
