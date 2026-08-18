@@ -128,7 +128,15 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    in favor of the existing `work_order_employees` join) rather than a
    drive-by patch.
    </details>
-8. **There is no way, anywhere in the product, to create a `labor_rate_profile`
+8. ~~**There is no way, anywhere in the product, to create a `labor_rate_profile`
+   row.**~~ — **FIXED** on `labor-rate-entry`: `/finance/budget` now carries a
+   create/recalibrate form (owner-only) that writes through
+   `recalibrateLaborRate`, so the prior row is closed rather than edited.
+   Verified end to end: a rate entered through the form resolves at
+   `/internal/rates/resolve` as `421002` with `confidence: high`. Original
+   note follows.
+
+   **There is no way, anywhere in the product, to create a `labor_rate_profile`
    row.** `/finance/budget` (`src/ui/budget.tsx`) is read-only — three review
    tables, no form, no POST route. `insertLaborRateProfile` (`src/db/repos.ts`)
    is called from exactly two places in the whole repo, both test files
