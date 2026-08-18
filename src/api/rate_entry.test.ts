@@ -278,3 +278,124 @@ describe('parseEquipmentForm — other refusals and warnings', () => {
     expect(okEq(parseEquipmentForm(TENANT, GOLDEN_EQ)).warnings).toEqual([]);
   });
 });
+
+// ── Overhead pools ───────────────────────────────────────────────────────────
+
+import { parseOverheadForm, type OverheadFormFields } from './rate_entry';
+import { allocateOverheadPools } from '../engines/allocation';
+
+const POOL = (division: string, pool_type: string, annual_cost_cents: number, driver = 'sellable_hours') =>
+  ({ division, pool_type, annual_cost_cents, driver }) as any;
+
+const GOLDEN_POOL: OverheadFormFields = {
+  division: 'hardscape', pool_type: 'facility', annual_cost: '120000',
+  driver: 'sellable_hours', as_of: '2026-01-01',
+};
+
+const okOv = (r: ReturnType<typeof parseOverheadForm>) => {
+  if (!r.ok) throw new Error(`expected ok, got: ${r.errors.join(' | ')}`);
+  return r;
+};
+
+describe('parseOverheadForm', () => {
+  it('OV-01 converts dollars to cents and keeps the driver', () => {
+    const r = okOv(parseOverheadForm(TENANT, GOLDEN_POOL, []));
+    expect(r.row).toMatchObject({
+      company_id: TENANT, division: 'hardscape', pool_type: 'facility',
+      annual_cost_cents: 12_000_000, driver: 'sellable_hours', as_of: '2026-01-01',
+    });
+  });
+
+  it('OV-02 refuses a pool with no division', () => {
+    // allocateOverheadPools throws on this rather than skipping the pool, which
+    // takes down every page that computes an allocation.
+    const r = parseOverheadForm(TENANT, { ...GOLDEN_POOL, division: '' }, []);
+    expect(r.ok).toBe(false);
+    expect((r as any).errors.join(' ')).toMatch(/pool with nowhere to land/);
+  });
+
+  it('OV-03 refuses a driver the engine does not implement', () => {
+    // The Why text on this page mentions headcount and machine hours; the engine
+    // implements exactly two. Offering a third would type-check and then throw.
+    const r = parseOverheadForm(TENANT, { ...GOLDEN_POOL, driver: 'headcount' }, []);
+    expect(r.ok).toBe(false);
+    expect((r as any).errors.join(' ')).toMatch(/Driver must be one of/);
+  });
+
+  it('OV-04 refuses a duplicate pool for the same division', () => {
+    // listOverheadPools has no as_of filter, so a second row for the same pool
+    // is the same cost counted twice in every rate that inherits it.
+    const r = parseOverheadForm(TENANT, GOLDEN_POOL, [POOL('hardscape', 'facility', 9_000_000)]);
+    expect(r.ok).toBe(false);
+    expect((r as any).errors.join(' ')).toMatch(/counts that cost twice/);
+  });
+
+  it('OV-05 the same pool_type in a DIFFERENT division is fine', () => {
+    expect(okOv(parseOverheadForm(TENANT, GOLDEN_POOL, [POOL('maintenance', 'facility', 9_000_000)])).row.division)
+      .toBe('hardscape');
+  });
+});
+
+describe('parseOverheadForm — the 10% revenue rule, across the whole set', () => {
+  it('OV-06 refuses the row that would cross the line', () => {
+    // 10,000 revenue against 89,000 other = 10.1%. The rule is about the set,
+    // so the row being added is what gets refused.
+    const existing = [POOL('hardscape', 'facility', 8_900_000)];
+    const r = parseOverheadForm(
+      TENANT, { ...GOLDEN_POOL, pool_type: 'marketing', driver: 'revenue', annual_cost: '10000' }, existing,
+    );
+    expect(r.ok).toBe(false);
+    expect((r as any).errors.join(' ')).toMatch(/limit is 10%/);
+  });
+
+  it('OV-07 allows exactly at the line', () => {
+    // 10,000 of 100,000 is 10.0% — the rule is "must not exceed".
+    const existing = [POOL('hardscape', 'facility', 9_000_000)];
+    const r = okOv(parseOverheadForm(
+      TENANT, { ...GOLDEN_POOL, pool_type: 'marketing', driver: 'revenue', annual_cost: '10000' }, existing,
+    ));
+    expect(r.totals.revenue_share).toBeCloseTo(0.10, 6);
+  });
+
+  it('OV-08 counts revenue pools that already exist, not just this one', () => {
+    // Two 6% pools are individually fine and together are not.
+    const existing = [POOL('hardscape', 'facility', 8_800_000), POOL('hardscape', 'ads', 600_000, 'revenue')];
+    const r = parseOverheadForm(
+      TENANT, { ...GOLDEN_POOL, pool_type: 'sponsorship', driver: 'revenue', annual_cost: '6000' }, existing,
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it('OV-09 warns while approaching the limit without blocking', () => {
+    // 8,500 of 100,500 is 8.46% — past the warning line at 8%, short of the 10%
+    // refusal. (8,000 of 100,000 is exactly 8%, which is NOT above it.)
+    const existing = [POOL('hardscape', 'facility', 9_200_000)];
+    const r = okOv(parseOverheadForm(
+      TENANT, { ...GOLDEN_POOL, pool_type: 'marketing', driver: 'revenue', annual_cost: '8500' }, existing,
+    ));
+    expect(r.totals.revenue_share).toBeGreaterThan(0.08);
+    expect(r.totals.revenue_share).toBeLessThan(0.10);
+    expect(r.warnings.join(' ')).toMatch(/not much room left/);
+  });
+
+  it('OV-10 a set the form accepts is a set the engine accepts', () => {
+    // The point of all of it: what the form allows through must not throw in
+    // allocateOverheadPools. This is the coupling the tests exist to hold.
+    const accepted = [
+      POOL('hardscape', 'facility', 9_000_000),
+      POOL('hardscape', 'marketing', 1_000_000, 'revenue'),
+    ];
+    const r = okOv(parseOverheadForm(
+      TENANT, { ...GOLDEN_POOL, division: 'maintenance', pool_type: 'yard', annual_cost: '5000' }, accepted,
+    ));
+    const all = [...accepted, { division: r.row.division, pool_type: r.row.pool_type,
+      annual_cost_cents: r.row.annual_cost_cents, driver: r.row.driver }] as any;
+    expect(() => allocateOverheadPools(all)).not.toThrow();
+  });
+
+  it('OV-11 and a set the form refuses is one the engine would have thrown on', () => {
+    const existing = [POOL('hardscape', 'facility', 8_900_000)];
+    const bad = [...existing, POOL('hardscape', 'marketing', 1_010_000, 'revenue')];
+    expect(() => allocateOverheadPools(bad)).toThrow(/10%/);
+  });
+});

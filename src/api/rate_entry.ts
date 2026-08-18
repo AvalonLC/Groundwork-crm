@@ -15,7 +15,7 @@
 import { computeBurden } from '../engines/burden';
 import { computeEquipmentRate, type EquipmentRateResult } from '../engines/equipment';
 import type { BurdenResult } from '../engines/types';
-import type { LaborRateProfile, EquipmentRateProfile, RateScope } from '../db/schema';
+import type { LaborRateProfile, EquipmentRateProfile, OverheadPool, RateScope } from '../db/schema';
 import { validateEquipmentSupport } from './compensation';
 
 export const SCOPES = ['employee', 'crew', 'role', 'tenant'] as const;
@@ -396,4 +396,126 @@ export function parseEquipmentForm(
     );
   }
   return { ok: true, row, preview, warnings };
+}
+
+// ── Overhead pools ───────────────────────────────────────────────────────────
+
+/**
+ * The third rate input, and the one whose rules are not about a single row.
+ *
+ * allocateOverheadPools does not degrade on bad input the way computeBurden does —
+ * it THROWS:
+ *
+ *   pool with no division     -> "pools may not go unallocated"
+ *   revenue-driven over 10%   -> "must not exceed 10%"
+ *
+ * A thrown error there takes down every page that computes an allocation, so
+ * both have to be caught before the row lands. And the 10% rule is a property of
+ * the whole SET, not of the row being added — which is why this function needs
+ * the pools that already exist, unlike the labor and equipment parsers.
+ */
+
+/** The only two the engine implements. Everything else throws downstream. */
+export const OVERHEAD_DRIVERS = ['sellable_hours', 'revenue'] as const;
+export type OverheadDriver = (typeof OVERHEAD_DRIVERS)[number];
+
+export interface OverheadFormFields {
+  division?: string;
+  pool_type?: string;
+  /** Dollars per year. */
+  annual_cost?: string;
+  driver?: string;
+  /** YYYY-MM-DD. */
+  as_of?: string;
+}
+
+export type OverheadRow = Omit<OverheadPool, 'id' | 'created_at'>;
+
+export interface OverheadParseSuccess {
+  ok: true;
+  row: OverheadRow;
+  /** What the set looks like once this row is in it. */
+  totals: { total_cents: number; revenue_cents: number; revenue_share: number };
+  warnings: string[];
+}
+export type OverheadParseResult = OverheadParseSuccess | ParseFailure;
+
+export function parseOverheadForm(
+  companyId: string,
+  fields: OverheadFormFields,
+  existing: Array<Pick<OverheadPool, 'division' | 'pool_type' | 'annual_cost_cents' | 'driver'>>,
+): OverheadParseResult {
+  const errors: string[] = [];
+
+  const division = String(fields.division || '').trim();
+  // computeAllocation throws on a pool with no division rather than skipping it.
+  if (!division) errors.push('Division is required — a pool with nowhere to land stops every allocation.');
+
+  const poolType = String(fields.pool_type || '').trim();
+  if (!poolType) errors.push('What this pool is for is required.');
+
+  const annual = decimalToScaled(fields.annual_cost, 100);
+  if (annual === null) errors.push('Annual cost must be a number.');
+  else if (annual <= 0) errors.push('Annual cost must be greater than zero.');
+
+  const driver = String(fields.driver || '').trim() as OverheadDriver;
+  if (!OVERHEAD_DRIVERS.includes(driver)) {
+    errors.push(`Driver must be one of: ${OVERHEAD_DRIVERS.join(', ')}.`);
+  }
+
+  const asOf = String(fields.as_of || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) errors.push('As-of date must be YYYY-MM-DD.');
+
+  // listOverheadPools returns every row for the company with no as_of filter, so
+  // a second row for the same pool is not a new version of it — it is the same
+  // cost counted twice, in every rate that inherits the allocation.
+  const dup = existing.find((p) => p.division === division && p.pool_type === poolType);
+  if (dup) {
+    errors.push(
+      `${division} already has a "${poolType}" pool. Adding a second one counts that cost twice, ` +
+      'because allocation sums every pool on file rather than only the newest.',
+    );
+  }
+
+  if (errors.length) return { ok: false, errors };
+
+  const priorTotal = existing.reduce((n, p) => n + Number(p.annual_cost_cents || 0), 0);
+  const priorRevenue = existing
+    .filter((p) => p.driver === 'revenue')
+    .reduce((n, p) => n + Number(p.annual_cost_cents || 0), 0);
+
+  const totalCents = priorTotal + annual!;
+  const revenueCents = priorRevenue + (driver === 'revenue' ? annual! : 0);
+  const share = totalCents > 0 ? revenueCents / totalCents : 0;
+
+  // The forbidden rule from ALLOCATION.md, checked across the whole set. Adding
+  // this row is what would break it, so this row is what gets refused.
+  if (share > 0.10) {
+    return {
+      ok: false,
+      errors: [
+        `This would make revenue-driven pools ${(share * 100).toFixed(1)}% of total overhead, ` +
+        'and the limit is 10%. Revenue-driven overhead makes busy divisions subsidise quiet ones, ' +
+        'so the engine refuses to allocate at all above that line.',
+      ],
+    };
+  }
+
+  const row: OverheadRow = {
+    company_id: companyId,
+    division,
+    pool_type: poolType,
+    annual_cost_cents: annual! as OverheadPool['annual_cost_cents'],
+    driver,
+    as_of: asOf,
+  };
+
+  const warnings: string[] = [];
+  if (share > 0.08) {
+    warnings.push(
+      `Revenue-driven pools are now ${(share * 100).toFixed(1)}% of overhead. The hard limit is 10%, ` +
+      'so there is not much room left before allocation stops working.',
+    );
+  }
+  return { ok: true, row, totals: { total_cents: totalCents, revenue_cents: revenueCents, revenue_share: share }, warnings };
 }
