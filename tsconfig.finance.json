@@ -24,6 +24,10 @@
     "src/bridge/**/*.ts",
     "src/scheduling/**/*.ts",
     "src/recurring/**/*.ts",
+    "src/index.tsx",
+    "src/env.ts",
+    "src/vite-env.d.ts",
+    "src/hono-env.d.ts",
     "scripts/**/*.js"
   ],
   // Test files reference implementation modules from later waves/tasks (e.g.
