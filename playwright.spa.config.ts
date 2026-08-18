@@ -35,6 +35,11 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
   },
   webServer: {
+    // --binding rather than a .dev.vars file: .dev.vars is gitignored, so a
+    // generated one would not survive a clean checkout, and writing it here
+    // would clobber a real one if anybody ever adds local secrets. The webhook
+    // verifier fails closed without a secret, so the Stripe specs need one and
+    // it has to be the same value they sign with (tests/stripe-webhook.spa.ts).
     // Deliberately not `npm run build` — that also runs scripts/bump-version.js,
     // which rewrites every ?v= cache-buster in src/index.tsx (and its persisted
     // counter file) as a side effect. A real `npm run deploy` bumping the
@@ -53,7 +58,7 @@ export default defineConfig({
     // `npm run db:migrate:local` migrates. This is a pre-existing bug in
     // package.json's own dev:local/preview scripts, unrelated to this branch's
     // change — logged in docs/PUNCHLIST.md rather than fixed here (out of scope).
-    command: "npx vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json && wrangler pages dev dist --local --ip 0.0.0.0 --port 3000",
+    command: "npx vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json && wrangler pages dev dist --local --ip 0.0.0.0 --port 3000 --binding STRIPE_WEBHOOK_SECRET=whsec_e2e_test_secret",
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 120_000,
