@@ -13,6 +13,7 @@
 //  - All significant events are audit logged with actor_type='portal'.
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from 'hono'
+import type { AppEnv } from './env'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import mig0041 from '../migrations/0041_properties.sql?raw'
 import mig0042 from '../migrations/0042_portal_identity.sql?raw'
@@ -73,7 +74,8 @@ async function pHash(pw: string): Promise<string> {
 async function pVerify(pw: string, stored: string): Promise<boolean> {
   if (!stored || !stored.startsWith('pbkdf2:')) return false
   const parts = stored.split(':'); if (parts.length !== 4) return false
-  const [, iters, saltHex, hashHex] = parts
+  const iters = parts[1], saltHex = parts[2], hashHex = parts[3]
+  if (!iters || !saltHex || !hashHex) return false
   const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(h => parseInt(h, 16)))
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits'])
@@ -297,7 +299,7 @@ function clientIp(c: any): string {
 // deps.requireStaffAuth = the existing internal requireAuth middleware.
 // deps.sendEmail        = the existing SendGrid helper.
 // ═══════════════════════════════════════════════════════════════════════════
-export function registerPortal(app: Hono<any>, deps: {
+export function registerPortal(app: Hono<AppEnv>, deps: {
   requireStaffAuth: (c: any, next: any) => Promise<any>
   sendEmail: (apiKey: string, to: string, subject: string, html: string, opts?: any) => Promise<boolean>
   woFlipHolds?: (db: D1Database, estimateId: string, companyId: string, toStatus: 'scheduled' | 'cancelled') => Promise<void>
@@ -767,7 +769,7 @@ export function registerPortal(app: Hono<any>, deps: {
   function pickClientId(s: PortalScope, requested: string | undefined, perm: string): string | null {
     if (requested) return s.clientIds.includes(requested) && s.can(perm, requested) ? requested : null
     const withPerm = s.clientIds.filter(id => s.can(perm, id))
-    return withPerm.length === 1 || (withPerm.length > 1 && s.clientIds.length === 1) ? withPerm[0] : (withPerm[0] || null)
+    return withPerm.length === 1 || (withPerm.length > 1 && s.clientIds.length === 1) ? (withPerm[0] ?? null) : (withPerm[0] || null)
   }
 
   async function stripeCustomerFor(db: D1Database, stripeKey: string, companyId: string, clientId: string): Promise<string> {
