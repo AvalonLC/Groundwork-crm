@@ -13,8 +13,9 @@
  */
 
 import { computeBurden } from '../engines/burden';
+import { computeEquipmentRate, type EquipmentRateResult } from '../engines/equipment';
 import type { BurdenResult } from '../engines/types';
-import type { LaborRateProfile, RateScope } from '../db/schema';
+import type { LaborRateProfile, EquipmentRateProfile, RateScope } from '../db/schema';
 import { validateEquipmentSupport } from './compensation';
 
 export const SCOPES = ['employee', 'crew', 'role', 'tenant'] as const;
@@ -238,5 +239,161 @@ export function parseRateForm(
     );
   }
 
+  return { ok: true, row, preview, warnings };
+}
+
+// ── Equipment ────────────────────────────────────────────────────────────────
+
+/**
+ * The same boundary, for machines.
+ *
+ * Worth noting what is different: computeBurden guards its divide-by-zero
+ * (BH-03 — billable hours falls back to 1 and sets config_error).
+ * computeEquipmentRate has no such guard. It divides by life_years and by
+ * annual_machine_hours directly, so a zero in either produces Infinity and
+ * writes an hourly rate of Infinity into job costing. There is nothing
+ * downstream to catch that, which makes this form the only thing standing
+ * between a typo and a machine that costs infinity dollars an hour.
+ */
+
+/** Raw strings from the equipment form. */
+export interface EquipmentFormFields {
+  equipment_id?: string;
+  /** Dollars. */
+  purchase_price?: string;
+  salvage?: string;
+  insurance_annual?: string;
+  storage_annual?: string;
+  repairs_annual?: string;
+  wear_annual?: string;
+  /** Dollars per gallon, e.g. "4.05". */
+  fuel_price?: string;
+  /** Gallons per hour, e.g. "2.4". */
+  fuel_gal_per_hr?: string;
+  /** Percent, e.g. "7.5" or "12". */
+  finance_pct?: string;
+  lube_pct_of_fuel?: string;
+  life_years?: string;
+  annual_machine_hours?: string;
+  effective_from?: string;
+}
+
+export type EquipmentRow = Omit<EquipmentRateProfile, 'id' | 'created_at' | 'effective_to'>;
+
+export interface EquipmentParseSuccess {
+  ok: true;
+  row: EquipmentRow;
+  preview: EquipmentRateResult;
+  warnings: string[];
+}
+export type EquipmentParseResult = EquipmentParseSuccess | ParseFailure;
+
+export function parseEquipmentForm(
+  companyId: string,
+  fields: EquipmentFormFields,
+): EquipmentParseResult {
+  const errors: string[] = [];
+
+  const equipmentId = String(fields.equipment_id || '').trim();
+  if (!equipmentId) errors.push('Which machine this is for is required.');
+
+  const money = (label: string, raw: string | undefined, required = false) => {
+    const v = decimalToScaled(raw ?? '0', 100);
+    if (v === null) { errors.push(`${label} must be a number.`); return null; }
+    if (v < 0) { errors.push(`${label} cannot be negative.`); return null; }
+    if (required && v <= 0) { errors.push(`${label} must be greater than zero.`); return null; }
+    return v;
+  };
+
+  const purchase = money('Purchase price', fields.purchase_price, true);
+  const salvage = money('Salvage value', fields.salvage);
+  const insurance = money('Insurance', fields.insurance_annual);
+  const storage = money('Storage', fields.storage_annual);
+  const repairs = money('Repairs', fields.repairs_annual);
+  const wear = money('Wear parts', fields.wear_annual);
+  const fuelPrice = money('Fuel price', fields.fuel_price);
+
+  // Salvage above cost makes depreciation negative — the machine would earn
+  // money by ageing. Almost always a swapped pair of fields.
+  if (purchase !== null && salvage !== null && salvage > purchase) {
+    errors.push('Salvage value cannot exceed the purchase price.');
+  }
+
+  // The two divisors. computeEquipmentRate does not guard them.
+  const life = parseHours(fields.life_years);
+  if (life === null) errors.push('Life in years must be a whole number.');
+  else if (life <= 0) errors.push('Life in years must be at least 1 — it is divided by.');
+
+  const machineHours = parseHours(fields.annual_machine_hours);
+  if (machineHours === null) errors.push('Machine hours a year must be a whole number.');
+  else if (machineHours <= 0) errors.push('Machine hours a year must be greater than zero — it is divided by.');
+
+  const financePct = decimalToScaled(fields.finance_pct ?? '0', 10000);
+  const finance = financePct === null ? null : Math.round(financePct / 100);
+  if (finance === null || finance < 0) errors.push('Finance rate % must be a non-negative number.');
+
+  const lubePct = decimalToScaled(fields.lube_pct_of_fuel ?? '0', 10000);
+  const lube = lubePct === null ? null : Math.round(lubePct / 100);
+  if (lube === null || lube < 0) errors.push('Lube % of fuel must be a non-negative number.');
+
+  // Gallons per hour is a rate, not money: 2.4 -> 24000 ten-thousandths.
+  const fuelGal = decimalToScaled(fields.fuel_gal_per_hr ?? '0', 10000);
+  if (fuelGal === null || fuelGal < 0) errors.push('Fuel burn (gal/hr) must be a non-negative number.');
+
+  const effectiveFrom = String(fields.effective_from || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) errors.push('Effective date must be YYYY-MM-DD.');
+
+  if (errors.length) return { ok: false, errors };
+
+  const cents = (n: number) => n as EquipmentRateProfile['purchase_price_cents'];
+  const tenThousandths = (n: number) => n as EquipmentRateProfile['finance_rate'];
+
+  const row: EquipmentRow = {
+    company_id: companyId,
+    equipment_id: equipmentId,
+    purchase_price_cents: cents(purchase!),
+    salvage_cents: cents(salvage!),
+    life_years: life!,
+    annual_machine_hours: machineHours!,
+    finance_rate: tenThousandths(finance!),
+    insurance_annual_cents: cents(insurance!),
+    storage_annual_cents: cents(storage!),
+    fuel_gal_per_hr: tenThousandths(fuelGal!),
+    fuel_price_cents: cents(fuelPrice!),
+    repairs_annual_cents: cents(repairs!),
+    wear_annual_cents: cents(wear!),
+    lube_pct_of_fuel: tenThousandths(lube!),
+    effective_from: effectiveFrom,
+  };
+
+  // Same conversion /internal/rates/equipment uses.
+  const preview = computeEquipmentRate({
+    purchase_price: row.purchase_price_cents / 100,
+    salvage: row.salvage_cents / 100,
+    life_years: row.life_years,
+    annual_machine_hours: row.annual_machine_hours,
+    finance_rate: row.finance_rate / 10000,
+    insurance_annual: row.insurance_annual_cents / 100,
+    storage_annual: row.storage_annual_cents / 100,
+    fuel_gal_per_hr: row.fuel_gal_per_hr / 10000,
+    fuel_price: row.fuel_price_cents / 100,
+    repairs_annual: row.repairs_annual_cents / 100,
+    wear_annual: row.wear_annual_cents / 100,
+    lube_pct_of_fuel: row.lube_pct_of_fuel / 10000,
+  });
+
+  const warnings: string[] = [];
+  if (row.annual_machine_hours < 200) {
+    warnings.push(
+      `${row.annual_machine_hours} machine hours a year is low, so every fixed cost lands on very ` +
+      'few hours and the rate will look extreme. Check it is hours and not days.',
+    );
+  }
+  if (preview.operating_rate > preview.ownership_rate * 3) {
+    warnings.push(
+      'Running cost is more than three times owning cost. Usually fuel burn or fuel price ' +
+      'is out by a factor of ten.',
+    );
+  }
   return { ok: true, row, preview, warnings };
 }

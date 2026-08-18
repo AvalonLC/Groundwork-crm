@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools,
-  getTenantFinancePolicy, recalibrateLaborRate } from "../db/repos";
-import { parseRateForm, SCOPES, type RateFormFields } from "../api/rate_entry";
+  getTenantFinancePolicy, recalibrateLaborRate, recalibrateEquipmentRate } from "../db/repos";
+import { parseRateForm, parseEquipmentForm, SCOPES,
+  type RateFormFields, type EquipmentFormFields } from "../api/rate_entry";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
@@ -18,7 +19,12 @@ export type BudgetBindings = { DB: D1Database };
 export const budgetRouter = new Hono<{ Bindings: BudgetBindings; Variables: FinanceAuthVars }>();
 
 /** Errors and the values the user typed, so a rejected form comes back filled in. */
-type FormState = { errors?: string[]; saved?: string; values?: RateFormFields };
+type FormState = {
+  errors?: string[]; saved?: string; values?: RateFormFields;
+  /** Which form the message belongs to, so an error lands under the right one. */
+  which?: "labor" | "equipment";
+  eqValues?: EquipmentFormFields;
+};
 
 budgetRouter.get("/", (c) => renderBudget(c, undefined));
 
@@ -53,6 +59,30 @@ budgetRouter.post("/labor-rate", async (c) => {
   const note = `An hour of ${parsed.row.scope_id} now costs $${rate}` +
     (parsed.warnings.length ? ` — ${parsed.warnings.join(' ')}` : '.');
   return renderBudget(c, { saved: note });
+});
+
+/**
+ * POST /finance/budget/equipment-rate — create or recalibrate a machine's rate.
+ *
+ * Same immutability rule as labor: recalibrateEquipmentRate closes the open row
+ * and inserts, in one batch, and never edits a rate in place.
+ */
+budgetRouter.post("/equipment-rate", async (c) => {
+  const { tenant_id, role } = readPageArgs(c);
+  if (!canSee(role, "can_see_budget_rates")) {
+    return renderBudget(c, { errors: ["Cost rates are owner-only."], which: "equipment" }, 403);
+  }
+
+  const eqValues = (await c.req.parseBody()) as EquipmentFormFields;
+  const parsed = parseEquipmentForm(tenant_id, eqValues);
+  if (!parsed.ok) return renderBudget(c, { errors: parsed.errors, eqValues, which: "equipment" }, 400);
+
+  await recalibrateEquipmentRate(c.env.DB, tenant_id, parsed.row.equipment_id, parsed.row);
+
+  const note = `${parsed.row.equipment_id} costs $${parsed.preview.total_rate.toFixed(4)} an hour ` +
+    `($${parsed.preview.ownership_rate.toFixed(2)} to own, $${parsed.preview.operating_rate.toFixed(2)} to run)` +
+    (parsed.warnings.length ? ` — ${parsed.warnings.join(' ')}` : '.');
+  return renderBudget(c, { saved: note, which: "equipment" });
 });
 
 async function renderBudget(c: any, form: FormState | undefined, status = 200) {
@@ -106,7 +136,7 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
           {laborRates.length === 0 ? (
             <Empty
               title="No labor rates yet"
-              hint="Once a rate profile is created, the fully burdened cost of an hour shows here — the number job costing, price floors and break-even all inherit."
+              hint="Fill in the form below and the true cost of an hour shows here — the number job costing, price floors and break-even all inherit."
             />
           ) : (
             <table class="fin-table">
@@ -146,12 +176,12 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
           : "wage, hours and the costs that ride along with them"}
       >
         <div data-testid="rate-form">
-          {form?.saved ? (
+          {form?.saved && form.which !== "equipment" ? (
             <div class="fin-note" data-testid="rate-saved">
               Saved. {form.saved}
             </div>
           ) : null}
-          {form?.errors?.length ? (
+          {form?.errors?.length && form.which !== "equipment" ? (
             <div class="fin-note fin-note-bad" data-testid="rate-errors">
               <strong>Not saved.</strong>
               <ul>{form.errors.map((e) => <li>{e}</li>)}</ul>
@@ -290,6 +320,109 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
             </table>
           )}
         </div>
+      </Card>
+
+      <Card
+        title={vocab === "simple" ? "Set what a machine costs an hour" : "New equipment rate profile"}
+        sub="what it costs to own it, and what it costs to run it"
+      >
+        <div data-testid="equipment-form">
+          {form?.saved && form.which === "equipment" ? (
+            <div class="fin-note" data-testid="eq-saved">Saved. {form.saved}</div>
+          ) : null}
+          {form?.errors?.length && form.which === "equipment" ? (
+            <div class="fin-note fin-note-bad" data-testid="eq-errors">
+              <strong>Not saved.</strong>
+              <ul>{form.errors.map((e) => <li>{e}</li>)}</ul>
+            </div>
+          ) : null}
+
+          <form method="post" action="/finance/budget/equipment-rate" class="fin-form">
+            <div class="fin-form-row">
+              <label>
+                {vocab === "simple" ? "Which machine" : "Equipment id"}
+                <input name="equipment_id" data-testid="e-id" value={form?.eqValues?.equipment_id || ""} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Starts on" : "Effective from"}
+                <input name="effective_from" type="date" data-testid="e-effective-from"
+                       value={form?.eqValues?.effective_from || new Date().toISOString().slice(0, 10)} />
+              </label>
+            </div>
+
+            <div class="fin-form-row">
+              <label>
+                {vocab === "simple" ? "What it cost ($)" : "Purchase price ($)"}
+                <input name="purchase_price" data-testid="e-price" value={form?.eqValues?.purchase_price || ""} />
+              </label>
+              <label>
+                {vocab === "simple" ? "What it will be worth ($)" : "Salvage value ($)"}
+                <input name="salvage" data-testid="e-salvage" value={form?.eqValues?.salvage || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Years you will keep it" : "Life (years)"}
+                <input name="life_years" data-testid="e-life" value={form?.eqValues?.life_years || ""} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Hours a year it runs" : "Annual machine hours"}
+                <input name="annual_machine_hours" data-testid="e-hours" value={form?.eqValues?.annual_machine_hours || ""} />
+              </label>
+            </div>
+
+            <div class="fin-form-row">
+              <label>
+                {vocab === "simple" ? "Loan rate (%)" : "Finance rate (%)"}
+                <input name="finance_pct" data-testid="e-finance" value={form?.eqValues?.finance_pct || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Insurance a year ($)" : "Insurance ($/yr)"}
+                <input name="insurance_annual" data-testid="e-insurance" value={form?.eqValues?.insurance_annual || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Storage a year ($)" : "Storage ($/yr)"}
+                <input name="storage_annual" data-testid="e-storage" value={form?.eqValues?.storage_annual || "0"} />
+              </label>
+            </div>
+
+            <div class="fin-form-row">
+              <label>
+                {vocab === "simple" ? "Fuel burned an hour (gal)" : "Fuel burn (gal/hr)"}
+                <input name="fuel_gal_per_hr" data-testid="e-fuelburn" value={form?.eqValues?.fuel_gal_per_hr || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Fuel price a gallon ($)" : "Fuel price ($/gal)"}
+                <input name="fuel_price" data-testid="e-fuelprice" value={form?.eqValues?.fuel_price || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Oil as % of fuel" : "Lube (% of fuel)"}
+                <input name="lube_pct_of_fuel" data-testid="e-lube" value={form?.eqValues?.lube_pct_of_fuel || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Repairs a year ($)" : "Repairs ($/yr)"}
+                <input name="repairs_annual" data-testid="e-repairs" value={form?.eqValues?.repairs_annual || "0"} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Wear parts a year ($)" : "Wear ($/yr)"}
+                <input name="wear_annual" data-testid="e-wear" value={form?.eqValues?.wear_annual || "0"} />
+              </label>
+            </div>
+
+            <button type="submit" class="fin-btn" data-testid="e-submit">
+              {equipmentRates.length ? "Save as a new dated rate" : "Create the first machine rate"}
+            </button>
+            <p class="fin-hint">
+              {equipmentEngineActive
+                ? "The equipment engine is on, so this rate is charged per machine hour and is kept out of the labor rate."
+                : "The equipment engine is off, so machine cost is currently carried inside the labor rate instead. Turning the engine on is what makes this rate take effect."}
+            </p>
+          </form>
+        </div>
+        <Why
+          what="What one hour on this machine costs, split into owning it and running it."
+          source="What you paid, what it will be worth, how long you keep it and the loan for owning it; fuel, oil, repairs and wear parts for running it."
+          matters="Kept separate so a machine that is cheap to own but thirsty to run cannot hide behind one blended number."
+          moves="Fuel price, a major repair, or a change in how many hours a year it actually runs."
+        />
       </Card>
 
       <Card
