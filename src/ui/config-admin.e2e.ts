@@ -121,3 +121,39 @@ test("UC-09 a tenant's saved override never becomes another tenant's default —
   expect(bView.is_override).toBe(false);
   expect(bView.value.forced_review_categories).not.toContain("tenant_a_only_category");
 });
+
+test("UC-08 the textarea's live value is valid JSON, not double-escaped", async ({ page }) => {
+  // The bug this guards. The textarea content was run through a local
+  // escapeHtml() AND then escaped again by Hono JSX's {expression} handling, so
+  // the browser received `&amp;quot;` where it needed `&quot;`. What the user
+  // saw in the box was `&quot;version&quot;: 1` rather than `"version": 1`.
+  //
+  // Every existing test in this file .fill()s the editor before reading it, so
+  // none of them ever looked at what was rendered INTO it — which is exactly how
+  // this survived. This one reads the value the browser actually holds.
+  await page.goto(`/config?tenant_id=${TENANT}&role=owner`);
+
+  for (const name of ["automation_policy", "classifier_rules", "approval_thresholds"]) {
+    const value = await page.getByTestId(`editor-${name}`).inputValue();
+    expect(value, `${name} contains raw entity text`).not.toContain("&quot;");
+    expect(value, `${name} contains raw entity text`).not.toContain("&amp;");
+    // The real assertion: copy it out, parse it. This is what a user does when
+    // they edit one field and resubmit, and it is what used to throw.
+    expect(() => JSON.parse(value), `${name} did not round-trip through JSON.parse`).not.toThrow();
+  }
+});
+
+test("UC-09 a config containing & and < survives the round trip", async ({ page }) => {
+  // Characters that need escaping exactly once. Saving a value with them and
+  // reading it back is where a single-escape and a double-escape diverge
+  // visibly, so it pins the direction of the fix rather than just its absence.
+  await page.goto(`/config?tenant_id=${TENANT}&role=owner`);
+  const payload = { version: 1, note: 'fuel & oil <10% of "total"' };
+
+  await page.getByTestId("editor-automation_policy").fill(JSON.stringify(payload));
+  await page.getByTestId("save-automation_policy").click();
+  await page.goto(`/config?tenant_id=${TENANT}&role=owner`);
+
+  const value = await page.getByTestId("editor-automation_policy").inputValue();
+  expect(JSON.parse(value)).toEqual(payload);
+});

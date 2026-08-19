@@ -71,8 +71,22 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    business logic. Now a config edit (via `/finance/config` or the JSON
    files directly), not a code-writing task — see
    `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md`.
-2. **`CRON_SECRET` is set on BOTH sides and they do not match — the finance
-   rollup has failed every night since at least 2026-08-16.**
+2. ~~**`CRON_SECRET` is set on BOTH sides and they do not match**~~ — **FIXED
+   2026-08-19 22:45 UTC.** Tyler reset both sides to one value; a
+   `workflow_dispatch` dry run returned **200**. Seven consecutive 401s
+   before it, one of them dispatched on demand rather than on schedule, so
+   it was never a scheduling artefact.
+
+   OUTSTANDING: six nights of `recovery_snapshot` rows were never written
+   (2026-08-14 to 2026-08-19). The rollup takes `?as_of=YYYY-MM-DD` and is
+   idempotent per date, so a backfill is six dispatches. Whether that matters
+   depends on `confidence_days`, which needs trailing snapshot variance and
+   has none yet either way.
+
+   This entry has now been wrong in BOTH directions inside 24 hours — first
+   claiming the secret was unset when it was set-but-mismatched, then
+   claiming a mismatch after it was fixed. That is the argument for the
+   dated audit header above rather than for trusting any line in this file.
 
    The original entry said the secret "isn't set yet". That was wrong, and
    wrong in a way that hid something worse: it is set, the cron IS firing
@@ -201,6 +215,14 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
     Stage 2 of the money-representation migration (2026-08-10) needed a
     real `custom_price` write to dual-write `custom_price_cents`
     alongside — there was no working write to leave alone.
+11. ~~**`POST /api/invoices/from-estimate/:estimateId` builds its invoice
+    title from two `estimates` columns that don't exist.**~~ — **FIXED**
+    2026-08-19. `est.estimate_number` -> `est.est_number` (with a literal
+    fallback, so an untitled estimate can no longer produce the customer-
+    facing string "Invoice for undefined" — measured on the old code), and
+    `est.notes` -> `est.customer_notes`. Deliberately NOT internal_notes:
+    only the customer-facing note belongs on an invoice. Original follows.
+
 11. **`POST /api/invoices/from-estimate/:estimateId` builds its invoice
     title from two `estimates` columns that don't exist.** `src/index.tsx`
     (search `Invoice for ${est.title`) reads `est.notes` (real columns are
@@ -313,6 +335,15 @@ section. Highest-risk guesses, ranked:
    verifying the equipment-booking endpoints, which is what finally paid
    for fixing it. Note the entry used to name `preview` as well — that
    script never carried the flag, so only `dev:local` was ever affected.
+8. ~~**`config-admin.tsx`'s config-JSON textarea is double HTML-escaped**~~
+   — **FIXED** 2026-08-19. The local `escapeHtml()` is gone; Hono JSX
+   already escapes a `{expression}` child, and escaping first produced
+   `&amp;quot;` where the browser needed `&quot;`. Guarded by UC-08 and
+   UC-09, both verified to fail on the pre-fix code. The note below was
+   right that the existing suite never tripped it: every other test
+   `.fill()`s the editor before reading it, so none of them ever looked at
+   what was rendered INTO it. Original follows.
+
 8. **`config-admin.tsx`'s config-JSON textarea is double HTML-escaped**
    (its own `escapeHtml()` plus Hono JSX's default escaping of the
    `{expression}` child) — reading the textarea's live value back in a
