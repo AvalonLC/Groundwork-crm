@@ -16,8 +16,6 @@ import { computeBurden } from '../engines/burden';
 import { computeEquipmentRate, type EquipmentRateResult } from '../engines/equipment';
 import type { BurdenResult } from '../engines/types';
 import type { LaborRateProfile, EquipmentRateProfile, RateScope } from '../db/schema';
-import type { BurdenResult } from '../engines/types';
-import type { LaborRateProfile, RateScope } from '../db/schema';
 import { validateEquipmentSupport } from './compensation';
 
 export const SCOPES = ['employee', 'crew', 'role', 'tenant'] as const;
