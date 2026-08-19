@@ -3,6 +3,8 @@ import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools,
   getTenantFinancePolicy, recalibrateLaborRate, recalibrateEquipmentRate } from "../db/repos";
 import { parseRateForm, parseEquipmentForm, SCOPES,
   type RateFormFields, type EquipmentFormFields } from "../api/rate_entry";
+  getTenantFinancePolicy, recalibrateLaborRate } from "../db/repos";
+import { parseRateForm, SCOPES, type RateFormFields } from "../api/rate_entry";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
@@ -25,6 +27,7 @@ type FormState = {
   which?: "labor" | "equipment";
   eqValues?: EquipmentFormFields;
 };
+type FormState = { errors?: string[]; saved?: string; values?: RateFormFields };
 
 budgetRouter.get("/", (c) => renderBudget(c, undefined));
 
@@ -177,11 +180,13 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
       >
         <div data-testid="rate-form">
           {form?.saved && form.which !== "equipment" ? (
+          {form?.saved ? (
             <div class="fin-note" data-testid="rate-saved">
               Saved. {form.saved}
             </div>
           ) : null}
           {form?.errors?.length && form.which !== "equipment" ? (
+          {form?.errors?.length ? (
             <div class="fin-note fin-note-bad" data-testid="rate-errors">
               <strong>Not saved.</strong>
               <ul>{form.errors.map((e) => <li>{e}</li>)}</ul>
