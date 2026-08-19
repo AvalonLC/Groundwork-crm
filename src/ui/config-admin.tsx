@@ -19,10 +19,6 @@ export type ConfigAdminBindings = { DB: D1Database };
  */
 export const configAdminRouter = new Hono<{ Bindings: ConfigAdminBindings; Variables: FinanceAuthVars }>();
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 /**
  * Shared by the GET handler (notice derived from ?saved=/?error= query
  * params) and the two POST handlers' partial-mode branch (notice derived
@@ -132,7 +128,14 @@ async function renderConfigAdminPage(
               data-testid={`editor-${cfg.name}`}
               style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;padding:12px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);background:var(--gw-surface-2);color:var(--gw-ink)"
             >
-              {escapeHtml(JSON.stringify(cfg.value, null, 2))}
+              {/*
+                No escapeHtml here. Hono JSX already escapes a {expression}
+                child, so escaping first produced &amp;quot; where the browser
+                needed &quot; — the textarea rendered `&quot;a&quot;` instead of
+                `"a"`, and copying that value back out failed JSON.parse. The
+                fix is to escape once, which JSX does for us.
+              */}
+              {JSON.stringify(cfg.value, null, 2)}
             </textarea>
             <button
               type="submit"

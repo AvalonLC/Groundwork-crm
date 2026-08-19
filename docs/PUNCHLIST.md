@@ -201,6 +201,14 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
     Stage 2 of the money-representation migration (2026-08-10) needed a
     real `custom_price` write to dual-write `custom_price_cents`
     alongside — there was no working write to leave alone.
+11. ~~**`POST /api/invoices/from-estimate/:estimateId` builds its invoice
+    title from two `estimates` columns that don't exist.**~~ — **FIXED**
+    2026-08-19. `est.estimate_number` -> `est.est_number` (with a literal
+    fallback, so an untitled estimate can no longer produce the customer-
+    facing string "Invoice for undefined" — measured on the old code), and
+    `est.notes` -> `est.customer_notes`. Deliberately NOT internal_notes:
+    only the customer-facing note belongs on an invoice. Original follows.
+
 11. **`POST /api/invoices/from-estimate/:estimateId` builds its invoice
     title from two `estimates` columns that don't exist.** `src/index.tsx`
     (search `Invoice for ${est.title`) reads `est.notes` (real columns are
@@ -313,6 +321,15 @@ section. Highest-risk guesses, ranked:
    verifying the equipment-booking endpoints, which is what finally paid
    for fixing it. Note the entry used to name `preview` as well — that
    script never carried the flag, so only `dev:local` was ever affected.
+8. ~~**`config-admin.tsx`'s config-JSON textarea is double HTML-escaped**~~
+   — **FIXED** 2026-08-19. The local `escapeHtml()` is gone; Hono JSX
+   already escapes a `{expression}` child, and escaping first produced
+   `&amp;quot;` where the browser needed `&quot;`. Guarded by UC-08 and
+   UC-09, both verified to fail on the pre-fix code. The note below was
+   right that the existing suite never tripped it: every other test
+   `.fill()`s the editor before reading it, so none of them ever looked at
+   what was rendered INTO it. Original follows.
+
 8. **`config-admin.tsx`'s config-JSON textarea is double HTML-escaped**
    (its own `escapeHtml()` plus Hono JSX's default escaping of the
    `{expression}` child) — reading the textarea's live value back in a
