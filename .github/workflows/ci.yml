@@ -6,6 +6,12 @@ on:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    # A hung step used to sit until the 6-hour default. On 2026-08-19 the
+    # Playwright install below wedged against an unreachable Ubuntu mirror and
+    # ran 2h35m before anyone stopped it, blocking four PRs. Ten minutes is
+    # roughly 2x the slowest healthy run (512s), so a real slowdown still
+    # passes and a hang fails fast enough to retry.
+    timeout-minutes: 10
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
     steps:
@@ -58,7 +64,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: install Playwright chromium
-        run: npx playwright install --with-deps chromium
+        # Deliberately NOT --with-deps. That flag runs apt-get against Ubuntu
+        # mirrors, which is the slowest part of this job and the only part that
+        # can hang: it retried an unreachable azure.archive.ubuntu.com for over
+        # two hours on 2026-08-19.
+        #
+        # The runner image already carries Chromium's system libraries, and the
+        # suite this installs for (npm run e2e) turned out not to launch a
+        # browser at all — those specs drive Hono at the request level and pass
+        # in 8.7s locally with no browser present. The download stays because
+        # playwright.config.ts still declares a chromium project.
+        run: npx playwright install chromium
       - name: apply migrations (local D1)
         # Single database since migrations/0057_finance_merge.sql (2026-08-09)
         # — one migrations_dir, one apply step.
