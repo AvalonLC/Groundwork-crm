@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools,
-  getTenantFinancePolicy, recalibrateLaborRate, recalibrateEquipmentRate } from "../db/repos";
-import { parseRateForm, parseEquipmentForm, SCOPES,
-  type RateFormFields, type EquipmentFormFields } from "../api/rate_entry";
+  getTenantFinancePolicy, recalibrateLaborRate, recalibrateEquipmentRate,
+  insertOverheadPool } from "../db/repos";
+import { parseRateForm, parseEquipmentForm, parseOverheadForm, SCOPES, OVERHEAD_DRIVERS,
+  type RateFormFields, type EquipmentFormFields, type OverheadFormFields } from "../api/rate_entry";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
@@ -22,8 +23,9 @@ export const budgetRouter = new Hono<{ Bindings: BudgetBindings; Variables: Fina
 type FormState = {
   errors?: string[]; saved?: string; values?: RateFormFields;
   /** Which form the message belongs to, so an error lands under the right one. */
-  which?: "labor" | "equipment";
+  which?: "labor" | "equipment" | "overhead";
   eqValues?: EquipmentFormFields;
+  ovValues?: OverheadFormFields;
 };
 
 budgetRouter.get("/", (c) => renderBudget(c, undefined));
@@ -83,6 +85,35 @@ budgetRouter.post("/equipment-rate", async (c) => {
     `($${parsed.preview.ownership_rate.toFixed(2)} to own, $${parsed.preview.operating_rate.toFixed(2)} to run)` +
     (parsed.warnings.length ? ` — ${parsed.warnings.join(' ')}` : '.');
   return renderBudget(c, { saved: note, which: "equipment" });
+});
+
+/**
+ * POST /finance/budget/overhead-pool — add a pool.
+ *
+ * Unlike the two rate profiles this is a plain insert: overhead_pool has an
+ * as_of but no effective_to, and listOverheadPools sums every row it finds. The
+ * validation therefore has to see the pools that already exist — both to refuse
+ * a duplicate that would double-count, and to check the 10% revenue rule, which
+ * is a property of the whole set rather than of this row.
+ */
+budgetRouter.post("/overhead-pool", async (c) => {
+  const { tenant_id, role } = readPageArgs(c);
+  if (!canSee(role, "can_see_budget_rates")) {
+    return renderBudget(c, { errors: ["Cost rates are owner-only."], which: "overhead" }, 403);
+  }
+
+  const ovValues = (await c.req.parseBody()) as OverheadFormFields;
+  const existing = await listOverheadPools(c.env.DB, tenant_id);
+  const parsed = parseOverheadForm(tenant_id, ovValues, existing);
+  if (!parsed.ok) return renderBudget(c, { errors: parsed.errors, ovValues, which: "overhead" }, 400);
+
+  await insertOverheadPool(c.env.DB, parsed.row);
+
+  const note = `${parsed.row.division} — ${parsed.row.pool_type} added. ` +
+    `Total overhead is now $${(parsed.totals.total_cents / 100).toLocaleString()}, ` +
+    `${(parsed.totals.revenue_share * 100).toFixed(1)}% of it revenue-driven` +
+    (parsed.warnings.length ? `. ${parsed.warnings.join(' ')}` : '.');
+  return renderBudget(c, { saved: note, which: "overhead" });
 });
 
 async function renderBudget(c: any, form: FormState | undefined, status = 200) {
@@ -439,7 +470,11 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
           ) : (
             <table class="fin-table">
               <thead>
-                <tr><th>Division</th><th>Pool</th><th>Divided by</th></tr>
+                <tr>
+                  <th>{vocab === "simple" ? "Part of the business" : "Division"}</th>
+                  <th>{vocab === "simple" ? "Cost" : "Pool"}</th>
+                  <th>Divided by</th>
+                </tr>
               </thead>
               <tbody>
                 {pools.map((p) => (
@@ -454,6 +489,59 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
               </tbody>
             </table>
           )}
+        </div>
+        <div data-testid="overhead-form">
+          {form?.saved && form.which === "overhead" ? (
+            <div class="fin-note" data-testid="ov-saved">Saved. {form.saved}</div>
+          ) : null}
+          {form?.errors?.length && form.which === "overhead" ? (
+            <div class="fin-note fin-note-bad" data-testid="ov-errors">
+              <strong>Not saved.</strong>
+              <ul>{form.errors.map((e) => <li>{e}</li>)}</ul>
+            </div>
+          ) : null}
+
+          <form method="post" action="/finance/budget/overhead-pool" class="fin-form">
+            <div class="fin-form-row">
+              <label>
+                {vocab === "simple" ? "Part of the business" : "Division"}
+                <input name="division" data-testid="o-division" value={form?.ovValues?.division || ""} />
+              </label>
+              <label>
+                {vocab === "simple" ? "What the cost is" : "Pool type"}
+                <input name="pool_type" data-testid="o-pool-type" value={form?.ovValues?.pool_type || ""} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Cost a year ($)" : "Annual cost ($)"}
+                <input name="annual_cost" data-testid="o-cost" value={form?.ovValues?.annual_cost || ""} />
+              </label>
+              <label>
+                {vocab === "simple" ? "Split it by" : "Driver"}
+                <select name="driver" data-testid="o-driver">
+                  {OVERHEAD_DRIVERS.map((d) => (
+                    <option value={d} selected={(form?.ovValues?.driver || "sellable_hours") === d}>
+                      {d === "sellable_hours"
+                        ? (vocab === "simple" ? "hours you can bill" : "sellable_hours")
+                        : (vocab === "simple" ? "money brought in" : "revenue")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {vocab === "simple" ? "For the year starting" : "As of"}
+                <input name="as_of" type="date" data-testid="o-as-of"
+                       value={form?.ovValues?.as_of || new Date().toISOString().slice(0, 10)} />
+              </label>
+            </div>
+            <button type="submit" class="fin-btn" data-testid="o-submit">
+              {pools.length ? "Add another pool" : "Create the first pool"}
+            </button>
+            <p class="fin-hint">
+              Splitting by money brought in makes a busy part of the business carry a quiet
+              one's costs, so no more than a tenth of the total may be split that way. Past
+              that, none of these costs can be spread onto jobs at all.
+            </p>
+          </form>
         </div>
         <Why
           what="The rule each shared cost is split by before it lands on a job."
