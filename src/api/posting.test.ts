@@ -4,7 +4,7 @@ import { env } from "cloudflare:test";
 import { postTimeEntryToLedger } from "./posting";
 import {
   insertLaborRateProfile, upsertTenantFinancePolicy,
-  insertOverheadAllocation, getTimeEntry, getJobCostLedgerForJob,
+  upsertOverheadAllocation, getTimeEntry, getJobCostLedgerForJob,
 } from "../db/repos";
 
 const db = () => env.DB;
@@ -37,7 +37,7 @@ async function seedRateAndAllocation(scopeId: string, jobId: string) {
     support_equipment_annual_cents: 240000, require_rate_approval: 0,
     effective_from: "2026-01-01", effective_to: null,
   });
-  await insertOverheadAllocation(db(), {
+  await upsertOverheadAllocation(db(), {
     company_id: TENANT, division: "maintenance", as_of: "2026-01-01",
     sellable_hours: 8110, allocated_overhead_cents: 19640000,
     weighted_labor_rate_cents: 3840, overhead_rate: 242170,
