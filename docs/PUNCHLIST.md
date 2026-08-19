@@ -71,8 +71,22 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    business logic. Now a config edit (via `/finance/config` or the JSON
    files directly), not a code-writing task — see
    `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md`.
-2. **`CRON_SECRET` is set on BOTH sides and they do not match — the finance
-   rollup has failed every night since at least 2026-08-16.**
+2. ~~**`CRON_SECRET` is set on BOTH sides and they do not match**~~ — **FIXED
+   2026-08-19 22:45 UTC.** Tyler reset both sides to one value; a
+   `workflow_dispatch` dry run returned **200**. Seven consecutive 401s
+   before it, one of them dispatched on demand rather than on schedule, so
+   it was never a scheduling artefact.
+
+   OUTSTANDING: six nights of `recovery_snapshot` rows were never written
+   (2026-08-14 to 2026-08-19). The rollup takes `?as_of=YYYY-MM-DD` and is
+   idempotent per date, so a backfill is six dispatches. Whether that matters
+   depends on `confidence_days`, which needs trailing snapshot variance and
+   has none yet either way.
+
+   This entry has now been wrong in BOTH directions inside 24 hours — first
+   claiming the secret was unset when it was set-but-mismatched, then
+   claiming a mismatch after it was fixed. That is the argument for the
+   dated audit header above rather than for trusting any line in this file.
 
    The original entry said the secret "isn't set yet". That was wrong, and
    wrong in a way that hid something worse: it is set, the cron IS firing
