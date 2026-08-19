@@ -10,6 +10,14 @@ import type { TenantRollupInput } from "./rollup";
  * underlying ambiguity in wave 0). Safe to run, worth reviewing before
  * trusting the numbers for anything customer-facing.
  *
+ * EVERY query here is bounded at BOTH ends by asOf. Three of them were not:
+ * recovered_to_date and absorbed_this_week had a lower bound only, and the
+ * blended rate took MAX(as_of) with no bound at all. That is invisible on the
+ * nightly run, where asOf is today and there is no future to leak — and wrong
+ * the moment anyone backfills, because a snapshot labelled 2026-08-14 would
+ * carry ledger lines posted on the 19th and an allocation set after the fact.
+ * A backfilled row that looks authoritative and is not is worse than no row.
+ *
  * time_entries has no work_date/hours_hundredths columns of its own (see
  * migrations/0057_finance_merge.sql) — both are derived inline here, same
  * as everywhere else that reads a Finance-side view of a time entry.
@@ -27,8 +35,9 @@ export async function gatherTenantRollupInputs(
   // calendar year. Inferred, not confirmed.
   const recoveredRow = await db.prepare(`
     SELECT COALESCE(SUM(amount_cents), 0) as total FROM job_cost_ledger
-    WHERE company_id = ? AND line_type = 'overhead' AND posted_at >= ?
-  `).bind(companyId, `${asOf.slice(0, 4)}-01-01`).first<{ total: number }>();
+    WHERE company_id = ? AND line_type = 'overhead'
+      AND substr(posted_at, 1, 10) >= ? AND substr(posted_at, 1, 10) <= ?
+  `).bind(companyId, `${asOf.slice(0, 4)}-01-01`, asOf).first<{ total: number }>();
 
   // Hours logged in the trailing 7 days, posted entries only.
   const weekAgo = new Date(new Date(`${asOf}T00:00:00Z`).getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
@@ -38,11 +47,13 @@ export async function gatherTenantRollupInputs(
     WHERE company_id = ? AND substr(clock_in, 1, 10) >= ? AND substr(clock_in, 1, 10) <= ? AND posted_at IS NOT NULL
   `).bind(companyId, weekAgo, asOf).first<{ total: number }>();
 
-  // Blended rate from the company's most recent overhead_allocation rows
-  // (one per division, same as_of).
+  // Blended rate from the allocation rows in effect ON asOf — the most recent
+  // set at or before it, not the most recent set that exists. Unbounded MAX()
+  // meant a backfilled date got today's allocation, so a snapshot labelled
+  // 2026-08-14 would carry a rate that was not set until days later.
   const latestAsOfRow = await db.prepare(
-    `SELECT MAX(as_of) as as_of FROM overhead_allocation WHERE company_id = ?`,
-  ).bind(companyId).first<{ as_of: string | null }>();
+    `SELECT MAX(as_of) as as_of FROM overhead_allocation WHERE company_id = ? AND as_of <= ?`,
+  ).bind(companyId, asOf).first<{ as_of: string | null }>();
   let blendedRate = 0;
   if (latestAsOfRow?.as_of) {
     const totals = await db.prepare(`
@@ -65,8 +76,9 @@ export async function gatherTenantRollupInputs(
     : { total: 0 };
   const absorbedThisWeekRow = await db.prepare(`
     SELECT COALESCE(SUM(amount_cents), 0) as total FROM job_cost_ledger
-    WHERE company_id = ? AND line_type = 'overhead' AND posted_at >= ?
-  `).bind(companyId, weekAgo).first<{ total: number }>();
+    WHERE company_id = ? AND line_type = 'overhead'
+      AND substr(posted_at, 1, 10) >= ? AND substr(posted_at, 1, 10) <= ?
+  `).bind(companyId, weekAgo, asOf).first<{ total: number }>();
 
   return {
     company_id: companyId,

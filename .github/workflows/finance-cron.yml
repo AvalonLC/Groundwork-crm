@@ -31,6 +31,10 @@ on:
         description: 'Compute and return results without writing recovery_snapshot (safe to run anytime)'
         type: boolean
         default: false
+      as_of:
+        description: 'Roll up for a specific date (YYYY-MM-DD) instead of today. For backfilling missed nights — the write is an upsert keyed on (company_id, as_of), so re-running a date is safe.'
+        type: string
+        default: ''
 
 jobs:
   trigger-rollup:
@@ -40,9 +44,22 @@ jobs:
       - name: Call Finance OS rollup endpoint
         run: |
           url="https://groundwork-crm.com/internal/cron/rollup"
+          sep="?"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            url="${url}?dry_run=true"
+            url="${url}${sep}dry_run=true"; sep="&"
             echo "Dry run — no data will be written."
+          fi
+          # Backfill support. Every query in gather-inputs.ts is bounded at both
+          # ends by as_of, so a past date produces that date's numbers rather
+          # than today's under an old label — which is what it did before
+          # 2026-08-19 and the reason backfilling was not safe until now.
+          if [ -n "${{ inputs.as_of }}" ]; then
+            case "${{ inputs.as_of }}" in
+              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+              *) echo "::error::as_of must be YYYY-MM-DD"; exit 1 ;;
+            esac
+            url="${url}${sep}as_of=${{ inputs.as_of }}"
+            echo "Rolling up for ${{ inputs.as_of }} rather than today."
           fi
           http_status=$(curl -s -o /tmp/rollup_response.json -w "%{http_code}" -X POST \
             --retry 2 --retry-delay 5 --max-time 60 \
