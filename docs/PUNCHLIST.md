@@ -67,6 +67,12 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
   headcount the way `rep` was.
 
 ## Real gaps — not built, and why
+> **Audited 2026-08-19.** Items 3, 4, 8 and 11 and the derived-specs list
+> were re-checked against the running system rather than taken on trust,
+> after item 2 turned out to be both wrong and concealing a live failure.
+> Items 8 and 11 were re-confirmed as STILL BROKEN; 3 and derived-4 were
+> stale. Items 1, 5 and 6 were confirmed still accurate.
+
 1. **Classifier/ingest rules are still placeholders**, not confirmed
    business logic. Now a config edit (via `/finance/config` or the JSON
    files directly), not a code-writing task — see
@@ -103,7 +109,20 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    (`?dry_run=true`) for verifying without writing. Full setup steps:
    `docs/RUNBOOK-finance-cron.md`. The rejected companion-Worker option is
    kept as a documented, unused alternative in `workers/finance-cron/`.
-3. **Cross-database joins are stubbed at the boundary, not built.**
+3. **Cross-database joins are stubbed at the boundary, not built.** — the
+   WORK is still outstanding, but the REASON given below is obsolete.
+
+   Re-checked 2026-08-19: there is no second database. `wrangler.jsonc`
+   declares one D1 binding (`DB`), and `labor_rate_profile`, `overhead_pool`,
+   `invoices` and `work_orders` are all in it — migrations/0057_finance_merge.sql
+   merged them on 2026-08-09, the day after this entry was written.
+
+   So "Finance OS never got visibility into that schema" is no longer true:
+   a join between a finance table and a CRM table is now an ordinary join in
+   one database. `E2-unbilled` and job-costing's "hours vs estimate" still
+   take pre-joined data as a plain input, which is the real remaining work —
+   but it is no longer blocked on anything. Original note follows.
+
    `E2-unbilled` and job-costing's "hours vs estimate" both need data that
    lives in the CRM's own `DB` (invoices/receivables, job estimates) —
    Finance OS never got visibility into that schema, so both take
@@ -239,8 +258,13 @@ section. Highest-risk guesses, ranked:
    — only `crew`'s restrictions are in CLAUDE.md (`docs/spec/ROLES.md`).
 3. **The entire simple-mode vocabulary map** (`docs/dictionary.json`) —
    first draft, no copy/voice reference existed anywhere.
-4. **The 6-step Budget & Rates wizard** — built as a plain review page
-   instead of guessing at wizard steps with zero evidence.
+4. ~~**The 6-step Budget & Rates wizard** — built as a plain review page
+   instead of guessing at wizard steps with zero evidence.~~ — **STALE.**
+   `/finance/budget` carries three real entry forms as of #66/#67/#68
+   (labor, equipment, overhead pools), each writing through the immutable
+   recalibrate path. Still not a 6-step wizard, and still no evidence that
+   it should be — but "a plain review page" stopped being accurate on
+   2026-08-18.
 5. **Per-division recovery dates don't exist** — the engine is
    tenant-level only; the UI says so rather than fabricating a breakdown.
 
