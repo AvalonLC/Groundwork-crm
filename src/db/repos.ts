@@ -332,6 +332,38 @@ export async function insertOverheadPool(
           row.driver, row.as_of).run();
 }
 
+/**
+ * Write one division's allocation for a date, replacing any prior run.
+ *
+ * Upsert rather than insert because the allocation run produces a full set per
+ * as_of, and re-running a date must correct it rather than add a second set —
+ * gather-inputs sums across the rows for a date, so duplicates double the
+ * overhead feeding the rollup. The constraint is migration 0077.
+ */
+export async function upsertOverheadAllocation(
+  db: D1Database, row: Omit<OverheadAllocation, "id" | "created_at">,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO overhead_allocation
+      (company_id, division, as_of, sellable_hours, allocated_overhead_cents,
+       weighted_labor_rate_cents, overhead_rate, absorbed_cost_cents, target_margin,
+       required_bill_rate_cents)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(company_id, division, as_of) DO UPDATE SET
+      sellable_hours = excluded.sellable_hours,
+      allocated_overhead_cents = excluded.allocated_overhead_cents,
+      weighted_labor_rate_cents = excluded.weighted_labor_rate_cents,
+      overhead_rate = excluded.overhead_rate,
+      absorbed_cost_cents = excluded.absorbed_cost_cents,
+      target_margin = excluded.target_margin,
+      required_bill_rate_cents = excluded.required_bill_rate_cents
+  `).bind(
+    row.company_id, row.division, row.as_of, row.sellable_hours,
+    row.allocated_overhead_cents, row.weighted_labor_rate_cents, row.overhead_rate,
+    row.absorbed_cost_cents, row.target_margin, row.required_bill_rate_cents,
+  ).run();
+}
+
 export async function insertOverheadAllocation(
   db: D1Database, row: Omit<OverheadAllocation, "id" | "created_at">,
 ): Promise<void> {

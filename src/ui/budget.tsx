@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools,
   getTenantFinancePolicy, recalibrateLaborRate, recalibrateEquipmentRate,
-  insertOverheadPool } from "../db/repos";
+  insertOverheadPool, upsertOverheadAllocation, listCurrentLaborRates as _lrp } from "../db/repos";
 import { parseRateForm, parseEquipmentForm, parseOverheadForm, SCOPES, OVERHEAD_DRIVERS,
   type RateFormFields, type EquipmentFormFields, type OverheadFormFields } from "../api/rate_entry";
+import { parseDivisionPlan, buildAllocationRows, weightedLaborRate,
+  type DivisionPlan, type MemberRate } from "../api/allocation_run";
 import { canSee } from "./roles";
+import { resolveLaborRate } from "../api/rates";
 import { readPageArgs, Page, Term, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type BudgetBindings = { DB: D1Database };
@@ -23,7 +26,7 @@ export const budgetRouter = new Hono<{ Bindings: BudgetBindings; Variables: Fina
 type FormState = {
   errors?: string[]; saved?: string; values?: RateFormFields;
   /** Which form the message belongs to, so an error lands under the right one. */
-  which?: "labor" | "equipment" | "overhead";
+  which?: "labor" | "equipment" | "overhead" | "allocation";
   eqValues?: EquipmentFormFields;
   ovValues?: OverheadFormFields;
 };
@@ -116,6 +119,109 @@ budgetRouter.post("/overhead-pool", async (c) => {
   return renderBudget(c, { saved: note, which: "overhead" });
 });
 
+/**
+ * POST /finance/budget/run-allocation — turn pools into per-division allocations.
+ *
+ * The step that never existed. overhead_allocation had no writer anywhere in
+ * src/, so the rollup and the recovery page both read a table nothing filled.
+ *
+ * Two of the three inputs per division are business facts nobody can derive —
+ * how many hours the division expects to bill, and what margin it prices toward
+ * — so they come from the form. The third, the weighted labor rate, is derived
+ * from the rate profiles entered in #66, resolved through the crews assigned to
+ * that division.
+ */
+budgetRouter.post("/run-allocation", async (c) => {
+  const { tenant_id, role } = readPageArgs(c);
+  if (!canSee(role, "can_see_budget_rates")) {
+    return renderBudget(c, { errors: ["Cost rates are owner-only."], which: "allocation" }, 403);
+  }
+
+  const body = (await c.req.parseBody()) as Record<string, string>;
+  const asOf = String(body.as_of || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    return renderBudget(c, { errors: ["As-of date must be YYYY-MM-DD."], which: "allocation" }, 400);
+  }
+
+  const db = c.env.DB;
+  const pools = await listOverheadPools(db, tenant_id);
+  if (!pools.length) {
+    return renderBudget(c, {
+      errors: ["There are no overhead pools yet — add at least one before running an allocation."],
+      which: "allocation",
+    }, 400);
+  }
+
+  // One plan per division that has pools. A division with pools and no plan is
+  // an error rather than a skip: its overhead would go unallocated, which is the
+  // condition allocateOverheadPools throws on.
+  const divisions = [...new Set(pools.map((p) => p.division))];
+  const plans: DivisionPlan[] = [];
+  const errors: string[] = [];
+  for (const d of divisions) {
+    const parsed = parseDivisionPlan({
+      division: d,
+      sellable_hours: body[`hours_${d}`],
+      target_margin_pct: body[`margin_${d}`],
+    });
+    if (parsed.ok) plans.push(parsed.value);
+    else errors.push(...parsed.errors.map((e) => `${d}: ${e}`));
+  }
+  if (errors.length) return renderBudget(c, { errors, which: "allocation" }, 400);
+
+  // Weighted labor rate per division, from the crews assigned to it. Resolved
+  // through the same labor_rate_profile rows /internal/rates/resolve reads, so
+  // the allocation and job costing cannot disagree about what an hour costs.
+  const memberRows = await db.prepare(`
+    SELECT cr.division AS division, cm.rep_id AS rep_id,
+           lrp.wage_cents, lrp.paid_hours, lrp.pto_hours, lrp.shop_hours, lrp.idle_hours
+      FROM crews cr
+      JOIN crew_members cm ON cm.crew_id = cr.id AND cm.company_id = cr.company_id
+      LEFT JOIN labor_rate_profile lrp
+             ON lrp.scope = 'employee' AND lrp.scope_id = cm.rep_id
+            AND lrp.company_id = cr.company_id AND lrp.effective_to IS NULL
+     WHERE cr.company_id = ? AND cr.division IS NOT NULL AND cr.division != ''
+  `).bind(tenant_id).all<any>();
+
+  const byDivision = new Map<string, MemberRate[]>();
+  for (const row of memberRows.results || []) {
+    const list = byDivision.get(row.division) ?? [];
+    // resolveLaborRate returns ten-thousandths; the burdened rate is derived the
+    // same way here rather than re-implemented — see src/api/rates.ts.
+    const billable = Number(row.paid_hours || 0) - Number(row.pto_hours || 0)
+      - Number(row.shop_hours || 0) - Number(row.idle_hours || 0);
+    list.push({
+      rep_id: row.rep_id,
+      resolved_rate: row.wage_cents == null ? null : await resolveBurdened(db, tenant_id, row.rep_id, asOf),
+      billable_hours: billable > 0 ? billable : null,
+    });
+    byDivision.set(row.division, list);
+  }
+
+  let built;
+  try {
+    built = buildAllocationRows(tenant_id, asOf, pools as any, plans,
+      (d) => weightedLaborRate(byDivision.get(d) ?? []));
+  } catch (e: any) {
+    // allocateOverheadPools throws on a forbidden pool set. Surfaced, not caught
+    // and papered over — a wrong allocation is worse than a failed one.
+    return renderBudget(c, { errors: [String(e?.message || e)], which: "allocation" }, 400);
+  }
+
+  for (const row of built.rows) await upsertOverheadAllocation(db, row as any);
+
+  const note = `Allocated ${built.rows.length} division${built.rows.length === 1 ? "" : "s"} as of ${asOf}. ` +
+    built.rows.map((r) => `${r.division} needs $${(r.required_bill_rate_cents / 100).toFixed(2)}/hr`).join("; ") +
+    (built.warnings.length ? `. ${built.warnings.join(" ")}` : ".");
+  return renderBudget(c, { saved: note, which: "allocation" });
+});
+
+/** Burdened rate for one employee on a date, through the canonical resolver. */
+async function resolveBurdened(db: any, tenantId: string, repId: string, asOf: string): Promise<number | null> {
+  const r = await resolveLaborRate(db, { company_id: tenantId, employee_id: repId, work_date: asOf });
+  return r?.resolved_rate ?? null;
+}
+
 async function renderBudget(c: any, form: FormState | undefined, status = 200) {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) {
@@ -142,6 +248,13 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
     getTenantFinancePolicy(db, tenant_id),
   ]);
   const equipmentEngineActive = Number(policy?.equipment_engine_active ?? 0) === 1;
+  // Only divisions that actually have pools can be allocated — a division with
+  // none would allocate zero overhead and produce a price floor made of labor.
+  const poolDivisions = [...new Set(pools.map((p) => p.division))].sort();
+  const allocations = (await db.prepare(
+    `SELECT division, as_of, required_bill_rate_cents FROM overhead_allocation
+      WHERE company_id = ? ORDER BY as_of DESC, division LIMIT 20`,
+  ).bind(tenant_id).all()).results || [];
 
   return c.html(
     <Page
@@ -542,6 +655,54 @@ async function renderBudget(c: any, form: FormState | undefined, status = 200) {
               that, none of these costs can be spread onto jobs at all.
             </p>
           </form>
+        </div>
+        <div data-testid="allocation-form">
+          {form?.saved && form.which === "allocation" ? (
+            <div class="fin-note" data-testid="alloc-saved">Saved. {form.saved}</div>
+          ) : null}
+          {form?.errors?.length && form.which === "allocation" ? (
+            <div class="fin-note fin-note-bad" data-testid="alloc-errors">
+              <strong>Not run.</strong>
+              <ul>{form.errors.map((e) => <li>{e}</li>)}</ul>
+            </div>
+          ) : null}
+
+          {poolDivisions.length === 0 ? (
+            <p class="fin-hint">Add an overhead pool above, then this becomes available.</p>
+          ) : (
+            <form method="post" action="/finance/budget/run-allocation" class="fin-form">
+              <p class="fin-hint">
+                {vocab === "simple"
+                  ? "This turns the shared costs above into a price floor for each part of the business. Two numbers per division that only you know — how many hours you expect to bill, and the margin you want. What an hour of crew time costs is taken from the rates already entered."
+                  : "Runs allocateOverheadPools and computeDivisionRate over the pools above. sellable_hours and target_margin are yours; weighted_labor_rate is derived from the labor rate profiles via each division's crews."}
+              </p>
+              <div class="fin-form-row">
+                <label>
+                  {vocab === "simple" ? "For the year starting" : "As of"}
+                  <input name="as_of" type="date" data-testid="a-as-of"
+                         value={new Date().toISOString().slice(0, 10)} />
+                </label>
+              </div>
+              {poolDivisions.map((d) => (
+                <div class="fin-form-row">
+                  <label>
+                    {vocab === "simple" ? `${d} — hours you can bill` : `${d} — sellable hours`}
+                    <input name={`hours_${d}`} data-testid={`a-hours-${d}`} />
+                  </label>
+                  <label>
+                    {vocab === "simple" ? `${d} — margin you want (%)` : `${d} — target margin (%)`}
+                    <input name={`margin_${d}`} data-testid={`a-margin-${d}`} />
+                  </label>
+                </div>
+              ))}
+              <button type="submit" class="fin-btn" data-testid="a-submit">
+                {allocations.length ? "Re-run the allocation" : "Run the allocation"}
+              </button>
+              <p class="fin-hint">
+                Re-running the same date replaces that date's result rather than adding to it.
+              </p>
+            </form>
+          )}
         </div>
         <Why
           what="The rule each shared cost is split by before it lands on a job."
