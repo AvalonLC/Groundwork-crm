@@ -71,7 +71,32 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    business logic. Now a config edit (via `/finance/config` or the JSON
    files directly), not a code-writing task — see
    `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md`.
-2. **`CRON_SECRET` isn't set yet.** Scheduling is decided (GitHub Actions,
+2. **`CRON_SECRET` is set on BOTH sides and they do not match — the finance
+   rollup has failed every night since at least 2026-08-16.**
+
+   The original entry said the secret "isn't set yet". That was wrong, and
+   wrong in a way that hid something worse: it is set, the cron IS firing
+   daily at 07:00 UTC, and every run returns 401.
+
+   Evidence (2026-08-19):
+   - `GET /internal/cron/rollup/status` on production -> `{"cron_secret_configured":true}`
+   - Cloudflare Pages -> Production has `CRON_SECRET` as an encrypted secret
+   - `.github/workflows/finance-cron.yml` sends `secrets.CRON_SECRET`
+   - four consecutive runs: 401 `{"error":"unauthorized"}`
+
+   The guard in `src/api/cron-trigger.ts` returns 503 when no secret is
+   configured and 401 only on a mismatch, so 401 proves both sides hold a
+   value and the values differ.
+
+   FIX: generate one value and set it in both places, then redeploy Pages
+   (Workers read env at deploy time) and re-run the workflow.
+
+   Worth recording why this went unnoticed: the entry said "not set yet",
+   so nobody looked at the run history — a failing job and an unconfigured
+   one look identical from a punchlist. I repeated the stale line to Tyler
+   twice as fact before checking the config. Original note follows.
+
+   **`CRON_SECRET` isn't set yet.** Scheduling is decided (GitHub Actions,
    `.github/workflows/finance-cron.yml`) and everything is built and
    tested, including a pre-auth status check
    (`GET /internal/cron/rollup/status`) and a dry-run mode
