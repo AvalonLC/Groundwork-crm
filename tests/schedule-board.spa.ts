@@ -555,4 +555,49 @@ test.describe('schedule board', () => {
       expect(await readEquipment(page)).toHaveProperty('open', true);
     }
   });
+
+  test('RSP-03 a busy day stays inside its own lane, and every card stays clickable', async ({ page }) => {
+    // .sb-workstation .sb-lane-cell was overflow:visible so .sb-card-hover could
+    // escape the cell. The cards escaped with it: six jobs on one crew on one
+    // day — a normal Monday — put 919px of cards in a 124px cell, spilling 563px
+    // into the rows beneath. Lane cells are siblings, so the later ones paint on
+    // top, and four of the six cards could not be clicked at all. A card you
+    // cannot click is a job you cannot open, so this is correctness, not polish.
+    //
+    // Asserted by REACHABILITY, not by measuring boxes or sampling for strays.
+    // Both of those were tried and neither says anything:
+    //   - getBoundingClientRect does not know about clipping, so a properly
+    //     contained card still reports a rect far outside its cell.
+    //   - hit-testing the lane below finds nothing either way, because lane
+    //     cells are siblings and the later one paints ON TOP of the card that
+    //     spilled into it. The spilled card is behind, not in front.
+    // Which is the whole point: the card was not visibly misplaced, it was
+    // buried. "Can every card take a click" is the one question that separates
+    // the broken state from the fixed one, and it is also the thing a scheduler
+    // actually needs.
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      ids.push(await makeJob(page.request, { client_name: `Busy ${i}`, crew_id: ctx.crewA, scheduled_date: MONDAY }));
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openBoard(page);
+
+    const rendered = await page.evaluate(
+      (list) => list.filter((id) => (globalThis as any).document.querySelector(`.sb-job-card[onclick*="${id}"]`)).length,
+      ids,
+    );
+    expect(rendered, 'all six jobs should be on the board').toBe(ids.length);
+
+    // Scroll each one up inside its own lane and confirm it can take a click.
+    // Pre-fix this fails on the cards that spilled out of the cell, because
+    // scrolling the lane cannot reach a card the lane no longer contains.
+    // A trial click runs Playwright's full actionability check — including the
+    // hit test that a buried card fails — and then does not fire the handler,
+    // so the rail stays shut and every card is measured against the same board.
+    for (const id of ids) {
+      const card = page.locator(`.sb-job-card[onclick*="${id}"]`).first();
+      await card.scrollIntoViewIfNeeded({ timeout: 5_000 });
+      await card.click({ timeout: 5_000, trial: true });
+    }
+  });
 });

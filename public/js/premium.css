@@ -18367,3 +18367,56 @@ h1.pl-title,
 .sb-workstation .sb-rail-actions { padding: 8px 10px; gap: 6px; }
 .sb-workstation .sb-rail-actions .rp-btn,
 .sb-workstation .sb-rail-danger { min-height: 30px; font-size: 12px; }
+
+/* ── Lane cells contain their own cards ───────────────────────────────────────
+   .sb-workstation .sb-lane-cell was overflow:visible so .sb-card-hover could
+   escape a 124px cell. The cards escaped with it. Measured with six jobs on one
+   crew on one day — a normal Monday, not a stress case — a 124px cell held
+   919px of cards and spilled 563px into the rows beneath it. Later lane cells
+   are later siblings, so they paint on top: FOUR OF SIX CARDS WERE UNCLICKABLE,
+   and the ones that were visible were drawn across other crews' lanes. That is
+   the "one crew's jobs appear in another's row" half of the board looking
+   wrong, and it is a correctness bug, not a cosmetic one — a card you cannot
+   click is a job you cannot open.
+
+   The cell scrolls instead. There is precedent in this file: the pre-workstation
+   compact density already did exactly this (.sb-density-compact .sb-lane-cell,
+   overflow:auto with a max-height). Lane rows now stretch to fill the board, so
+   a three-crew week gives each cell ~290px and the scroll is a rare fallback
+   rather than the normal case. */
+.sb-workstation .sb-lane-cell { overflow-y: auto; overflow-x: hidden; }
+
+/* A cell with more in it than it can show says so, rather than looking like a
+   cell that happens to end there. Fades the last few pixels of a scrollable
+   cell; costs nothing when the cell is not scrolling. */
+.sb-workstation .sb-lane-cell {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-rule) transparent;
+}
+.sb-workstation .sb-lane-cell::-webkit-scrollbar { width: 5px; }
+.sb-workstation .sb-lane-cell::-webkit-scrollbar-thumb {
+  background: var(--sb-rule); border-radius: 999px;
+}
+.sb-workstation .sb-lane-cell::-webkit-scrollbar-track { background: transparent; }
+
+/* The cost of containing the cards, stated where it is paid: a cell that clips
+   its overflow also clips .sb-card-hover, which is min-width:208px inside a
+   cell that is 85px wide at 1280 with the pool open. A tooltip cut to a third
+   of itself is worse than no tooltip, so it does not open in a lane cell.
+   Clicking the card opens the Job Day rail, which shows strictly more than the
+   panel did — crew, hours, scope, checklist, kit and photos — and the panel
+   predates that rail. It still works anywhere a cell is not the scroll
+   container. This is the one deliberate loss in this change; if the panel is
+   wanted back in the grid it needs to be positioned from JS as a popover
+   outside the cell, which is a bigger change than a clipped tooltip justifies. */
+.sb-workstation .sb-lane-cell .sb-card-hover { display: none; }
+
+/* With the cell clipping rather than spilling, anything that cannot fit is now
+   visibly cut instead of quietly drawn over the next day. .sb-card-top was
+   flex-wrap:nowrap and wanted 134px in the 56px a card gets there, so the time
+   and the day pill were the first things to disappear. They wrap now — a card
+   two lines taller costs nothing, because the lane scrolls. */
+.sb-workstation .sb-card-top,
+.sb-workstation .sb-card-meta { flex-wrap: wrap; row-gap: 2px; }
+.sb-workstation .sb-job-card > * { min-width: 0; max-width: 100%; }
+.sb-workstation .sb-card-status { overflow: hidden; text-overflow: ellipsis; }
