@@ -13485,6 +13485,130 @@ function _settingsGeneral(){
         </div>
       </section>` : '';
 
+  // ── Mobile: dark gwm-hero rebuild (approved Version E style, "build all
+  // and push" — mobile-revamp item 6). This page had ZERO dedicated mobile
+  // handling before. No dollar KPI fits here, so the hero anchors on
+  // identity/role + account-health glass tiles (Google / Signature status)
+  // instead — all real data, reusing the same umLoadUserGoogle() map and
+  // rep object the desktop cards below already read.
+  if (window.innerWidth <= 768) {
+    const _initials = (_cr && _cr.name) ? _cr.name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() : '\u00b7';
+    const _roleLabel = _ia ? '\u2605 Owner View' : _iom ? '\u2605 Office Manager View' : 'Rep View';
+
+    let _gcMap = {};
+    try { _gcMap = (typeof umLoadUserGoogle === 'function') ? umLoadUserGoogle() : (window.umLoadUserGoogle ? window.umLoadUserGoogle() : {}); } catch(_) {}
+    const _gc = _cr ? _gcMap[_cr.id] : null;
+    const _googleConnected = !!(_gc && _gc.token && Date.now() < (_gc.expiry || 0));
+    const _sigSet = !!(_cr && _cr.email_signature);
+
+    const _acctGlassRow = `<section class="gwm-glass-row">
+      <div class="gwm-glass-card">
+        <div class="gwm-glass-card-label">Google</div>
+        <div class="gwm-glass-card-val" style="${_googleConnected ? 'color:var(--gw-pine-300)' : ''}">${_googleConnected ? 'Connected' : 'Not Connected'}</div>
+        <div class="gwm-glass-card-sub">${_googleConnected ? escapeHtml(_gc.email || '') : 'Tap below to connect'}</div>
+      </div>
+      <div class="gwm-glass-card">
+        <div class="gwm-glass-card-label">Signature</div>
+        <div class="gwm-glass-card-val" style="${_sigSet ? 'color:var(--gw-pine-300)' : ''}">${_sigSet ? 'Set' : 'Not Set'}</div>
+        <div class="gwm-glass-card-sub">Used on estimates &amp; invoices</div>
+      </div>
+    </section>`;
+
+    // Simplified accordion for mobile zone-cards — same toggle mechanism the
+    // Command Center's gwm-zone-card already installs on window.
+    const _mZone = (id, accentBg, accentColor, icon, title, teaser, badge, bodyInnerHtml) => `
+      <div class="gwm-zone-card" id="${id}">
+        <div class="gwm-zone-head" onclick="window._gwmZoneToggle('${id}')">
+          <div class="gwm-zone-icon" style="background:${accentBg}">${gwIcon(icon,17,accentColor)}</div>
+          <div class="gwm-zone-info">
+            <div class="gwm-zone-title">${escapeHtml(title)}</div>
+            <div class="gwm-zone-teaser">${escapeHtml(teaser)}</div>
+          </div>
+          ${badge ? `<span class="gwm-zone-badge" style="background:${accentBg};color:${accentColor}">${escapeHtml(badge)}</span>` : ''}
+          <svg class="gwm-zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+        </div>
+        <div class="gwm-zone-body"><div class="gwm-zone-body-inner">${bodyInnerHtml}</div></div>
+      </div>`;
+
+    const _adminLinkCard = _ia ? `
+      <div class="gwm-section-label">Administration <span class="gwm-section-count">Owner Only</span></div>
+      <div class="gwm-stack-card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="show('userManagement')">
+        <div class="gwm-zone-icon" style="background:var(--gw-pine-100);flex-shrink:0">${gwIcon('settings',18,'var(--gw-pine-700)')}</div>
+        <div style="flex:1;min-width:0">
+          <div class="gwm-stack-card-title" style="margin-bottom:1px">User &amp; Access Management</div>
+          <div class="gwm-list-row-sub">Manage users, roles, permissions &amp; Google Workspace</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--gw-text-subtle)" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><path d="M6 3l5 5-5 5"/></svg>
+      </div>` : '';
+
+    const _commissionsHtml = _ia ? `
+      <div class="gwm-section-label">Commissions <span class="gwm-section-count">Owner Only</span></div>
+      ${_mZone('mz-comm-rules', 'var(--gw-pine-100)', 'var(--gw-pine-700)', 'revenue', 'Commission Rules', 'Rates, caps & thresholds', null, `<div id="comm-rules-panel">${renderCommissionRulesPanel()}</div>`)}
+      ${_mZone('mz-comm-sim', 'var(--gw-teal-100)', 'var(--gw-teal-700)', 'chart', 'Commission Simulator', 'Test payout scenarios', 'Interactive', `<div id="comm-sim-panel">${renderCommissionSimulator()}</div>`)}
+      ${_mZone('mz-comm-audit', 'var(--gw-sand-100)', 'var(--gw-sand-700)', 'notes', 'Commission Audit Trail', 'Change history', null, `<div id="comm-audit-panel">${renderCommissionAuditTrail()}</div>`)}
+      ${_mZone('mz-comm-admin', 'var(--gw-bark-100)', 'var(--gw-text-secondary)', 'settings', 'Commission Admin Tools', 'Migration, QA & flags', null, `
+        <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:6px">
+          <button onclick="window._runMigrationFromUI()" class="gw-admin-btn">${gwIcon('package',16)} Run Data Migration</button>
+          <button onclick="window._runQAFromUI()" class="gw-admin-btn">${gwIcon('search',16)} Run QA Self-Check</button>
+          <button onclick="window._showFlagPanel()" class="gw-admin-btn">${gwIcon('flag',16)} Feature Flags</button>
+        </div>
+        <div id="comm-tool-result" class="gw-tool-result"></div>`)}` : '';
+
+    const _dangerZoneHtml = _ia ? `
+      <div class="gwm-section-label" style="color:var(--gw-clay-700)">Danger Zone</div>
+      <div class="gwm-stack-card" style="background:var(--gw-clay-100);border-color:var(--gw-clay-200)">
+        <div class="gwm-stack-card-title" style="color:var(--gw-clay-700);margin-bottom:4px">Reset All Data</div>
+        <div style="font-size:12px;color:var(--gw-clay-700);opacity:.85;line-height:1.5;margin-bottom:10px">Clears all opportunities, notes, and checklist progress on this browser. <strong>Cannot be undone.</strong></div>
+        <button class="danger-btn" style="width:100%" onclick="confirmReset()">Reset All Local Data</button>
+      </div>` : '';
+
+    view.innerHTML = `
+    <div class="gwtd-shell">
+      <header class="gwm-hero">
+        <div class="gwm-hero-status">
+          <div class="gwm-status-left"><span class="gwm-status-dot"></span>Account &amp; system settings</div>
+        </div>
+        <div class="gwm-hero-top">
+          <span class="gwm-hero-brand">Groundwork \u00b7 Admin</span>
+          <div class="gwm-hero-avatar">${_initials}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:14px;position:relative;z-index:1">
+          <div class="gwm-hero-avatar" style="width:52px;height:52px;border-radius:16px;font-size:18px">${_initials}</div>
+          <div>
+            <div style="font-size:19px;font-weight:800">${escapeHtml((_cr && _cr.name) || 'Rep')}</div>
+            <div class="gwm-hero-pill" style="margin-top:3px">${_roleLabel}</div>
+          </div>
+        </div>
+        ${_acctGlassRow}
+      </header>
+
+      <div class="gwm-section-label">Your Account</div>
+      <div id="gw-settings-google-wrap"></div>
+      <div id="gw-settings-sig-wrap"></div>
+
+      <div class="gwm-section-label">Data &amp; Backup</div>
+      <div class="gwm-stack-card">${exportCard.replace('<section class="card">','').replace(/<\/section>$/,'').replace('<h2>','<div class="gwm-stack-card-title">').replace('</h2>','</div>')}</div>
+      <div class="gwm-stack-card" style="border-color:rgba(77,138,134,.35)">${cloudSyncCard.replace(/<section class="card" style="border:1px solid rgba\(77,138,134,\.35\)">/,'').replace(/<\/section>$/,'').replace('<h2>','<div class="gwm-stack-card-title">').replace('</h2>','</div>')}</div>
+      <div class="gwm-stack-card"${_ia ? '' : ' style="opacity:.65"'}>${importCard.replace(/<section class="card"[^>]*>/,'').replace(/<\/section>$/,'').replace('<h2>','<div class="gwm-stack-card-title">').replace('</h2>','</div>')}</div>
+
+      ${_adminLinkCard}
+      ${_commissionsHtml}
+      ${_dangerZoneHtml}
+      <div style="height:24px"></div>
+    </div>`;
+
+    window._gwmZoneToggle = window._gwmZoneToggle || function(id){
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('open');
+    };
+
+    const _googleWrapM = document.getElementById('gw-settings-google-wrap');
+    if (_googleWrapM && typeof window.umRenderMyGoogleConnection === 'function') {
+      window.umRenderMyGoogleConnection(_googleWrapM);
+    }
+    return;
+  }
+
   view.innerHTML = `
     <div class="gwp-shell gwp-shell--narrow" style="padding-top:20px">
     <header class="gwp-header" style="margin-bottom:16px">
@@ -19648,8 +19772,84 @@ window._sbSelectDay = function(iso) {
 };
 
 // ── Mobile schedule render ────────────────────────────────────────────────────
+/**
+ * Mobile KPI band — same numbers as _sbKpiBandHtml (Jobs Scheduled / Planned
+ * Labor / Remaining Capacity / Jobs Needing Crew), re-skinned as the approved
+ * dark gwm-hero + gwm-glass-row look instead of desktop's light gwp-kpi-row
+ * cards. Mobile showed none of this before — mobile-revamp item 5.
+ */
+function _sbMobileKpiHeroHtml(totalScheduled, totalUniqueJobs) {
+  const cap = window._sbState.capacity;
+  const crews = (cap?.crews) || [];
+  const plannedMin  = crews.reduce((n, c) => n + (c.week_planned_minutes || 0), 0);
+  const capacityMin = crews.reduce((n, c) => n + (c.week_capacity_minutes || 0), 0);
+  const remainingMin = Math.max(0, capacityMin - plannedMin);
+  const pct = capacityMin > 0 ? Math.round((plannedMin / capacityMin) * 100) : null;
+  const remainingPct = capacityMin > 0 ? Math.round((remainingMin / capacityMin) * 100) : null;
+  const needCrew = (window._sbState.pool || []).filter(w => w.pool_state === 'needs_crew').length;
+  const needSched = (window._sbState.pool || []).filter(w => w.pool_state === 'needs_scheduling').length;
+  const h = (m) => (m / 60).toFixed(1) + 'h';
+
+  return `<section class="gwm-hero">
+    <div class="gwm-hero-status">
+      <div class="gwm-status-left"><span class="gwm-status-dot"></span>${crews.length} crew${crews.length===1?'':'s'} active</div>
+      <div class="gwm-status-right">${totalScheduled} scheduled this week</div>
+    </div>
+    <div class="gwm-glass-row">
+      <div class="gwm-glass-card">
+        <div class="gwm-glass-card-label">Jobs Scheduled</div>
+        <div class="gwm-glass-card-val">${totalScheduled}</div>
+        <div class="gwm-glass-card-sub">${totalUniqueJobs} job${totalUniqueJobs===1?'':'s'} this week</div>
+      </div>
+      <div class="gwm-glass-card">
+        <div class="gwm-glass-card-label">Planned Labor</div>
+        <div class="gwm-glass-card-val">${h(plannedMin)}</div>
+        <div class="gwm-glass-card-sub">${pct == null ? 'no crew capacity set' : `${pct}% of capacity`}</div>
+      </div>
+      <div class="gwm-glass-card">
+        <div class="gwm-glass-card-label">Remaining Capacity</div>
+        <div class="gwm-glass-card-val">${capacityMin > 0 ? h(remainingMin) : '—'}</div>
+        <div class="gwm-glass-card-sub">${remainingPct == null ? 'add people to a crew' : `${remainingPct}% remaining`}</div>
+      </div>
+      <div class="gwm-glass-card gwm-span2">
+        <div>
+          <div class="gwm-glass-card-label">Jobs Needing Crew</div>
+          <div class="gwm-glass-card-val">${needCrew}</div>
+        </div>
+        <div class="gwm-glass-card-sub">${needSched ? `${needSched} not scheduled yet` : 'pool is clear'}</div>
+      </div>
+    </div>
+  </section>${_sbWarningsHtml()}`;
+}
+
+/**
+ * Simplified mobile Job Pool — desktop's sidebar (_sbPoolHtml) has search /
+ * sort / tabs / drag-and-drop; touch has no drag target, so the mobile
+ * equivalent (per the approved mockup) is a plain name + status-tag list,
+ * tap to open the visit. Surfaces unscheduled/uncrewed work that was
+ * previously invisible on mobile entirely.
+ */
+function _sbMobileJobPoolHtml() {
+  const pool = window._sbState.pool || [];
+  if (!pool.length) return '';
+  const stateLabel = { needs_scheduling: 'Needs Scheduling', needs_crew: 'Needs Crew', tentative: 'Tentative' };
+  const rows = pool.slice(0, 12).map(w => `
+    <div class="gwm-list-row" onclick="_sbOpenVisitModal('${escapeHtml(w.id)}')">
+      <div class="gwm-list-row-left">
+        <div class="gwm-list-row-name">${escapeHtml(w.client_name || w.title || 'Job')}</div>
+      </div>
+      <span class="gwm-list-row-tag">${stateLabel[w.pool_state] || ''}</span>
+    </div>`).join('');
+  return `
+    <div class="gwm-section-label">Job Pool <span class="gwm-section-count">${pool.length} waiting</span></div>
+    <div class="gwm-list-card">${rows}</div>`;
+}
+
 function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, totalInProgress, totalCompleted, headerLabel, _gridHtml, _crewFilterBar) {
   const today = gwToday();
+  const totalUniqueJobs = new Set(visibleWOs.map(w=>w.id)).size;
+  const _kpiHero = _sbMobileKpiHeroHtml(totalScheduled, totalUniqueJobs);
+  const _jobPool = _sbMobileJobPoolHtml();
   const _mT = (typeof window._t === 'function') ? window._t : (x => x);
   const wdNames = [_mT('Sun'),_mT('Mon'),_mT('Tue'),_mT('Wed'),_mT('Thu'),_mT('Fri'),_mT('Sat')];
   const wdShort = ['S','M','T','W','T','F','S'];
@@ -19704,6 +19904,19 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
         </div>
       </div>
 
+      ${_kpiHero}
+
+      <!-- Crew chips scroll -->
+      <div class="sbm-crew-strip" style="padding-top:14px">
+        ${allCrews.map(cr=>{
+          const active = !sb.hiddenCrews.has(cr.id);
+          return `<button class="sbm-crew-chip${active?' active':''}" style="--cc:${cr.color}" onclick="_sbToggleCrew('${cr.id}')">
+            <span class="sbm-crew-dot" style="background:${cr.color}"></span>${escapeHtml(cr.name)}
+          </button>`;
+        }).join('')}
+      </div>
+
+      <div class="gwm-section-label">Month View</div>
       <!-- Month grid -->
       <div class="sbm-month-grid">
         ${dowHeaders}
@@ -19722,15 +19935,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
         }
       </div>
 
-      <!-- Crew chips scroll -->
-      <div class="sbm-crew-strip">
-        ${allCrews.map(cr=>{
-          const active = !sb.hiddenCrews.has(cr.id);
-          return `<button class="sbm-crew-chip${active?' active':''}" style="--cc:${cr.color}" onclick="_sbToggleCrew('${cr.id}')">
-            <span class="sbm-crew-dot" style="background:${cr.color}"></span>${escapeHtml(cr.name)}
-          </button>`;
-        }).join('')}
-      </div>
+      ${_jobPool}
     </div>`;
     return;
   }
@@ -19832,6 +20037,8 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
       </div>
     </div>
 
+    ${_kpiHero}
+
     <!-- Stat summary strip -->
     ${statSummary}
 
@@ -19862,6 +20069,8 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     <div class="sbm-day-content">
       ${dayContent || `<div class="sbm-empty">No jobs scheduled for this day</div>`}
     </div>
+
+    ${_jobPool}
 
     <!-- Bottom padding for nav bar -->
     <div style="height:80px"></div>
