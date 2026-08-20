@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Command Center — Version E: Full Content (approved D style)</title>
+<style>
+  :root {
+    --gw-pine-900:#0D2B22; --gw-pine-800:#1A4740; --gw-pine-700:#1E5448; --gw-pine-600:#2D7A55;
+    --gw-pine-500:#3D9B6E; --gw-pine-400:#5BB585; --gw-pine-300:#8FD1AE; --gw-pine-200:#C4E8D6;
+    --gw-pine-100:#EAF4EE; --gw-pine-50:#F3FAF6;
+    --gw-sand-700:#7A5C10; --gw-sand-600:#8B6914; --gw-sand-400:#C49A40; --gw-sand-200:#E8D49C; --gw-sand-100:#FAF3DC;
+    --gw-clay-700:#7A2E20; --gw-clay-600:#8B3826; --gw-clay-400:#C4614A; --gw-clay-200:#EDCCC5; --gw-clay-100:#FAE8E4;
+    --gw-teal-700:#215E5A; --gw-teal-600:#2D7874; --gw-teal-500:#4D8A86; --gw-teal-200:#B4D4D2; --gw-teal-100:#EAF3F2;
+    --gw-bark-900:#1C1712; --gw-bark-700:#4A3F38; --gw-bark-500:#6E6059; --gw-bark-400:#8C7F78; --gw-bark-300:#B5ABA4; --gw-bark-200:#D8D2CC; --gw-bark-100:#EDEAE6; --gw-bark-50:#F7F5F2;
+    --gw-bg-subtle:#F7F5F0;
+    --gw-border:var(--gw-bark-100); --gw-border-strong:var(--gw-bark-200);
+    --gw-text-primary:var(--gw-bark-900); --gw-text-secondary:var(--gw-bark-700);
+    --gw-text-muted:var(--gw-bark-500); --gw-text-subtle:var(--gw-bark-400);
+    --gw-action:var(--gw-pine-600);
+    --gw-shadow-xs: 0 1px 2px rgba(28,23,18,.04), 0 1px 4px rgba(28,23,18,.04);
+    --gw-shadow-sm: 0 1px 4px rgba(28,23,18,.05), 0 4px 12px rgba(28,23,18,.06);
+    --gw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --gw-mono: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+    --gw-tap:44px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{font-family:var(--gw-font);background:var(--gw-bg-subtle);color:var(--gw-text-primary);-webkit-font-smoothing:antialiased}
+  body{padding-bottom:96px; max-width:480px; margin:0 auto;}
+
+  .device-note{
+    text-align:center; font-size:11px; color:var(--gw-text-subtle); padding:8px 0 2px;
+    font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  }
+  .version-tag{
+    position:sticky; top:0; z-index:50; text-align:center; font-size:11px; font-weight:800;
+    letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--gw-pine-700);
+    padding:6px 0;
+  }
+  .coverage-note{
+    margin:10px 14px 0; background:var(--gw-pine-50); border:1px solid var(--gw-pine-200);
+    border-radius:10px; padding:9px 12px; font-size:11.5px; line-height:1.5; color:var(--gw-pine-700);
+  }
+  .coverage-note strong{color:var(--gw-pine-900);}
+
+  /* ══════════════════════════════════════════════════════════
+     DARK HERO — approved from Version D
+     ══════════════════════════════════════════════════════════ */
+  .hero-dark{
+    position:relative; overflow:hidden;
+    background:linear-gradient(160deg, var(--gw-pine-900) 0%, var(--gw-pine-800) 55%, var(--gw-pine-700) 100%);
+    padding:14px 20px 22px;
+    color:#fff;
+  }
+  .hero-dark::before{
+    content:''; position:absolute; top:-60px; right:-60px; width:220px; height:220px;
+    background:radial-gradient(circle, rgba(255,255,255,.09), transparent 70%);
+    border-radius:50%;
+  }
+  .hero-dark::after{
+    content:''; position:absolute; bottom:-80px; left:-40px; width:200px; height:200px;
+    background:radial-gradient(circle, rgba(143,209,174,.10), transparent 70%);
+    border-radius:50%;
+  }
+  .hero-status{
+    display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1;
+    padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,.12); margin-bottom:14px;
+  }
+  .status-left{display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:rgba(255,255,255,.75);}
+  .status-dot{width:6px; height:6px; border-radius:50%; background:var(--gw-pine-300); animation:blink 1.6s infinite;}
+  @keyframes blink{0%,100%{opacity:1} 50%{opacity:.35}}
+  .status-right{font-size:10.5px; color:rgba(255,255,255,.45); font-family:var(--gw-mono);}
+
+  .hero-top{display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1;}
+  .hero-brand{font-size:10px; font-weight:800; letter-spacing:.13em; color:rgba(255,255,255,.5); text-transform:uppercase;}
+  .hero-avatar{
+    width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:800; color:#fff;
+  }
+  .hero-label{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gw-pine-300); margin-top:12px; position:relative; z-index:1;}
+  .hero-value{font-size:38px; font-weight:800; letter-spacing:-.01em; margin-top:2px; position:relative; z-index:1;}
+  .hero-delta{
+    display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700;
+    color:var(--gw-pine-300); margin-top:7px; position:relative; z-index:1;
+    background:rgba(143,209,174,.15); padding:3px 10px; border-radius:20px;
+  }
+  .spark{display:flex; align-items:flex-end; gap:4px; height:30px; margin-top:16px; position:relative; z-index:1;}
+  .spark-bar{flex:1; background:rgba(255,255,255,.16); border-radius:3px 3px 0 0;}
+  .spark-bar.hi{background:var(--gw-pine-300);}
+
+  /* Stat grid — 5 REAL pipeStrip metrics (Open Leads, Proposals Out,
+     Pipeline Value, Won MTD, Avg Close Likelihood). 2-up grid, 5th tile
+     spans full width. Lives inside the dark hero in normal flow. */
+  .glass-row{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px;
+    margin-top:18px; position:relative; z-index:1;
+  }
+  .glass-card{
+    background:rgba(255,255,255,.16);
+    border:1px solid rgba(255,255,255,.28);
+    border-radius:14px; padding:12px 13px;
+    color:#fff;
+  }
+  .glass-card.span2{grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between;}
+  .glass-card-label{font-size:10px; font-weight:700; color:rgba(255,255,255,.75); text-transform:uppercase; letter-spacing:.04em;}
+  .glass-card-val{font-size:19px; font-weight:800; margin-top:4px; font-family:var(--gw-mono); color:#fff;}
+  .glass-card-sub{font-size:10.5px; color:rgba(255,255,255,.65); margin-top:3px;}
+  .glass-card.span2 .glass-card-label{margin:0;}
+  .glass-card.span2 .glass-card-val{margin:0; font-size:17px;}
+
+  /* ══════════════════════════════════════════════════════════
+     PRIORITY QUEUE — "Needs Your Attention". Synthesizes the
+     real Needs Follow-Up widget + AR overdue + ops delays + new
+     unassigned leads into one ranked, actionable list up top.
+     ══════════════════════════════════════════════════════════ */
+  .section-label{
+    padding:22px 20px 8px; font-size:11.5px; font-weight:800; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--gw-text-primary); display:flex; align-items:center; justify-content:space-between;
+  }
+  .section-count{
+    background:var(--gw-clay-100); color:var(--gw-clay-700); font-size:10.5px; font-weight:800;
+    padding:1px 7px; border-radius:20px;
+  }
+  .section-link{font-size:12px; font-weight:700; color:var(--gw-pine-600); background:none; border:none; font-family:inherit;}
+  .pq-list{padding:0 14px;}
+  .pq-row{
+    display:flex; align-items:stretch; gap:0; margin-bottom:7px;
+    background:#fff; border:1px solid var(--gw-border); border-radius:10px; overflow:hidden;
+    box-shadow:var(--gw-shadow-xs);
+    transition:transform .1s;
+  }
+  .pq-row:active{transform:scale(.98);}
+  .pq-stripe{width:4px; flex-shrink:0;}
+  .pq-stripe.urgent{background:var(--gw-clay-600);}
+  .pq-stripe.warn{background:var(--gw-sand-600);}
+  .pq-stripe.info{background:var(--gw-teal-600);}
+  .pq-body{flex:1; display:flex; align-items:center; justify-content:space-between; padding:11px 13px; gap:10px; min-width:0;}
+  .pq-text{min-width:0;}
+  .pq-title{font-size:13px; font-weight:700; color:var(--gw-text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .pq-sub{font-size:11.5px; color:var(--gw-text-muted); margin-top:1px;}
+  .pq-right{text-align:right; flex-shrink:0;}
+  .pq-val{font-size:13.5px; font-weight:800; font-family:var(--gw-mono); color:var(--gw-text-primary);}
+  .pq-tag{font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; margin-top:2px;}
+  .pq-tag.urgent{color:var(--gw-clay-600);}
+  .pq-tag.warn{color:var(--gw-sand-600);}
+  .pq-tag.info{color:var(--gw-teal-600);}
+
+  /* Quick Actions — promoted to a top-level, always-visible row since
+     it's a high-frequency shortcut widget in real usage. Fixed 2x2 grid,
+     zero horizontal scroll. */
+  .pill-row{display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 20px 4px;}
+  .pill-btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    border-radius:999px; border:1px solid var(--gw-border-strong); background:#fff;
+    padding:10px 14px; font-weight:700; font-size:12.5px; color:var(--gw-text-primary);
+    box-shadow:var(--gw-shadow-xs); white-space:nowrap; font-family:inherit;
+    min-height:var(--gw-tap);
+  }
+  .pill-btn svg{color:var(--gw-pine-600); flex-shrink:0;}
+
+  /* ══════════════════════════════════════════════════════════
+     ZONE ACCORDIONS — the remaining ~14 widgets, grouped exactly
+     like the real app's 4 zones (My Work / Sales & Pipeline /
+     Financial / Operations). Collapsed by default with a content
+     teaser + widget count, so nothing is hidden permanently —
+     just tucked one tap away, matching the app's existing
+     accordion pattern (gw-mobile-accordion).
+     ══════════════════════════════════════════════════════════ */
+  .zones-head{padding:26px 20px 4px;}
+  .zones-head h2{font-size:15px; font-weight:800;}
+  .zones-head p{font-size:12px; color:var(--gw-text-muted); margin-top:2px;}
+
+  .zone-card{
+    margin:12px 14px 0; background:#fff; border:1px solid var(--gw-border-strong); border-radius:14px;
+    overflow:hidden; box-shadow:var(--gw-shadow-xs);
+  }
+  .zone-head{
+    display:flex; align-items:center; gap:12px; padding:14px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .zone-icon{
+    width:36px; height:36px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  }
+  .zone-info{flex:1; min-width:0;}
+  .zone-title{font-size:13.5px; font-weight:800; color:var(--gw-text-primary);}
+  .zone-teaser{font-size:11.5px; color:var(--gw-text-muted); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .zone-badge{font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0; white-space:nowrap;}
+  .zone-chevron{width:18px; height:18px; flex-shrink:0; color:var(--gw-text-subtle); transition:transform .2s;}
+  .zone-card.open .zone-chevron{transform:rotate(180deg);}
+  .zone-body{max-height:0; overflow:hidden; transition:max-height .3s ease;}
+  .zone-card.open .zone-body{max-height:2400px;}
+  .zone-body-inner{padding:2px 14px 16px; border-top:1px solid var(--gw-border);}
+
+  .zw-widget{padding:12px 0 10px; border-bottom:1px solid var(--gw-border);}
+  .zw-widget:last-child{border-bottom:none; padding-bottom:2px;}
+  .zw-widget-title{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--gw-text-subtle); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between;}
+  .zw-widget-link{font-size:11px; font-weight:700; color:var(--gw-pine-600); background:none; border:none; font-family:inherit;}
+
+  .zw-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; font-size:12.5px;}
+  .zw-row-left{display:flex; align-items:center; gap:8px; min-width:0;}
+  .zw-row-title{font-weight:700; color:var(--gw-text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .zw-row-sub{font-size:11px; color:var(--gw-text-muted);}
+  .zw-row-right{text-align:right; flex-shrink:0; font-family:var(--gw-mono); font-weight:700; font-size:12px;}
+
+  .zw-check{width:16px; height:16px; border-radius:5px; border:1.5px solid var(--gw-border-strong); flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .zw-check.done{background:var(--gw-pine-600); border-color:var(--gw-pine-600); color:#fff;}
+
+  .zw-mini-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:2px;}
+  .zw-mini-cell{background:var(--gw-bark-50); border-radius:10px; padding:8px 10px;}
+  .zw-mini-label{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--gw-text-subtle);}
+  .zw-mini-val{font-size:15px; font-weight:800; margin-top:2px; font-family:var(--gw-mono);}
+
+  .zw-bar-track{height:6px; background:var(--gw-bark-100); border-radius:3px; overflow:hidden; margin-top:5px;}
+  .zw-bar-fill{height:100%; border-radius:3px;}
+
+  .zw-spark{display:flex; align-items:flex-end; gap:3px; height:24px; margin:4px 0 8px;}
+  .zw-spark-bar{flex:1; background:var(--gw-pine-100); border-radius:2px 2px 0 0;}
+  .zw-spark-bar.hi{background:var(--gw-pine-500);}
+
+  .zw-stars{color:var(--gw-sand-600); font-size:12px; letter-spacing:1px;}
+
+  .zw-rank{
+    width:20px; height:20px; border-radius:50%; background:var(--gw-pine-100); color:var(--gw-pine-700);
+    font-size:10.5px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+
+  .zw-clock-card{
+    display:flex; align-items:center; justify-content:space-between; background:var(--gw-pine-50);
+    border:1px solid var(--gw-pine-200); border-radius:12px; padding:12px 14px; margin-top:2px;
+  }
+  .zw-clock-btn{
+    background:var(--gw-pine-600); color:#fff; border:none; border-radius:999px; padding:8px 16px;
+    font-weight:800; font-size:12px; font-family:inherit;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     CREW STRIP — kept visible (Operations preview), full table
+     also duplicated inside the Operations zone as "Crew Hours".
+     ══════════════════════════════════════════════════════════ */
+  .crew-table{margin:0 20px 4px; border:1px solid var(--gw-border-strong); border-radius:12px; overflow:hidden; box-shadow:var(--gw-shadow-xs);}
+  .crew-head{
+    display:grid; grid-template-columns:1.4fr .8fr .8fr; background:var(--gw-bark-50);
+    padding:8px 13px; font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--gw-text-subtle);
+    border-bottom:1px solid var(--gw-border-strong);
+  }
+  .crew-row{
+    display:grid; grid-template-columns:1.4fr .8fr .8fr; padding:10px 13px; align-items:center;
+    border-bottom:1px solid var(--gw-border); font-size:12.5px; background:#fff;
+  }
+  .crew-row:last-child{border-bottom:none;}
+  .crew-name{display:flex; align-items:center; gap:6px; font-weight:700;}
+  .crew-swatch{width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+  .crew-status{font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; text-align:center; width:fit-content;}
+
+  .cc-bottom-nav{
+    position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto;
+    background:var(--gw-pine-900);
+    display:flex; justify-content:space-around; align-items:center;
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    box-shadow:0 -4px 20px rgba(0,0,0,.2);
+  }
+  .cc-nav-btn{
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:rgba(255,255,255,.5); background:none; border:none; font-family:inherit;
+    font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:10px; min-width:44px;
+  }
+  .cc-nav-btn.active{color:#fff; background:rgba(255,255,255,.1);}
+</style>
+</head>
+<body>
+
+<div class="version-tag">Version E — Full Content, Approved D Style</div>
+<div class="device-note">Mockup only — 375px mobile width — not wired to real data</div>
+<div class="coverage-note">
+  <strong>All 20 real Command Center widgets accounted for below</strong> — 5 always shown up top (hero stats), 1 promoted to a top-level Priority Queue, 1 promoted to a top-level Quick Actions row, and the remaining 13 live inside the 4 zone sections (tap to expand) — nothing removed, just organized by priority.
+</div>
+
+<header class="hero-dark">
+  <div class="hero-status">
+    <div class="status-left"><span class="status-dot"></span>All systems live</div>
+    <div class="status-right">Updated 12s ago</div>
+  </div>
+  <div class="hero-top">
+    <span class="hero-brand">Groundwork · Command Center</span>
+    <div class="hero-avatar">TA</div>
+  </div>
+  <div class="hero-label">Open Pipeline Value</div>
+  <div class="hero-value">$284,600</div>
+  <div class="hero-delta">
+    <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 7l3-3 2 2 3-4"/></svg>
+    +12% vs. last week
+  </div>
+  <div class="spark">
+    <div class="spark-bar" style="height:40%"></div>
+    <div class="spark-bar" style="height:55%"></div>
+    <div class="spark-bar" style="height:35%"></div>
+    <div class="spark-bar" style="height:70%"></div>
+    <div class="spark-bar" style="height:50%"></div>
+    <div class="spark-bar" style="height:80%"></div>
+    <div class="spark-bar hi" style="height:100%"></div>
+  </div>
+
+  <!-- Pipeline Snapshot widget — all 5 real metrics: Open Leads,
+       Proposals Out, Pipeline Value, Won MTD, Avg Close Likelihood -->
+  <section class="glass-row">
+    <div class="glass-card">
+      <div class="glass-card-label">Open Leads</div>
+      <div class="glass-card-val">18</div>
+      <div class="glass-card-sub">+4 today</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Proposals Out</div>
+      <div class="glass-card-val">6</div>
+      <div class="glass-card-sub">2 expiring soon</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Pipeline Value</div>
+      <div class="glass-card-val">$284.6K</div>
+      <div class="glass-card-sub">18 open leads</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Won MTD</div>
+      <div class="glass-card-val">9 · $61.4K</div>
+      <div class="glass-card-sub">This month</div>
+    </div>
+    <div class="glass-card span2">
+      <div>
+        <div class="glass-card-label">Avg Close Likelihood (Groundwork AI)</div>
+        <div class="glass-card-val">64%</div>
+      </div>
+      <div class="glass-card-sub" style="text-align:right">across 18 open leads</div>
+    </div>
+  </section>
+</header>
+
+<!-- Needs Follow-Up widget, promoted + synthesized with AR/ops signals -->
+<div class="section-label">Needs Your Attention <span class="section-count">4</span></div>
+<div class="pq-list">
+  <div class="pq-row">
+    <div class="pq-stripe urgent"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Dave Torres — Invoice 8 days overdue</div>
+        <div class="pq-sub">Deck refinish job</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">$6,200</div>
+        <div class="pq-tag urgent">Overdue</div>
+      </div>
+    </div>
+  </div>
+  <div class="pq-row">
+    <div class="pq-stripe urgent"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Estimate expiring — Sarah Kim</div>
+        <div class="pq-sub">Expires in 6 hours</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">$9,800</div>
+        <div class="pq-tag urgent">Expiring</div>
+      </div>
+    </div>
+  </div>
+  <div class="pq-row">
+    <div class="pq-stripe warn"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Red Crew — running 40min behind</div>
+        <div class="pq-sub">3 jobs remaining today</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">—</div>
+        <div class="pq-tag warn">Delayed</div>
+      </div>
+    </div>
+  </div>
+  <div class="pq-row">
+    <div class="pq-stripe info"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Rosa Chen — new lead, unassigned</div>
+        <div class="pq-sub">Residential · fence install</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">—</div>
+        <div class="pq-tag info">New</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions widget, promoted to top-level (high frequency) -->
+<div class="section-label">Quick Actions</div>
+<div class="pill-row">
+  <button class="pill-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="1" x2="8" y2="15"/><line x1="1" y1="8" x2="15" y2="8"/></svg>Add Lead</button>
+  <button class="pill-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M1 6h14"/></svg>Schedule</button>
+  <button class="pill-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>Invoices</button>
+  <button class="pill-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3z"/><path d="M2 3l2-2h8l2 2"/></svg>Estimates</button>
+</div>
+
+<!-- Live crew preview (Operations teaser) — full detail also inside the
+     Operations zone accordion below as "Crew Hours Today" -->
+<div class="section-label">Crews In Field <button class="section-link">See all</button></div>
+<div class="crew-table">
+  <div class="crew-head"><div>Crew</div><div>Status</div><div>ETA</div></div>
+  <div class="crew-row">
+    <div class="crew-name"><span class="crew-swatch" style="background:var(--gw-pine-600)"></span>Blue Crew</div>
+    <div><span class="crew-status" style="background:var(--gw-pine-100);color:var(--gw-pine-700)">On Track</span></div>
+    <div style="font-family:var(--gw-mono);font-size:11px">4:15p</div>
+  </div>
+  <div class="crew-row">
+    <div class="crew-name"><span class="crew-swatch" style="background:var(--gw-clay-600)"></span>Red Crew</div>
+    <div><span class="crew-status" style="background:var(--gw-clay-100);color:var(--gw-clay-700)">Delayed</span></div>
+    <div style="font-family:var(--gw-mono);font-size:11px">5:40p</div>
+  </div>
+  <div class="crew-row">
+    <div class="crew-name"><span class="crew-swatch" style="background:var(--gw-teal-600)"></span>Green Crew</div>
+    <div><span class="crew-status" style="background:var(--gw-teal-100);color:var(--gw-teal-700)">On Track</span></div>
+    <div style="font-family:var(--gw-mono);font-size:11px">3:50p</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     4 ZONE ACCORDIONS — the remaining 13 real widgets
+     ══════════════════════════════════════════════════════════ -->
+<div class="zones-head">
+  <h2>More on your Command Center</h2>
+  <p>Tap a section to expand — everything from the full dashboard lives here.</p>
+</div>
+
+<!-- ZONE 1: My Work (amber) — Tasks, Calendar, Scratchpad -->
+<div class="zone-card" id="zone-work">
+  <div class="zone-head" onclick="toggleZone('zone-work')">
+    <div class="zone-icon" style="background:var(--gw-sand-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-sand-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6" r="3"/><path d="M3.5 17c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">My Work</div>
+      <div class="zone-teaser">Tasks · Calendar · Scratchpad</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-sand-100);color:var(--gw-sand-700)">3 due today</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-widget">
+        <div class="zw-widget-title">My Tasks <button class="zw-widget-link">View all</button></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-check"></span><span class="zw-row-title">Call Dave Torres re: overdue invoice</span></div><span class="zw-row-sub">Today</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-check"></span><span class="zw-row-title">Send estimate to Sarah Kim</span></div><span class="zw-row-sub">Today</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-check done">✓</span><span class="zw-row-title" style="text-decoration:line-through;color:var(--gw-text-subtle)">Follow up — Rosa Chen new lead</span></div><span class="zw-row-sub">Done</span></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">My Calendar — Today</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">9:00 AM — Site walk: Chen residence</span></div></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">2:30 PM — Proposal call: Kim project</span></div></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Scratchpad</div>
+        <div style="font-size:12px;color:var(--gw-text-muted);font-style:italic;line-height:1.5">"Remember to ask Rosa about fence style before quoting…"</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ZONE 2: Sales & Pipeline (teal) -->
+<div class="zone-card" id="zone-sales">
+  <div class="zone-head" onclick="toggleZone('zone-sales')">
+    <div class="zone-icon" style="background:var(--gw-teal-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-teal-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l4-5 3 3 6-8"/><path d="M13 5h3v3"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Sales &amp; Pipeline</div>
+      <div class="zone-teaser">Trend · Leaderboard · Activity · Reviews</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-teal-100);color:var(--gw-teal-700)">7 widgets</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-widget">
+        <div class="zw-widget-title">Pipeline Chart <button class="zw-widget-link">View funnel &amp; sources</button></div>
+        <div class="zw-spark">
+          <div class="zw-spark-bar" style="height:35%"></div><div class="zw-spark-bar" style="height:55%"></div>
+          <div class="zw-spark-bar" style="height:45%"></div><div class="zw-spark-bar hi" style="height:100%"></div>
+        </div>
+        <div class="zw-bar-track"><div class="zw-bar-fill" style="width:58%;background:var(--gw-teal-600)"></div></div>
+        <div style="font-size:11px;color:var(--gw-text-muted);margin-top:3px">4-week won trend · current stage mix</div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Daily Sales Start-Up</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-check done">✓</span><span class="zw-row-title">Review overnight leads</span></div></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-check done">✓</span><span class="zw-row-title">Check stale-lead queue</span></div></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-check"></span><span class="zw-row-title">Confirm today's appointments</span></div></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Recently Updated <button class="zw-widget-link">See all</button></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Marcus Webb</span></div><span class="zw-row-right" style="color:var(--gw-teal-700);font-weight:700;font-family:inherit;font-size:11px">Consultation</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Priya Anand</span></div><span class="zw-row-right" style="color:var(--gw-sand-700);font-weight:700;font-family:inherit;font-size:11px">Estimate Dev.</span></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Weekly Activity Targets</div>
+        <div class="zw-mini-grid">
+          <div class="zw-mini-cell"><div class="zw-mini-label">Calls</div><div class="zw-mini-val">14 / 20</div></div>
+          <div class="zw-mini-cell"><div class="zw-mini-label">Appts Set</div><div class="zw-mini-val">3 / 5</div></div>
+        </div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Reviews</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-stars">★★★★★</span><span class="zw-row-title">"Fast, clean work"</span></div></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Rep Leaderboard</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-rank">1</span><span class="zw-row-title">Jamie Ruiz</span></div><span class="zw-row-right">$61.4K</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-rank">2</span><span class="zw-row-title">Alex Morgan</span></div><span class="zw-row-right">$44.2K</span></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Recent Wins</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Chen Residence</span></div><span class="zw-row-right" style="color:var(--gw-pine-600)">$14,200</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ZONE 3: Financial (pine) -->
+<div class="zone-card" id="zone-financial">
+  <div class="zone-head" onclick="toggleZone('zone-financial')">
+    <div class="zone-icon" style="background:var(--gw-pine-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-pine-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="16" height="11" rx="1.5"/><path d="M2 9h16"/><circle cx="6" cy="12.5" r=".6" fill="var(--gw-pine-700)"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Financial</div>
+      <div class="zone-teaser">Budget vs Actual · Money Owed (A/R)</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-clay-100);color:var(--gw-clay-700)">$42.1K owed</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-widget">
+        <div class="zw-widget-title">Financial Pulse — YTD</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Actual vs Budget</span></div><span class="zw-row-right">$412K / $500K</span></div>
+        <div class="zw-bar-track"><div class="zw-bar-fill" style="width:82%;background:var(--gw-pine-600)"></div></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Money Owed (A/R)</div>
+        <div class="zw-mini-grid">
+          <div class="zw-mini-cell"><div class="zw-mini-label">Current</div><div class="zw-mini-val">$18.4K</div></div>
+          <div class="zw-mini-cell"><div class="zw-mini-label">30+ days</div><div class="zw-mini-val">$14.9K</div></div>
+          <div class="zw-mini-cell"><div class="zw-mini-label">60+ days</div><div class="zw-mini-val">$6.6K</div></div>
+          <div class="zw-mini-cell"><div class="zw-mini-label">90+ days</div><div class="zw-mini-val" style="color:var(--gw-clay-600)">$2.2K</div></div>
+        </div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Budget vs Actual by Division</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Sales</span></div><span class="zw-row-right">96%</span></div>
+        <div class="zw-bar-track"><div class="zw-bar-fill" style="width:96%;background:var(--gw-pine-600)"></div></div>
+        <div class="zw-row" style="margin-top:6px"><div class="zw-row-left"><span class="zw-row-title">Operations</span></div><span class="zw-row-right">74%</span></div>
+        <div class="zw-bar-track"><div class="zw-bar-fill" style="width:74%;background:var(--gw-teal-600)"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ZONE 4: Operations (emerald) -->
+<div class="zone-card" id="zone-ops">
+  <div class="zone-head" onclick="toggleZone('zone-ops')">
+    <div class="zone-icon" style="background:var(--gw-pine-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-pine-600)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3a3 3 0 00-4.2 4.2L4 13v3h3l5.8-5.8A3 3 0 0016 6l-2 2-1.5-1.5 2-2z"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Operations</div>
+      <div class="zone-teaser">Today's Jobs · Crew Hours · Time Clock</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-pine-100);color:var(--gw-pine-700)">7 jobs today</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-widget">
+        <div class="zw-widget-title">Today's Jobs <button class="zw-widget-link">View all</button></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Chen Residence — Fence Install</span></div><span class="zw-row-sub">Blue Crew · 9:00a</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Torres — Deck Refinish</span></div><span class="zw-row-sub">Red Crew · 11:30a</span></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Crew Hours Today</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="crew-swatch" style="background:var(--gw-pine-600);width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px"></span><span class="zw-row-title">Blue Crew</span></div><span class="zw-row-right">6.2 hrs</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="crew-swatch" style="background:var(--gw-clay-600);width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px"></span><span class="zw-row-title">Red Crew</span></div><span class="zw-row-right">5.8 hrs</span></div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Time Clock</div>
+        <div class="zw-clock-card">
+          <div><div style="font-size:12px;font-weight:700">You're clocked in</div><div style="font-size:11px;color:var(--gw-text-muted)">Since 7:58 AM</div></div>
+          <button class="zw-clock-btn">Clock Out</button>
+        </div>
+      </div>
+      <div class="zw-widget">
+        <div class="zw-widget-title">Upcoming Schedule (7 Days)</div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Tomorrow</span></div><span class="zw-row-right">5 jobs</span></div>
+        <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Thu, Aug 22</span></div><span class="zw-row-right">8 jobs</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="cc-bottom-nav">
+  <button class="cc-nav-btn active">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6v7a1 1 0 01-1 1h-4v-5H8v5H4a1 1 0 01-1-1v-7z"/></svg>
+    Home
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c0-4 3-6 6.5-6s6.5 2 6.5 6"/></svg>
+    Pipeline
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="13" rx="1.5"/><path d="M2 8.5h16"/></svg>
+    Schedule
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h9l3 3v12a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 8h6M6 11h6M6 14h4"/></svg>
+    Finance
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1v2.5M10 16.5V19M2.6 5.6l1.8 1.8M15.6 12.6l1.8 1.8M1 10h2.5M16.5 10H19M2.6 14.4l1.8-1.8M15.6 7.4l1.8-1.8"/></svg>
+    Admin
+  </button>
+</nav>
+
+<script>
+  function toggleZone(id) {
+    document.getElementById(id).classList.toggle('open');
+  }
+</script>
+
+</body>
+</html>
