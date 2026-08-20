@@ -4433,6 +4433,74 @@ function gwPipelineKpiBand(opps, period, activeStatusFilter, divisionRowHtml){
   </section>`;
 }
 
+// ── Mobile Pipeline hero — restyles the same gwPipelineTotals()/
+// _gwDivisionValueStrip() data the desktop gwPipelineKpiBand() uses, into the
+// approved dark gwm-hero + gwm-glass-row look (mobile-revamp item 4). Same
+// numbers, same click-to-filter semantics — a re-skin, not new data. ────────
+function _gwPipelineMobileHero(baseOpps, period, activeStatusFilter, divBaseOpps, activeCatFilter){
+  const t = gwPipelineTotals(baseOpps, period);
+  const pct = v => v === null ? '—' : Math.round(v * 100) + '%';
+  const periodLabel = (GW_PIPELINE_PERIODS.find(p => p.key === period) || GW_PIPELINE_PERIODS[0]).label;
+  const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
+  const _initials = (_cr && _cr.name) ? _cr.name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() : '·';
+
+  const _tile = (label, val, sub, onclick) => `
+    <div class="gwm-glass-card"${onclick?` onclick="${onclick}"`:''}>
+      <div class="gwm-glass-card-label">${escapeHtml(label)}</div>
+      <div class="gwm-glass-card-val">${val}</div>
+      <div class="gwm-glass-card-sub">${escapeHtml(sub)}</div>
+    </div>`;
+
+  const heroGlassRow = `
+    <section class="gwm-glass-row">
+      ${_tile('Open Pipeline', money(t.openValue), `${t.openCount} open lead${t.openCount===1?'':'s'}`, "window._pipelineStatusFilter=window._pipelineStatusFilter==='open'?null:'open';show('pipeline')")}
+      ${_tile('Weighted Forecast', money(t.forecast), '× close likelihood')}
+      ${_tile(`Won · ${periodLabel}`, money(t.wonValue), `${t.wonCount} deal${t.wonCount===1?'':'s'}`, "window._pipelineStatusFilter=window._pipelineStatusFilter==='sold'?null:'sold';show('pipeline')")}
+      ${_tile(`Lost · ${periodLabel}`, money(t.lostValue), `${t.lostCount} deal${t.lostCount===1?'':'s'}`, "window._pipelineStatusFilter=window._pipelineStatusFilter==='lost'?null:'lost';show('pipeline')")}
+      ${_tile('Win Rate', pct(t.winRate), t.winRate===null?'no decisions yet':`${t.wonCount} of ${t.wonCount+t.lostCount} decided`)}
+      ${_tile('Needs Follow-Up', String(t.lateCount), `${money(t.lateValue)} sitting late`, "window._pipelineStatusFilter=window._pipelineStatusFilter==='overdue'?null:'overdue';show('pipeline')")}
+    </section>
+    <button class="gwm-hero-cta" onclick="show('lead')">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="1" x2="8" y2="15"/><line x1="1" y1="8" x2="15" y2="8"/></svg>
+      Add Lead
+    </button>`;
+
+  // By-Division chip strip — the approved accepted-horizontal-scroll exception.
+  const open = divBaseOpps.filter(o => gwLeadIsOpen(o));
+  const totals = {}, counts = {};
+  gwDivisions().forEach(d => { totals[d.key] = 0; counts[d.key] = 0; });
+  open.forEach(o => {
+    const k = gwClassifyDivision(o);
+    if (!(k in totals)) { totals[k] = 0; counts[k] = 0; }
+    totals[k] += Number(o.jobValue||0);
+    counts[k] += 1;
+  });
+  const divStripHtml = `
+    <div class="gwm-chip-strip">
+      ${gwDivisions().map(d => {
+        const active = activeCatFilter === d.key;
+        return `<button class="gwm-chip${active?' active':''}" onclick="window._pipelineCatFilter='${active?'all':d.key}';show('pipeline')">
+          <span style="width:7px;height:7px;border-radius:50%;background:${active?'#fff':(d.color||'#2D7A55')};flex-shrink:0;display:inline-block"></span>
+          ${escapeHtml(d.label)} · ${money(totals[d.key]||0)}
+        </button>`;
+      }).join('')}
+    </div>`;
+
+  return `
+    <header class="gwm-hero">
+      <div class="gwm-hero-status">
+        <div class="gwm-status-left"><span class="gwm-status-dot"></span>${t.openCount} lead${t.openCount===1?'':'s'} · live</div>
+        <div class="gwm-status-right">${escapeHtml(periodLabel)}</div>
+      </div>
+      <div class="gwm-hero-top">
+        <span class="gwm-hero-brand">Groundwork · Pipeline</span>
+        <div class="gwm-hero-avatar">${escapeHtml(_initials)}</div>
+      </div>
+      ${heroGlassRow}
+    </header>
+    ${divStripHtml}`;
+}
+
 // ── Pipeline value by division ────────────────────────────────────────────────
 // Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
 // Tiles are clickable — they toggle the existing division filter. Returns an
@@ -4608,10 +4676,13 @@ function pipeline(selectedId){
       <button class="pl-clear-filter" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear</button>
     </div>` : ''}
 
-    ${gwPipelineKpiBand(_kpiBaseOpps, activePeriod, activeStatusFilter, _gwDivisionValueStrip(_divBaseOpps, activeCatFilter))}
+    ${_isMobilePipe
+      ? _gwPipelineMobileHero(_kpiBaseOpps, activePeriod, activeStatusFilter, _divBaseOpps, activeCatFilter)
+      : gwPipelineKpiBand(_kpiBaseOpps, activePeriod, activeStatusFilter, _gwDivisionValueStrip(_divBaseOpps, activeCatFilter))}
 
     ${window.innerWidth <= 768
       ? /* ── Mobile: flat sorted list grouped by status ── */ `
+        <div class="gwm-section-label">Leads <button class="gwm-section-link" onclick="exportCsv()">Export CSV</button></div>
         <div class="gw-pipe-mobile">
           ${grouped.filter(g=>g.items.length).length === 0
             ? `<div class="gw-pipe-empty">No leads match your filters.</div>`
@@ -17666,6 +17737,114 @@ function financialHub(){
         <td><button class="fhub-link" onclick="show('estimates','${o.id}')" style="background:none;border:none;font-size:inherit;font-weight:700;color:var(--gw-action);cursor:pointer">View →</button></td>
       </tr>`).join('')
     : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gw-text-subtle);font-style:italic">No open estimates</td></tr>`;
+
+  // ── Mobile: dark gwm-hero rebuild (approved Version E style, "build all
+  // and push" — mobile-revamp item 3). Real data only: totalPipeline/
+  // totalSold/totalOpen/opps/outstanding/recentSold/openEstimates are all
+  // already computed above exactly as the desktop view uses them. ─────────
+  if (window.innerWidth <= 768) {
+    const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
+    const _initials = (_cr && _cr.name) ? _cr.name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() : '·';
+    const soldCount = opps.filter(o=>gwSalesIs(o,'won')).length;
+    const conversionPct = opps.length ? Math.round((soldCount/opps.length)*100) : 0;
+    const _todayISO = window.todayISO ? window.todayISO() : '';
+
+    const _pqRow = (stripe, title, sub, val, tag, onclick) => `
+      <div class="gwm-pq-row"${onclick?` onclick="${onclick}"`:''}>
+        <div class="gwm-pq-stripe gwm-${stripe}"></div>
+        <div class="gwm-pq-body">
+          <div class="gwm-pq-text">
+            <div class="gwm-pq-title">${escapeHtml(title)}</div>
+            <div class="gwm-pq-sub">${escapeHtml(sub)}</div>
+          </div>
+          <div class="gwm-pq-right">
+            <div class="gwm-pq-val">${val}</div>
+            <div class="gwm-pq-tag gwm-${stripe}">${escapeHtml(tag)}</div>
+          </div>
+        </div>
+      </div>`;
+
+    const outstandingHtml = outstanding.length ? outstanding.map(o => {
+      const overdue = !!(o.nextFollowUp && _todayISO && o.nextFollowUp < _todayISO);
+      return _pqRow(overdue ? 'urgent' : 'warn',
+        `${o.client||'Unnamed Lead'} — ${o.serviceLine||o.project||'—'}`,
+        o.nextFollowUp ? `Follow-up due ${_p5FmtDate(o.nextFollowUp)}${overdue?' (overdue)':''}` : 'No follow-up set',
+        _p5Money(o.jobValue), overdue ? 'Overdue' : 'Due Soon', `show('pipeline','${o.id}')`);
+    }).join('') : `<div class="gwm-pq-empty">No outstanding items</div>`;
+
+    const _listRow = (name, sub, val, valColor, onclick) => `
+      <div class="gwm-list-row" onclick="${onclick}">
+        <div class="gwm-list-row-left"><div class="gwm-list-row-name">${escapeHtml(name)}</div><div class="gwm-list-row-sub">${escapeHtml(sub)}</div></div>
+        <div class="gwm-list-row-val" style="color:${valColor}">${val}</div>
+      </div>`;
+
+    view.innerHTML = `
+    <div class="gwtd-shell">
+      <header class="gwm-hero">
+        <div class="gwm-hero-status">
+          <div class="gwm-status-left"><span class="gwm-status-dot"></span>Live pipeline data</div>
+          <div class="gwm-status-right">${opps.length} opportunit${opps.length===1?'y':'ies'}</div>
+        </div>
+        <div class="gwm-hero-top">
+          <span class="gwm-hero-brand">Groundwork · Financial Hub</span>
+          <div class="gwm-hero-avatar">${escapeHtml(_initials)}</div>
+        </div>
+        <div class="gwm-hero-label">Total Pipeline</div>
+        <div class="gwm-hero-value">${_p5Money(totalPipeline)}</div>
+        <div class="gwm-hero-delta">${opps.length} opportunit${opps.length===1?'y':'ies'}</div>
+        <section class="gwm-glass-row">
+          <div class="gwm-glass-card" onclick="show('pipeline')">
+            <div class="gwm-glass-card-label">Closed / Collected</div>
+            <div class="gwm-glass-card-val">${_p5Money(totalSold)}</div>
+            <div class="gwm-glass-card-sub">${soldCount} sold</div>
+          </div>
+          <div class="gwm-glass-card" onclick="show('pipeline')">
+            <div class="gwm-glass-card-label">Open Value</div>
+            <div class="gwm-glass-card-val">${_p5Money(totalOpen)}</div>
+            <div class="gwm-glass-card-sub">${estimatesOpen} open jobs</div>
+          </div>
+          <div class="gwm-glass-card">
+            <div class="gwm-glass-card-label">Conversion Rate</div>
+            <div class="gwm-glass-card-val">${conversionPct}%</div>
+            <div class="gwm-glass-card-sub">Close rate</div>
+          </div>
+          <div class="gwm-glass-card" onclick="show('pipeline')">
+            <div class="gwm-glass-card-label">Total Pipeline</div>
+            <div class="gwm-glass-card-val">${opps.length}</div>
+            <div class="gwm-glass-card-sub">opportunities</div>
+          </div>
+        </section>
+      </header>
+
+      <div class="gwm-section-label">Outstanding — Needs Attention ${outstanding.length ? `<span class="gwm-section-count">${outstanding.length}</span>` : ''}</div>
+      <div class="gwm-pq-list">${outstandingHtml}</div>
+      <div style="padding:6px 16px 0"><button class="gwm-section-link" onclick="accountStatement()">Full Statement →</button></div>
+
+      <div class="gwm-section-label">Quick Links</div>
+      <div class="gwm-pill-row">
+        <button class="gwm-pill-btn" onclick="accountStatement()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>Statements</button>
+        <button class="gwm-pill-btn" onclick="show('communications')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>Comms</button>
+        <button class="gwm-pill-btn" onclick="show('automations')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/></svg>Automations</button>
+        <button class="gwm-pill-btn" onclick="show('revenueAdmin')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>Analytics</button>
+      </div>
+
+      <div class="gwm-section-label">Recent Closed Deals <button class="gwm-section-link" onclick="show('pipeline')">See all</button></div>
+      <div class="gwm-list-card">
+        ${recentSold.length ? recentSold.map(o=>_listRow(
+          o.client||'—', `${o.serviceLine||o.project||'—'} · Closed ${_p5FmtDate(o.closedDate||o.createdAt)}`,
+          _p5Money(o.jobValue), 'var(--gw-pine-600)', `show('pipeline','${o.id}')`
+        )).join('') : `<div class="gwm-pq-empty">No closed deals yet</div>`}
+      </div>
+
+      <div class="gwm-section-label">Open Estimates <button class="gwm-section-link" onclick="show('estimates')">See all</button></div>
+      <div class="gwm-list-card">
+        ${openEstimates.length ? openEstimates.map(o=>_listRow(
+          o.client||'—', o.status||'—', _p5Money(o.jobValue), 'var(--gw-action)', `show('estimates','${o.id}')`
+        )).join('') : `<div class="gwm-pq-empty">No open estimates</div>`}
+      </div>
+    </div>`;
+    return;
+  }
 
   view.innerHTML = `
   <div class="fhub-shell rp-shell gw-report-shell">
