@@ -11,6 +11,18 @@ export type RatesBindings = { DB: D1Database };
 export interface ResolvedLaborRate {
   resolved_rate: number; // ten-thousandths
   burden_multiplier: number;
+  /**
+   * Annual hours the rate was divided by: paid - pto - shop - idle.
+   *
+   * The denominator of the burdened rate, returned because it is also what a
+   * crew's schedulable week is made of. The schedule board sizes crew capacity
+   * from this rather than from a company-wide constant times headcount, and it
+   * reads it HERE rather than from labor_rate_profile directly — CLAUDE.md:
+   * no module computes its own labor arithmetic. One number, one source, and
+   * the burdened rate and the schedule cannot come to disagree about how many
+   * hours somebody works.
+   */
+  billable_hours: number;
   confidence: RateConfidence;
   stale_components: string[];
   requires_review: boolean;
@@ -87,6 +99,12 @@ export async function resolveLaborRate(
   return {
     resolved_rate: Math.round(burden.burdened_rate * 10000),
     burden_multiplier: burden.burden_multiplier,
+    // Straight from the engine, not recomputed here. computeBurden substitutes
+    // 1 when the profile is misconfigured (paid <= pto+shop+idle) to avoid
+    // dividing by zero; that shows up as config_error -> requires_review, and
+    // callers must not read an hours figure that survived that substitution as
+    // if it meant anything.
+    billable_hours: burden.billable_hours,
     confidence,
     stale_components: staleComponents,
     requires_review: burden.requires_review,

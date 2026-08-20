@@ -9,6 +9,8 @@ import {
   sumNetActualMinutes,
   budgetVariance,
   minutesToHours,
+  crewCapacityFromMemberHours,
+  distributeWeeklyCapacity,
 } from './capacity';
 
 describe('parseWorkingDays', () => {
@@ -180,5 +182,116 @@ describe('minutesToHours', () => {
   it('honours an explicit precision', () => {
     expect(minutesToHours(455, 2)).toBe(7.58);
     expect(minutesToHours(450, 0)).toBe(8);
+  });
+});
+
+describe('crewCapacityFromMemberHours', () => {
+  const FOUR_DAY = [1, 2, 3, 4];
+  const FIVE_DAY = [1, 2, 3, 4, 5];
+  const m = (rep_id: string, billable_hours: number | null) => ({ rep_id, billable_hours });
+
+  it('CAP-01 sums each member\'s own hours instead of multiplying a headcount', () => {
+    // The bug this replaces. crewDailyCapacityMinutes(3, 450) says every crew of
+    // three has the same week, whoever is on it — a 30-hour part-timer and a
+    // full-time foreman counted identically. Avalon's board read a flat 90h for
+    // every crew because that is literally all the old figure could say.
+    const cap = crewCapacityFromMemberHours(
+      [m('a', 1622), m('b', 1622), m('c', 1040)], FOUR_DAY, 450,
+    );
+    // 1622/52 = 31.19h/wk -> 1872 min; 1040/52 = 20h/wk -> 1200 min.
+    expect(cap.weekly_minutes).toBe(1872 + 1872 + 1200);
+    expect(cap.source).toBe('profile');
+    expect(cap.fallback_members).toEqual([]);
+    // Two identical crews of three are no longer forced to the same number.
+    const other = crewCapacityFromMemberHours([m('d', 1622), m('e', 1622), m('f', 1622)], FOUR_DAY, 450);
+    expect(other.weekly_minutes).not.toBe(cap.weekly_minutes);
+  });
+
+  it('CAP-02 spreads the week across the configured working days', () => {
+    // "the weeks set in work week based on start and stop, days" — a four-day
+    // company works the same hours in fewer, longer days. The WEEK is what the
+    // employee profile states; the day is the week divided by how many days
+    // are worked, not an independent constant.
+    const four = crewCapacityFromMemberHours([m('a', 1622)], FOUR_DAY, 450);
+    const five = crewCapacityFromMemberHours([m('a', 1622)], FIVE_DAY, 450);
+    expect(four.weekly_minutes).toBe(five.weekly_minutes);
+    expect(four.daily_minutes).toBeGreaterThan(five.daily_minutes);
+    expect(four.daily_minutes).toBe(Math.round(four.weekly_minutes / 4));
+  });
+
+  it('CAP-03 falls back to the company day for anyone with no profile, and NAMES them', () => {
+    // Same rule as allocation_run's `unrated`: a person with no rate is not
+    // free, and a person with no hours profile is not a zero-hour worker.
+    // Silently treating them as either understates or overstates the crew, and
+    // the scheduler cannot tell which without being told who.
+    const cap = crewCapacityFromMemberHours([m('a', 1622), m('b', null)], FOUR_DAY, 450);
+    expect(cap.fallback_members).toEqual(['b']);
+    expect(cap.source).toBe('mixed');
+    // b contributes a full company week: 450 x 4 days.
+    expect(cap.weekly_minutes).toBe(1872 + 450 * 4);
+  });
+
+  it('CAP-04 says so when NOBODY on the crew has a profile', () => {
+    // This is today's behaviour for every crew, and it must remain honest
+    // rather than looking like a derived number.
+    const cap = crewCapacityFromMemberHours([m('a', null), m('b', null)], FOUR_DAY, 450);
+    expect(cap.source).toBe('default');
+    expect(cap.fallback_members).toEqual(['a', 'b']);
+    expect(cap.weekly_minutes).toBe(2 * 450 * 4);
+    // Identical to what the old headcount formula produced, so nothing regresses
+    // for a company that has not filled in a single employee profile.
+    expect(cap.weekly_minutes).toBe(crewWeeklyCapacityMinutes(2, 450, FOUR_DAY));
+  });
+
+  it('CAP-05 an empty crew has no capacity, and that is an answer not an error', () => {
+    const cap = crewCapacityFromMemberHours([], FOUR_DAY, 450);
+    expect(cap.weekly_minutes).toBe(0);
+    expect(cap.daily_minutes).toBe(0);
+    expect(cap.source).toBe('default');
+  });
+
+  it('CAP-06 treats a nonsense hours figure as no profile rather than as fact', () => {
+    // computeBurden substitutes billable = 1 when a profile is misconfigured
+    // (paid <= pto + shop + idle) so the rate does not divide by zero. One
+    // billable hour a YEAR is not a schedulable week, and letting it through
+    // would show a crew at several thousand percent and call it derived.
+    for (const bad of [0, 1, -40, NaN, Infinity] as any[]) {
+      const cap = crewCapacityFromMemberHours([m('a', bad)], FOUR_DAY, 450);
+      expect(cap.fallback_members, String(bad)).toEqual(['a']);
+      expect(cap.weekly_minutes, String(bad)).toBe(450 * 4);
+    }
+  });
+
+  it('CAP-07 is integer minutes throughout', () => {
+    // 1622/52 does not divide evenly; nothing downstream should ever receive a
+    // fraction of a minute, for the same reason money is integer cents.
+    const cap = crewCapacityFromMemberHours([m('a', 1622), m('b', 999)], [1, 2, 3], 450);
+    expect(Number.isInteger(cap.weekly_minutes)).toBe(true);
+    expect(Number.isInteger(cap.daily_minutes)).toBe(true);
+  });
+});
+
+describe('distributeWeeklyCapacity', () => {
+  it('CAP-08 the days sum to the week, exactly', () => {
+    // The drift this exists to stop: the week view reports the week as the sum
+    // of the days it shows, so a single rounded per-day figure loses minutes
+    // every week, always downward.
+    for (const [weekly, days] of [[3072, 5], [3070, 4], [1, 5], [0, 5], [4999, 3], [1872, 7]] as const) {
+      const parts = distributeWeeklyCapacity(weekly, days);
+      expect(parts).toHaveLength(days);
+      expect(parts.reduce((a, b) => a + b, 0), `${weekly}/${days}`).toBe(weekly);
+      expect(parts.every(Number.isInteger)).toBe(true);
+    }
+  });
+
+  it('CAP-09 spreads the remainder rather than dumping it on one day', () => {
+    // 3072 over 5 is 614.4: four days of 614 and one of 616 would be a lie
+    // about Friday. Three days get the extra minute instead.
+    expect(distributeWeeklyCapacity(3072, 5)).toEqual([615, 615, 614, 614, 614]);
+    expect(Math.max(...distributeWeeklyCapacity(3072, 5)) - Math.min(...distributeWeeklyCapacity(3072, 5))).toBe(1);
+  });
+
+  it('CAP-10 a week with no working days is empty, not a division by zero', () => {
+    expect(distributeWeeklyCapacity(3072, 0)).toEqual([]);
   });
 });

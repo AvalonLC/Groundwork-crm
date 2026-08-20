@@ -61,6 +61,25 @@ describe("POST /internal/rates/resolve", () => {
     expect(Number((json.resolved_rate / 10000).toFixed(2))).toBe(42.10);
   });
 
+  it("RA-01b returns the billable hours the rate was divided by", async () => {
+    // The burden engine already computes billable_hours (paid - pto - shop -
+    // idle) because it is the denominator of the burdened rate; the resolver
+    // was throwing it away. The schedule board needs exactly this number to
+    // size a crew's week, and CLAUDE.md is explicit that no module computes its
+    // own labor arithmetic — so it comes back through the one sanctioned entry
+    // point, with the same cascade and the same confidence as the rate itself,
+    // rather than the scheduler reading labor_rate_profile behind its back.
+    //
+    // 2080 paid - 96 pto - 168 shop - 194 idle = 1622, the golden fixture's own
+    // input. Same figure the 42.1002 rate on RA-01 is divided by, which is the
+    // point: one number, one source, and they cannot drift.
+    const A = golden.burden_labor_with_equipment.input;
+    const res = await post("/resolve", { company_id: TENANT, employee_id: "emp-1", work_date: "2026-06-01" });
+    const json = await res.json() as any;
+    expect(json.billable_hours).toBe(A.paid - A.pto - A.shop - A.idle);
+    expect(json.billable_hours).toBe(1622);
+  });
+
   it("RA-02 cascades to tenant scope when no employee/crew/role profile exists", async () => {
     await insertLaborRateProfile(db(), {
       company_id: TENANT, scope: "tenant", scope_id: TENANT,
