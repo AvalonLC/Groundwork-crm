@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Command Center — Version C: Dense Control Tower</title>
+<style>
+  :root {
+    --gw-pine-900:#0D2B22; --gw-pine-800:#1A4740; --gw-pine-700:#1E5448; --gw-pine-600:#2D7A55;
+    --gw-pine-500:#3D9B6E; --gw-pine-400:#5BB585; --gw-pine-300:#8FD1AE; --gw-pine-200:#C4E8D6;
+    --gw-pine-100:#EAF4EE; --gw-pine-50:#F3FAF6;
+    --gw-sand-700:#7A5C10; --gw-sand-600:#8B6914; --gw-sand-400:#C49A40; --gw-sand-200:#E8D49C; --gw-sand-100:#FAF3DC;
+    --gw-clay-700:#7A2E20; --gw-clay-600:#8B3826; --gw-clay-400:#C4614A; --gw-clay-200:#EDCCC5; --gw-clay-100:#FAE8E4;
+    --gw-teal-700:#215E5A; --gw-teal-600:#2D7874; --gw-teal-500:#4D8A86; --gw-teal-200:#B4D4D2; --gw-teal-100:#EAF3F2;
+    --gw-bark-900:#1C1712; --gw-bark-700:#4A3F38; --gw-bark-500:#6E6059; --gw-bark-400:#8C7F78; --gw-bark-300:#B5ABA4; --gw-bark-200:#D8D2CC; --gw-bark-100:#EDEAE6; --gw-bark-50:#F7F5F2;
+    --gw-bg-subtle:#F7F5F0;
+    --gw-border:var(--gw-bark-100); --gw-border-strong:var(--gw-bark-200);
+    --gw-text-primary:var(--gw-bark-900); --gw-text-secondary:var(--gw-bark-700);
+    --gw-text-muted:var(--gw-bark-500); --gw-text-subtle:var(--gw-bark-400);
+    --gw-action:var(--gw-pine-600);
+    --gw-shadow-xs: 0 1px 2px rgba(28,23,18,.04), 0 1px 4px rgba(28,23,18,.04);
+    --gw-shadow-sm: 0 1px 4px rgba(28,23,18,.05), 0 4px 12px rgba(28,23,18,.06);
+    --gw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --gw-mono: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+    --gw-tap:44px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{font-family:var(--gw-font);background:var(--gw-bg-subtle);color:var(--gw-text-primary);-webkit-font-smoothing:antialiased}
+  body{padding-bottom:96px; max-width:480px; margin:0 auto;}
+
+  .device-note{
+    text-align:center; font-size:11px; color:var(--gw-text-subtle); padding:8px 0 2px;
+    font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  }
+  .version-tag{
+    position:sticky; top:0; z-index:50; text-align:center; font-size:11px; font-weight:800;
+    letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--gw-bark-900);
+    padding:6px 0;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     COMPACT STATUS BAR — always-on-top strip, feels "live"
+     ══════════════════════════════════════════════════════════ */
+  .status-strip{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:11px 16px; background:var(--gw-pine-900); color:#fff;
+  }
+  .status-left{display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700;}
+  .status-dot{width:6px; height:6px; border-radius:50%; background:var(--gw-pine-300); animation:blink 1.6s infinite;}
+  @keyframes blink{0%,100%{opacity:1} 50%{opacity:.35}}
+  .status-right{font-size:11px; color:rgba(255,255,255,.55); font-family:var(--gw-mono);}
+
+  /* ══════════════════════════════════════════════════════════
+     DENSE HEADER — title + 3 hard numbers in one strip
+     ══════════════════════════════════════════════════════════ */
+  .dt-header{padding:14px 16px 12px; background:#fff; border-bottom:1px solid var(--gw-border-strong);}
+  .dt-title-row{display:flex; align-items:baseline; justify-content:space-between;}
+  .dt-title{font-size:19px; font-weight:800;}
+  .dt-date{font-size:11px; color:var(--gw-text-muted); font-family:var(--gw-mono);}
+  .dt-metrics{display:grid; grid-template-columns:1fr 1fr 1fr; gap:0; margin-top:12px; border-top:1px solid var(--gw-border);}
+  .dt-metric{padding:9px 4px 0; border-right:1px solid var(--gw-border);}
+  .dt-metric:last-child{border-right:none;}
+  .dt-metric-label{font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--gw-text-subtle);}
+  .dt-metric-val{font-size:16px; font-weight:800; font-family:var(--gw-mono); margin-top:2px;}
+  .dt-metric-val.up{color:var(--gw-pine-600);}
+  .dt-metric-val.warn{color:var(--gw-sand-700);}
+  .dt-metric-val.down{color:var(--gw-clay-700);}
+
+  /* ══════════════════════════════════════════════════════════
+     PRIORITY QUEUE — dense actionable rows, ranked, this is
+     the "control tower" heart: what needs a decision NOW.
+     ══════════════════════════════════════════════════════════ */
+  .section-label{
+    padding:16px 16px 8px; font-size:11px; font-weight:800; text-transform:uppercase;
+    letter-spacing:.07em; color:var(--gw-text-muted); display:flex; align-items:center; justify-content:space-between;
+  }
+  .section-count{
+    background:var(--gw-clay-100); color:var(--gw-clay-700); font-size:10.5px; font-weight:800;
+    padding:1px 7px; border-radius:20px;
+  }
+  .pq-list{padding:0 10px;}
+  .pq-row{
+    display:flex; align-items:stretch; gap:0; margin-bottom:6px;
+    background:#fff; border:1px solid var(--gw-border); border-radius:8px; overflow:hidden;
+    box-shadow:var(--gw-shadow-xs);
+  }
+  .pq-stripe{width:4px; flex-shrink:0;}
+  .pq-stripe.urgent{background:var(--gw-clay-600);}
+  .pq-stripe.warn{background:var(--gw-sand-600);}
+  .pq-stripe.info{background:var(--gw-teal-600);}
+  .pq-body{flex:1; display:flex; align-items:center; justify-content:space-between; padding:10px 12px; gap:10px; min-width:0;}
+  .pq-text{min-width:0;}
+  .pq-title{font-size:12.5px; font-weight:700; color:var(--gw-text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .pq-sub{font-size:11px; color:var(--gw-text-muted); margin-top:1px;}
+  .pq-right{text-align:right; flex-shrink:0;}
+  .pq-val{font-size:13px; font-weight:800; font-family:var(--gw-mono); color:var(--gw-text-primary);}
+  .pq-tag{font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; margin-top:2px;}
+  .pq-tag.urgent{color:var(--gw-clay-600);}
+  .pq-tag.warn{color:var(--gw-sand-600);}
+  .pq-tag.info{color:var(--gw-teal-600);}
+
+  /* ══════════════════════════════════════════════════════════
+     COMPACT ACTION GRID — 4-across, icon over label, minimal
+     ══════════════════════════════════════════════════════════ */
+  .action-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:0; padding:0 16px; margin-top:4px;}
+  .action-cell{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    padding:12px 2px; border-radius:10px;
+  }
+  .action-cell:active{background:var(--gw-pine-50);}
+  .action-icon{
+    width:38px; height:38px; border-radius:10px; background:var(--gw-pine-50); color:var(--gw-pine-700);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .action-label{font-size:10px; font-weight:700; color:var(--gw-text-secondary); text-align:center; line-height:1.2;}
+
+  /* ══════════════════════════════════════════════════════════
+     CREW STRIP — live mini-table, ops feel
+     ══════════════════════════════════════════════════════════ */
+  .crew-table{margin:0 16px 4px; border:1px solid var(--gw-border-strong); border-radius:10px; overflow:hidden;}
+  .crew-head{
+    display:grid; grid-template-columns:1.4fr .8fr .8fr; background:var(--gw-bark-50);
+    padding:7px 12px; font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--gw-text-subtle);
+    border-bottom:1px solid var(--gw-border-strong);
+  }
+  .crew-row{
+    display:grid; grid-template-columns:1.4fr .8fr .8fr; padding:9px 12px; align-items:center;
+    border-bottom:1px solid var(--gw-border); font-size:12px;
+  }
+  .crew-row:last-child{border-bottom:none;}
+  .crew-name{display:flex; align-items:center; gap:6px; font-weight:700;}
+  .crew-swatch{width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+  .crew-status{font-size:10.5px; font-weight:800; padding:2px 7px; border-radius:20px; text-align:center; width:fit-content;}
+
+  .cc-bottom-nav{
+    position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto;
+    background:var(--gw-pine-900);
+    display:flex; justify-content:space-around; align-items:center;
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    box-shadow:0 -4px 20px rgba(0,0,0,.2);
+  }
+  .cc-nav-btn{
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:rgba(255,255,255,.5); background:none; border:none; font-family:inherit;
+    font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:10px; min-width:44px;
+  }
+  .cc-nav-btn.active{color:#fff; background:rgba(255,255,255,.1);}
+</style>
+</head>
+<body>
+
+<div class="version-tag">Version C — Dense Control Tower</div>
+<div class="device-note">Mockup only — 375px mobile width — not wired to real data</div>
+
+<div class="status-strip">
+  <div class="status-left"><span class="status-dot"></span>All systems live</div>
+  <div class="status-right">Updated 12s ago</div>
+</div>
+
+<header class="dt-header">
+  <div class="dt-title-row">
+    <div class="dt-title">Command Center</div>
+    <div class="dt-date">TUE AUG 20</div>
+  </div>
+  <div class="dt-metrics">
+    <div class="dt-metric">
+      <div class="dt-metric-label">Pipeline</div>
+      <div class="dt-metric-val up">$284.6K</div>
+    </div>
+    <div class="dt-metric">
+      <div class="dt-metric-label">Overdue</div>
+      <div class="dt-metric-val warn">$42.1K</div>
+    </div>
+    <div class="dt-metric">
+      <div class="dt-metric-label">Jobs Today</div>
+      <div class="dt-metric-val">7</div>
+    </div>
+  </div>
+</header>
+
+<div class="section-label">Needs Your Attention <span class="section-count">4</span></div>
+<div class="pq-list">
+  <div class="pq-row">
+    <div class="pq-stripe urgent"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Dave Torres — Invoice 8 days overdue</div>
+        <div class="pq-sub">Deck refinish job</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">$6,200</div>
+        <div class="pq-tag urgent">Overdue</div>
+      </div>
+    </div>
+  </div>
+  <div class="pq-row">
+    <div class="pq-stripe urgent"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Estimate expiring — Sarah Kim</div>
+        <div class="pq-sub">Expires in 6 hours</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">$9,800</div>
+        <div class="pq-tag urgent">Expiring</div>
+      </div>
+    </div>
+  </div>
+  <div class="pq-row">
+    <div class="pq-stripe warn"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Red Crew — running 40min behind</div>
+        <div class="pq-sub">3 jobs remaining today</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">—</div>
+        <div class="pq-tag warn">Delayed</div>
+      </div>
+    </div>
+  </div>
+  <div class="pq-row">
+    <div class="pq-stripe info"></div>
+    <div class="pq-body">
+      <div class="pq-text">
+        <div class="pq-title">Rosa Chen — new lead, unassigned</div>
+        <div class="pq-sub">Residential · fence install</div>
+      </div>
+      <div class="pq-right">
+        <div class="pq-val">—</div>
+        <div class="pq-tag info">New</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-label">Quick Actions</div>
+<div class="action-grid">
+  <div class="action-cell">
+    <div class="action-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="1" x2="8" y2="15"/><line x1="1" y1="8" x2="15" y2="8"/></svg></div>
+    <div class="action-label">Add Lead</div>
+  </div>
+  <div class="action-cell">
+    <div class="action-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M1 6h14"/></svg></div>
+    <div class="action-label">Schedule</div>
+  </div>
+  <div class="action-cell">
+    <div class="action-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg></div>
+    <div class="action-label">Invoices</div>
+  </div>
+  <div class="action-cell">
+    <div class="action-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3z"/><path d="M2 3l2-2h8l2 2"/></svg></div>
+    <div class="action-label">Estimates</div>
+  </div>
+</div>
+
+<div class="section-label">Crews In Field</div>
+<div class="crew-table">
+  <div class="crew-head"><div>Crew</div><div>Status</div><div>ETA</div></div>
+  <div class="crew-row">
+    <div class="crew-name"><span class="crew-swatch" style="background:var(--gw-pine-600)"></span>Blue Crew</div>
+    <div><span class="crew-status" style="background:var(--gw-pine-100);color:var(--gw-pine-700)">On Track</span></div>
+    <div style="font-family:var(--gw-mono);font-size:11px">4:15p</div>
+  </div>
+  <div class="crew-row">
+    <div class="crew-name"><span class="crew-swatch" style="background:var(--gw-clay-600)"></span>Red Crew</div>
+    <div><span class="crew-status" style="background:var(--gw-clay-100);color:var(--gw-clay-700)">Delayed</span></div>
+    <div style="font-family:var(--gw-mono);font-size:11px">5:40p</div>
+  </div>
+  <div class="crew-row">
+    <div class="crew-name"><span class="crew-swatch" style="background:var(--gw-teal-600)"></span>Green Crew</div>
+    <div><span class="crew-status" style="background:var(--gw-teal-100);color:var(--gw-teal-700)">On Track</span></div>
+    <div style="font-family:var(--gw-mono);font-size:11px">3:50p</div>
+  </div>
+</div>
+
+<nav class="cc-bottom-nav">
+  <button class="cc-nav-btn active">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6v7a1 1 0 01-1 1h-4v-5H8v5H4a1 1 0 01-1-1v-7z"/></svg>
+    Home
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c0-4 3-6 6.5-6s6.5 2 6.5 6"/></svg>
+    Pipeline
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="13" rx="1.5"/><path d="M2 8.5h16"/></svg>
+    Schedule
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h9l3 3v12a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 8h6M6 11h6M6 14h4"/></svg>
+    Finance
+  </button>
+  <button class="cc-nav-btn">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1v2.5M10 16.5V19M2.6 5.6l1.8 1.8M15.6 12.6l1.8 1.8M1 10h2.5M16.5 10H19M2.6 14.4l1.8-1.8M15.6 7.4l1.8-1.8"/></svg>
+    Admin
+  </button>
+</nav>
+
+</body>
+</html>
