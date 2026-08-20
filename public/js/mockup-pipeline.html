@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pipeline — Mobile (approved Command Center style)</title>
+<style>
+  :root {
+    --gw-pine-900:#0D2B22; --gw-pine-800:#1A4740; --gw-pine-700:#1E5448; --gw-pine-600:#2D7A55;
+    --gw-pine-500:#3D9B6E; --gw-pine-400:#5BB585; --gw-pine-300:#8FD1AE; --gw-pine-200:#C4E8D6;
+    --gw-pine-100:#EAF4EE; --gw-pine-50:#F3FAF6;
+    --gw-sand-700:#7A5C10; --gw-sand-600:#8B6914; --gw-sand-400:#C49A40; --gw-sand-200:#E8D49C; --gw-sand-100:#FAF3DC;
+    --gw-clay-700:#7A2E20; --gw-clay-600:#8B3826; --gw-clay-400:#C4614A; --gw-clay-200:#EDCCC5; --gw-clay-100:#FAE8E4;
+    --gw-teal-700:#215E5A; --gw-teal-600:#2D7874; --gw-teal-500:#4D8A86; --gw-teal-200:#B4D4D2; --gw-teal-100:#EAF3F2;
+    --gw-bark-900:#1C1712; --gw-bark-700:#4A3F38; --gw-bark-500:#6E6059; --gw-bark-400:#8C7F78; --gw-bark-300:#B5ABA4; --gw-bark-200:#D8D2CC; --gw-bark-100:#EDEAE6; --gw-bark-50:#F7F5F2;
+    --gw-bg-subtle:#F7F5F0;
+    --gw-border:var(--gw-bark-100); --gw-border-strong:var(--gw-bark-200);
+    --gw-text-primary:var(--gw-bark-900); --gw-text-secondary:var(--gw-bark-700);
+    --gw-text-muted:var(--gw-bark-500); --gw-text-subtle:var(--gw-bark-400);
+    --gw-action:var(--gw-pine-600);
+    --gw-shadow-xs: 0 1px 2px rgba(28,23,18,.04), 0 1px 4px rgba(28,23,18,.04);
+    --gw-shadow-sm: 0 1px 4px rgba(28,23,18,.05), 0 4px 12px rgba(28,23,18,.06);
+    --gw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --gw-mono: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+    --gw-tap:44px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{font-family:var(--gw-font);background:var(--gw-bg-subtle);color:var(--gw-text-primary);-webkit-font-smoothing:antialiased}
+  body{padding-bottom:96px; max-width:480px; margin:0 auto;}
+  .version-tag{position:sticky; top:0; z-index:50; text-align:center; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--gw-pine-700); padding:6px 0;}
+  .device-note{text-align:center; font-size:11px; color:var(--gw-text-subtle); padding:8px 0 2px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;}
+  .coverage-note{margin:10px 14px 0; background:var(--gw-pine-50); border:1px solid var(--gw-pine-200); border-radius:10px; padding:9px 12px; font-size:11.5px; line-height:1.5; color:var(--gw-pine-700);}
+  .coverage-note strong{color:var(--gw-pine-900);}
+
+  .hero-dark{position:relative; overflow:hidden; background:linear-gradient(160deg, var(--gw-pine-900) 0%, var(--gw-pine-800) 55%, var(--gw-pine-700) 100%); padding:14px 20px 18px; color:#fff;}
+  .hero-dark::before{content:''; position:absolute; top:-60px; right:-60px; width:220px; height:220px; background:radial-gradient(circle, rgba(255,255,255,.09), transparent 70%); border-radius:50%;}
+  .hero-status{display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,.12); margin-bottom:14px;}
+  .status-left{display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:rgba(255,255,255,.75);}
+  .status-dot{width:6px; height:6px; border-radius:50%; background:var(--gw-pine-300); animation:blink 1.6s infinite;}
+  @keyframes blink{0%,100%{opacity:1} 50%{opacity:.35}}
+  .status-right{font-size:10.5px; color:rgba(255,255,255,.45); font-family:var(--gw-mono);}
+  .hero-top{display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1;}
+  .hero-brand{font-size:10px; font-weight:800; letter-spacing:.13em; color:rgba(255,255,255,.5); text-transform:uppercase;}
+  .hero-avatar{width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#fff;}
+  .hero-add-btn{position:relative; z-index:1; margin-top:12px; width:100%; background:#fff; color:var(--gw-pine-800); border:none; border-radius:12px; padding:12px; font-weight:800; font-size:13.5px; font-family:inherit; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 14px rgba(0,0,0,.18);}
+
+  /* KPI band — Open Pipeline / Forecast / Won / Lost / Win Rate / Needs
+     Follow-Up. 2-up fixed grid inside the dark hero, no scroll. */
+  .glass-row{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; position:relative; z-index:1;}
+  .glass-card{background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); border-radius:14px; padding:12px 13px; color:#fff;}
+  .glass-card-label{font-size:10px; font-weight:700; color:rgba(255,255,255,.75); text-transform:uppercase; letter-spacing:.04em;}
+  .glass-card-val{font-size:17px; font-weight:800; margin-top:4px; font-family:var(--gw-mono); color:#fff;}
+  .glass-card-sub{font-size:10px; color:rgba(255,255,255,.65); margin-top:3px;}
+
+  /* Division value strip — By Division breakdown, kept horizontal-scroll
+     with hidden scrollbar. This matches the app's EXISTING accepted
+     pattern for filter pills (premium.css .pl-filter-group) — the user's
+     "no horizontal scroll" feedback was specifically about the Command
+     Center's main content cards straddling backgrounds, not about
+     filter/chip rows, which the app already uses this pattern for
+     elsewhere (Pipeline's own filter groups, Schedule's crew chips). */
+  .div-strip{display:flex; gap:8px; overflow-x:auto; padding:14px 20px 2px; -ms-overflow-style:none; scrollbar-width:none;}
+  .div-strip::-webkit-scrollbar{display:none;}
+  .div-chip{flex-shrink:0; background:#fff; border:1px solid var(--gw-border-strong); border-radius:12px; padding:8px 12px; min-width:100px; box-shadow:var(--gw-shadow-xs);}
+  .div-chip-label{font-size:9.5px; font-weight:700; color:var(--gw-text-muted); display:flex; align-items:center; gap:5px;}
+  .div-dot{width:7px; height:7px; border-radius:50%; flex-shrink:0;}
+  .div-chip-val{font-size:14px; font-weight:800; margin-top:3px; font-family:var(--gw-mono);}
+  .div-chip-sub{font-size:9.5px; color:var(--gw-text-subtle); margin-top:1px;}
+
+  .section-label{padding:18px 20px 8px; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--gw-text-primary); display:flex; align-items:center; justify-content:space-between;}
+  .section-link{font-size:12px; font-weight:700; color:var(--gw-pine-600); background:none; border:none; font-family:inherit;}
+
+  /* Filter row — Rep / Client / Division / Sort, existing accepted
+     horizontal-scroll-chip pattern (pl-filter-group in the real app) */
+  .filter-row{display:flex; gap:6px; overflow-x:auto; padding:0 20px 10px; -ms-overflow-style:none; scrollbar-width:none;}
+  .filter-row::-webkit-scrollbar{display:none;}
+  .filter-chip{flex-shrink:0; background:#fff; border:1px solid var(--gw-border-strong); border-radius:999px; padding:7px 13px; font-size:12px; font-weight:700; color:var(--gw-text-secondary); white-space:nowrap;}
+  .filter-chip.active{background:var(--gw-pine-600); border-color:var(--gw-pine-600); color:#fff;}
+  .filter-divider{width:1px; flex-shrink:0; background:var(--gw-border-strong); margin:4px 2px;}
+
+  /* Grouped lead list — flat, sorted, grouped by stage (matches real
+     mobile behavior: gw-pipe-group / gw-pipe-card) */
+  .pipe-group{margin:0 14px 14px;}
+  .pipe-group-head{display:flex; align-items:baseline; justify-content:space-between; padding:0 2px 8px; border-bottom:2px solid var(--gw-border-strong); margin-bottom:8px;}
+  .pipe-group-label{font-size:12.5px; font-weight:800; color:var(--gw-text-primary);}
+  .pipe-group-meta{font-size:11px; color:var(--gw-text-muted); font-family:var(--gw-mono);}
+
+  .lead-card{background:#fff; border:1px solid var(--gw-border); border-radius:12px; padding:12px 13px; margin-bottom:8px; box-shadow:var(--gw-shadow-xs); transition:transform .1s;}
+  .lead-card:active{transform:scale(.98);}
+  .lead-card.overdue{border-left:3px solid var(--gw-clay-600);}
+  .lead-card.stale{border-left:3px solid var(--gw-sand-600);}
+  .lead-top{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .lead-name{font-size:13.5px; font-weight:800; color:var(--gw-text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .lead-score{font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0;}
+  .lead-project{font-size:11.5px; color:var(--gw-text-muted); margin-top:3px;}
+  .lead-bottom{display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding-top:8px; border-top:1px solid var(--gw-border);}
+  .lead-val{font-size:13.5px; font-weight:800; font-family:var(--gw-mono); color:var(--gw-text-primary);}
+  .lead-meta{display:flex; align-items:center; gap:8px; font-size:10.5px; color:var(--gw-text-subtle);}
+  .lead-rep{font-weight:700;}
+
+  .cc-bottom-nav{position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto; background:var(--gw-pine-900); display:flex; justify-content:space-around; align-items:center; padding:8px 6px calc(8px + env(safe-area-inset-bottom)); box-shadow:0 -4px 20px rgba(0,0,0,.2);}
+  .cc-nav-btn{display:flex; flex-direction:column; align-items:center; gap:3px; color:rgba(255,255,255,.5); background:none; border:none; font-family:inherit; font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:10px; min-width:44px;}
+  .cc-nav-btn.active{color:#fff; background:rgba(255,255,255,.1);}
+</style>
+</head>
+<body>
+
+<div class="version-tag">Pipeline — Approved Style, Full Content</div>
+<div class="device-note">Mockup only — 375px mobile width — not wired to real data</div>
+<div class="coverage-note">
+  <strong>Real content included:</strong> full 6-tile KPI band (Open Pipeline, Weighted Forecast, Won, Lost, Win Rate, Needs Follow-Up), By-Division breakdown, Rep/Client/Division/Sort filters, and the sorted lead-card list grouped by stage — same as the existing mobile pipeline. Filter chips and division chips keep the app's existing horizontal-scroll pattern (used already for Pipeline filters and Schedule crew chips) — only the Command Center's stat/action rows were the ones the "no side-scroll" feedback applied to.
+</div>
+
+<header class="hero-dark">
+  <div class="hero-status">
+    <div class="status-left"><span class="status-dot"></span>23 leads · live</div>
+    <div class="status-right">Updated 8s ago</div>
+  </div>
+  <div class="hero-top">
+    <span class="hero-brand">Groundwork · Pipeline</span>
+    <div class="hero-avatar">TA</div>
+  </div>
+
+  <section class="glass-row">
+    <div class="glass-card">
+      <div class="glass-card-label">Open Pipeline</div>
+      <div class="glass-card-val">$142.8K</div>
+      <div class="glass-card-sub">14 open leads</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Weighted Forecast</div>
+      <div class="glass-card-val">$91.4K</div>
+      <div class="glass-card-sub">× close likelihood</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Won · This Month</div>
+      <div class="glass-card-val">$61.4K</div>
+      <div class="glass-card-sub">9 deals · avg $6.8K</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Lost · This Month</div>
+      <div class="glass-card-val">$18.2K</div>
+      <div class="glass-card-sub">3 deals</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Win Rate</div>
+      <div class="glass-card-val">75%</div>
+      <div class="glass-card-sub">9 of 12 decided</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label">Needs Follow-Up</div>
+      <div class="glass-card-val">4</div>
+      <div class="glass-card-sub">$28.1K sitting late</div>
+    </div>
+  </section>
+
+  <button class="hero-add-btn">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="1" x2="8" y2="15"/><line x1="1" y1="8" x2="15" y2="8"/></svg>
+    Add Lead
+  </button>
+</header>
+
+<!-- By Division -->
+<div class="div-strip">
+  <div class="div-chip"><div class="div-chip-label"><span class="div-dot" style="background:var(--gw-pine-600)"></span>Fencing</div><div class="div-chip-val">$58.2K</div><div class="div-chip-sub">6 leads</div></div>
+  <div class="div-chip"><div class="div-chip-label"><span class="div-dot" style="background:var(--gw-teal-600)"></span>Decking</div><div class="div-chip-val">$44.9K</div><div class="div-chip-sub">4 leads</div></div>
+  <div class="div-chip"><div class="div-chip-label"><span class="div-dot" style="background:var(--gw-sand-600)"></span>Painting</div><div class="div-chip-val">$28.4K</div><div class="div-chip-sub">3 leads</div></div>
+  <div class="div-chip"><div class="div-chip-label"><span class="div-dot" style="background:var(--gw-clay-600)"></span>Commercial</div><div class="div-chip-val">$11.3K</div><div class="div-chip-sub">1 lead</div></div>
+</div>
+
+<!-- Filters -->
+<div class="section-label" style="padding-bottom:0">Filters</div>
+<div class="filter-row">
+  <button class="filter-chip active">All Reps</button>
+  <button class="filter-chip">Jamie</button>
+  <button class="filter-chip">Alex</button>
+  <div class="filter-divider"></div>
+  <button class="filter-chip active">All Clients</button>
+  <button class="filter-chip">Residential</button>
+  <button class="filter-chip">Commercial</button>
+  <div class="filter-divider"></div>
+  <button class="filter-chip active">Priority</button>
+  <button class="filter-chip">Sitting Longest</button>
+  <button class="filter-chip">Recent</button>
+  <button class="filter-chip">Value</button>
+</div>
+
+<!-- Grouped lead list -->
+<div class="section-label">Leads <button class="section-link">Export CSV</button></div>
+
+<div class="pipe-group">
+  <div class="pipe-group-head"><span class="pipe-group-label">Proposal / Presentation</span><span class="pipe-group-meta">$24.7K · 2</span></div>
+  <div class="lead-card overdue">
+    <div class="lead-top"><span class="lead-name">Sarah Kim</span><span class="lead-score" style="background:var(--gw-pine-100);color:var(--gw-pine-700)">82%</span></div>
+    <div class="lead-project">New fence &amp; gate install</div>
+    <div class="lead-bottom">
+      <span class="lead-val">$9,800</span>
+      <div class="lead-meta"><span>Expires in 6h</span> · <span class="lead-rep" style="color:var(--gw-teal-600)">Jamie</span></div>
+    </div>
+  </div>
+  <div class="lead-card">
+    <div class="lead-top"><span class="lead-name">Marcus Webb</span><span class="lead-score" style="background:var(--gw-sand-100);color:var(--gw-sand-700)">54%</span></div>
+    <div class="lead-project">Commercial repaint</div>
+    <div class="lead-bottom">
+      <span class="lead-val">$14,900</span>
+      <div class="lead-meta"><span>Aug 24</span> · <span class="lead-rep" style="color:var(--gw-teal-600)">Alex</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="pipe-group">
+  <div class="pipe-group-head"><span class="pipe-group-label">Estimate Development</span><span class="pipe-group-meta">$8.3K · 1</span></div>
+  <div class="lead-card stale">
+    <div class="lead-top"><span class="lead-name">Priya Anand</span><span class="lead-score" style="background:var(--gw-sand-100);color:var(--gw-sand-700)">48%</span></div>
+    <div class="lead-project">Deck build — 400 sqft</div>
+    <div class="lead-bottom">
+      <span class="lead-val">$8,300</span>
+      <div class="lead-meta"><span>Sitting 9d (exp. 5d)</span> · <span class="lead-rep" style="color:var(--gw-teal-600)">Jamie</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="pipe-group">
+  <div class="pipe-group-head"><span class="pipe-group-label">Consultation</span><span class="pipe-group-meta">$6,200 · 1</span></div>
+  <div class="lead-card">
+    <div class="lead-top"><span class="lead-name">Rosa Chen</span><span class="lead-score" style="background:var(--gw-pine-100);color:var(--gw-pine-700)">71%</span></div>
+    <div class="lead-project">Residential · fence install</div>
+    <div class="lead-bottom">
+      <span class="lead-val" style="color:#9AA79A;font-weight:500">—</span>
+      <div class="lead-meta"><span>New lead</span> · <span class="lead-rep" style="color:var(--gw-teal-600)">Unassigned</span></div>
+    </div>
+  </div>
+</div>
+
+<nav class="cc-bottom-nav">
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6v7a1 1 0 01-1 1h-4v-5H8v5H4a1 1 0 01-1-1v-7z"/></svg>Home</button>
+  <button class="cc-nav-btn active"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c0-4 3-6 6.5-6s6.5 2 6.5 6"/></svg>Pipeline</button>
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="13" rx="1.5"/><path d="M2 8.5h16"/></svg>Schedule</button>
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h9l3 3v12a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 8h6M6 11h6M6 14h4"/></svg>Finance</button>
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1v2.5M10 16.5V19M2.6 5.6l1.8 1.8M15.6 12.6l1.8 1.8M1 10h2.5M16.5 10H19M2.6 14.4l1.8-1.8M15.6 7.4l1.8-1.8"/></svg>Admin</button>
+</nav>
+
+</body>
+</html>
