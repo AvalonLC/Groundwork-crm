@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
+import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { serveStatic } from 'hono/cloudflare-workers'
@@ -9175,18 +9176,28 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
           autopay = { attempted: false, reason: `Balance exceeds the client's autopay cap of $${(apMaxAmountCents / 100)}` }
         } else {
           const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
-          const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(inv.client_id, companyId).first()
-          if (company?.stripe_account_id && company.stripe_onboarded && client?.stripe_customer_id) {
-            const feePct = company.stripe_platform_fee_pct || 2.9
+          // DIRECT charge on the connected account, not a destination charge.
+          // The company is merchant of record: funds settle to them, and they
+          // carry the processing fee, refunds, disputes and negative balances.
+          // Groundwork takes only application_fee_amount and never holds funds.
+          const targetAccount = targetAccountFor(company)
+          // The saved card belongs to whichever account it was attached to. A
+          // platform card cannot be charged on a connected account, so this
+          // stops rather than attempting a charge Stripe will reject.
+          const pmOk = paymentMethodUsable(ap.stripe_account_id, targetAccount)
+          const customerId = (targetAccount && pmOk)
+            ? await resolveStripeCustomer(db, stripeKey, companyId, inv.client_id, targetAccount)
+            : null
+          if (targetAccount && pmOk && customerId) {
             const form = new URLSearchParams({
-              amount: String(owedCents), currency: 'usd', customer: client.stripe_customer_id,
+              amount: String(owedCents), currency: 'usd', customer: customerId,
               payment_method: ap.stripe_pm_id, confirm: 'true', 'off_session': 'true',
-              'application_fee_amount': String(Math.round(owedCents * feePct / 100)),
-              'transfer_data[destination]': company.stripe_account_id,
+              'application_fee_amount': String(applicationFeeCents(owedCents, Number(company.stripe_platform_fee_bps || 290))),
               'metadata[invoice_id]': invoiceId, 'metadata[company_id]': companyId, 'metadata[source]': 'autopay',
             })
             const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
-              method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+              method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded',
+                'Stripe-Account': targetAccount }, body: form.toString()
             })
             const pi: any = await piRes.json()
             if (piRes.ok && pi.status === 'succeeded') {
@@ -9395,21 +9406,24 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
   ).bind(companyId).first()
 
   // Get client's Stripe customer ID
-  const client: any = inv.client_id
-    ? await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`)
-        .bind(inv.client_id, companyId).first()
+  // Resolve a customer valid for the account this charge will execute on. A
+  // stored id from the platform is unusable on a connected account, so this
+  // creates a fresh one there rather than failing with "No such customer".
+  const chargeTarget = targetAccountFor(company)
+  const customerId = inv.client_id
+    ? await resolveStripeCustomer(db, stripeKey, companyId, inv.client_id, chargeTarget)
     : null
-  if (!client?.stripe_customer_id) return c.json({ error: 'Client has no Stripe customer on file' }, 400)
+  if (!customerId) return c.json({ error: 'Client has no Stripe customer on file' }, 400)
 
   try {
-    const feePct = company?.stripe_platform_fee_pct || 2.9
-    const applicationFeeAmount = Math.round(amount * feePct / 100)
+    // Basis points, not a REAL percentage — see migration 0078.
+    const applicationFeeAmount = applicationFeeCents(amount, Number(company?.stripe_platform_fee_bps || 290))
 
     // Build PaymentIntent params
     const form = new URLSearchParams({
       amount: String(amount),
       currency: 'usd',
-      customer: client.stripe_customer_id,
+      customer: customerId,
       payment_method: stripe_pm_id,
       confirm: 'true',
       'metadata[invoice_id]': invoiceId,
@@ -9422,9 +9436,12 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
       'Authorization': `Bearer ${stripeKey}`,
       'Content-Type': 'application/x-www-form-urlencoded'
     }
-    if (company?.stripe_account_id && company.stripe_onboarded) {
+    // DIRECT charge, matching every other payment path. See the autopay branch
+    // above for the merchant-of-record consequence.
+    const targetAccount = chargeTarget
+    if (targetAccount) {
       form.set('application_fee_amount', String(applicationFeeAmount))
-      form.set('transfer_data[destination]', company.stripe_account_id)
+      headers['Stripe-Account'] = targetAccount
     }
 
     const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
@@ -11881,6 +11898,61 @@ app.post('/api/stripe/disconnect', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+/**
+ * A Stripe customer id valid for the account this company charges on.
+ *
+ * Creates one on the connected account when the stored id belongs to a
+ * different account — which every pre-0080 row does, because customers used to
+ * be created on the platform while charges executed on the connected account.
+ *
+ * Returns null when Stripe is unreachable or the client has no email/name to
+ * create from; callers must treat that as "cannot charge", never as "charge on
+ * the platform instead", because that would silently move the merchant of
+ * record for a single payment.
+ */
+async function resolveStripeCustomer(
+  db: D1Database, stripeKey: string, companyId: string, clientId: string, targetAccount: string,
+): Promise<string | null> {
+  const client: any = await db.prepare(
+    `SELECT id, name, email, stripe_customer_id, stripe_customer_account_id
+       FROM clients WHERE id=? AND company_id=? LIMIT 1`,
+  ).bind(clientId, companyId).first()
+  if (!client) return null
+
+  const decision = decideCustomer(
+    { customer_id: client.stripe_customer_id || '', account_id: client.stripe_customer_account_id || '' },
+    targetAccount,
+  )
+  if (decision.action === 'reuse') return decision.customer_id
+
+  const form = new URLSearchParams({
+    name: client.name || '',
+    'metadata[client_id]': clientId,
+    'metadata[company_id]': companyId,
+  })
+  if (client.email) form.set('email', client.email)
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${stripeKey}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
+  // The header that was missing. Without it the customer is created on the
+  // platform and is unusable by the connected account that will charge it.
+  if (targetAccount) headers['Stripe-Account'] = targetAccount
+
+  const res = await fetch('https://api.stripe.com/v1/customers', { method: 'POST', headers, body: form.toString() })
+  const created: any = await res.json()
+  if (!res.ok || !created?.id) return null
+
+  await db.prepare(
+    `UPDATE clients SET stripe_customer_id=?, stripe_customer_account_id=? WHERE id=? AND company_id=?`,
+  ).bind(created.id, targetAccount, clientId, companyId).run()
+
+  // The old customer row is left alone on purpose — it still exists on the
+  // platform and may hold history somebody wants later.
+  return created.id
+}
+
 // POST /api/stripe/webhook — Stripe platform webhook (no auth; verify signature)
 app.post('/api/stripe/webhook', async (c) => {
   const stripeKey = (c.env as any).STRIPE_SECRET_KEY as string | undefined
@@ -13276,22 +13348,22 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -13314,38 +13386,38 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b003"></script>
-  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b006"></script>
+  <script src="/js/client_portal.js?v=20260820b006"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13979,70 +14051,70 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b006">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14697,46 +14769,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260820b003"></script>
-<script src="/js/gw-icons.js?v=20260820b003"></script>
-<script src="/js/sales-process.js?v=20260820b003"></script>
-<script src="/js/richtext.js?v=20260820b003"></script>
-<script src="/js/db.js?v=20260820b003"></script>
-<script src="/js/data.js?v=20260820b003"></script>
-<script src="/js/reps.js?v=20260820b003"></script>
-<script src="/js/record-page.js?v=20260820b003"></script>
-<script src="/js/academy.js?v=20260820b003"></script>
-<script src="/js/task_engine.js?v=20260820b003"></script>
-<script src="/js/gw_i18n.js?v=20260820b003"></script>
-<script src="/js/app_premium.js?v=20260820b003"></script>
-<script src="/js/estimates.js?v=20260820b003"></script>
-<script src="/js/multiday.js?v=20260820b003"></script>
-<script src="/js/proposals.js?v=20260820b003"></script>
-<script src="/js/pricing.js?v=20260820b003"></script>
-<script src="/js/invoices.js?v=20260820b003"></script>
-<script src="/js/csv_import.js?v=20260820b003"></script>
-<script src="/js/onboarding.js?v=20260820b003"></script>
-<script src="/js/gw_copilot.js?v=20260820b003"></script>
-<script src="/js/groundwork_ai.js?v=20260820b003"></script>
-<script src="/js/recurring_plans.js?v=20260820b003"></script>
-<script src="/js/reviews.js?v=20260820b003"></script>
-<script src="/js/stripe.js?v=20260820b003"></script>
-<script src="/js/email.js?v=20260820b003"></script>
-<script src="/js/notifications.js?v=20260820b003"></script>
-<script src="/js/integrations.js?v=20260820b003"></script>
-<script src="/js/sms.js?v=20260820b003"></script>
-<script src="/js/calendar_sync.js?v=20260820b003"></script>
-<script src="/js/ai_followup.js?v=20260820b003"></script>
-<script src="/js/user_management.js?v=20260820b003"></script>
-<script src="/js/platform_admin.js?v=20260820b003"></script>
-<script src="/js/time_tracker.js?v=20260820b003"></script>
-<script src="/js/field_workday.js?v=20260820b003"></script>
-<script src="/js/platform_core.js?v=20260820b003"></script>
-<script src="/js/approval_engine.js?v=20260820b003"></script>
-<script src="/js/automation_engine.js?v=20260820b003"></script>
-<script src="/js/client_portal.js?v=20260820b003"></script>
-<script src="/js/field_mode.js?v=20260820b003"></script>
-<script src="/js/assets_hub.js?v=20260820b003"></script><script src="/js/marketing.js?v=20260820b003"></script><script>
+<script src="/js/gw_date.js?v=20260820b006"></script>
+<script src="/js/gw-icons.js?v=20260820b006"></script>
+<script src="/js/sales-process.js?v=20260820b006"></script>
+<script src="/js/richtext.js?v=20260820b006"></script>
+<script src="/js/db.js?v=20260820b006"></script>
+<script src="/js/data.js?v=20260820b006"></script>
+<script src="/js/reps.js?v=20260820b006"></script>
+<script src="/js/record-page.js?v=20260820b006"></script>
+<script src="/js/academy.js?v=20260820b006"></script>
+<script src="/js/task_engine.js?v=20260820b006"></script>
+<script src="/js/gw_i18n.js?v=20260820b006"></script>
+<script src="/js/app_premium.js?v=20260820b006"></script>
+<script src="/js/estimates.js?v=20260820b006"></script>
+<script src="/js/multiday.js?v=20260820b006"></script>
+<script src="/js/proposals.js?v=20260820b006"></script>
+<script src="/js/pricing.js?v=20260820b006"></script>
+<script src="/js/invoices.js?v=20260820b006"></script>
+<script src="/js/csv_import.js?v=20260820b006"></script>
+<script src="/js/onboarding.js?v=20260820b006"></script>
+<script src="/js/gw_copilot.js?v=20260820b006"></script>
+<script src="/js/groundwork_ai.js?v=20260820b006"></script>
+<script src="/js/recurring_plans.js?v=20260820b006"></script>
+<script src="/js/reviews.js?v=20260820b006"></script>
+<script src="/js/stripe.js?v=20260820b006"></script>
+<script src="/js/email.js?v=20260820b006"></script>
+<script src="/js/notifications.js?v=20260820b006"></script>
+<script src="/js/integrations.js?v=20260820b006"></script>
+<script src="/js/sms.js?v=20260820b006"></script>
+<script src="/js/calendar_sync.js?v=20260820b006"></script>
+<script src="/js/ai_followup.js?v=20260820b006"></script>
+<script src="/js/user_management.js?v=20260820b006"></script>
+<script src="/js/platform_admin.js?v=20260820b006"></script>
+<script src="/js/time_tracker.js?v=20260820b006"></script>
+<script src="/js/field_workday.js?v=20260820b006"></script>
+<script src="/js/platform_core.js?v=20260820b006"></script>
+<script src="/js/approval_engine.js?v=20260820b006"></script>
+<script src="/js/automation_engine.js?v=20260820b006"></script>
+<script src="/js/client_portal.js?v=20260820b006"></script>
+<script src="/js/field_mode.js?v=20260820b006"></script>
+<script src="/js/assets_hub.js?v=20260820b006"></script><script src="/js/marketing.js?v=20260820b006"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

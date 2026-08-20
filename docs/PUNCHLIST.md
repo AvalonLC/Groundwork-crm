@@ -67,7 +67,24 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
   headcount the way `rep` was.
 
 ## Real gaps — not built, and why
-0. **Stripe customers are created on the PLATFORM account but charged on the
+0. ~~**Stripe customers are created on the PLATFORM account but charged on the
+   CONNECTED account.**~~ — **FIXED** 2026-08-20. Migration 0080 records which
+   account each customer and saved card belongs to; a mismatch is treated as
+   "no customer" and a fresh one is created on the right account, leaving the
+   old row intact. The charge model is now DIRECT everywhere — no
+   `transfer_data[destination]` survives in `src/`.
+
+   OUTSTANDING, and it is a real user-visible consequence: a saved CARD cannot
+   follow its customer between Stripe accounts. Cards saved before 0080 carry
+   `stripe_account_id = ''` and are refused rather than attempted, so any client
+   with autopay enabled must re-enter their card. That is inherent to Stripe's
+   model. Nobody has autopay configured today (0 rows locally), so the practical
+   impact now is nil — but it will not stay that way, and re-collection has no
+   UI prompt yet.
+
+   Original note follows.
+
+   **Stripe customers are created on the PLATFORM account but charged on the
    CONNECTED account.** `src/portal.tsx` creates `/v1/customers` with no
    `Stripe-Account` header, so `clients.stripe_customer_id` is a platform
    customer — while `chargeSavedPM` (same file) and
