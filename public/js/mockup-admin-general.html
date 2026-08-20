@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Admin / General — Mobile (approved Command Center style)</title>
+<style>
+  :root {
+    --gw-pine-900:#0D2B22; --gw-pine-800:#1A4740; --gw-pine-700:#1E5448; --gw-pine-600:#2D7A55;
+    --gw-pine-500:#3D9B6E; --gw-pine-400:#5BB585; --gw-pine-300:#8FD1AE; --gw-pine-200:#C4E8D6;
+    --gw-pine-100:#EAF4EE; --gw-pine-50:#F3FAF6;
+    --gw-sand-700:#7A5C10; --gw-sand-600:#8B6914; --gw-sand-400:#C49A40; --gw-sand-200:#E8D49C; --gw-sand-100:#FAF3DC;
+    --gw-clay-700:#7A2E20; --gw-clay-600:#8B3826; --gw-clay-400:#C4614A; --gw-clay-200:#EDCCC5; --gw-clay-100:#FAE8E4;
+    --gw-teal-700:#215E5A; --gw-teal-600:#2D7874; --gw-teal-500:#4D8A86; --gw-teal-200:#B4D4D2; --gw-teal-100:#EAF3F2;
+    --gw-bark-900:#1C1712; --gw-bark-700:#4A3F38; --gw-bark-500:#6E6059; --gw-bark-400:#8C7F78; --gw-bark-300:#B5ABA4; --gw-bark-200:#D8D2CC; --gw-bark-100:#EDEAE6; --gw-bark-50:#F7F5F2;
+    --gw-bg-subtle:#F7F5F0;
+    --gw-border:var(--gw-bark-100); --gw-border-strong:var(--gw-bark-200);
+    --gw-text-primary:var(--gw-bark-900); --gw-text-secondary:var(--gw-bark-700);
+    --gw-text-muted:var(--gw-bark-500); --gw-text-subtle:var(--gw-bark-400);
+    --gw-action:var(--gw-pine-600);
+    --gw-shadow-xs: 0 1px 2px rgba(28,23,18,.04), 0 1px 4px rgba(28,23,18,.04);
+    --gw-shadow-sm: 0 1px 4px rgba(28,23,18,.05), 0 4px 12px rgba(28,23,18,.06);
+    --gw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --gw-mono: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+    --gw-tap:44px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{font-family:var(--gw-font);background:var(--gw-bg-subtle);color:var(--gw-text-primary);-webkit-font-smoothing:antialiased}
+  body{padding-bottom:96px; max-width:480px; margin:0 auto;}
+  .version-tag{position:sticky; top:0; z-index:50; text-align:center; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--gw-pine-700); padding:6px 0;}
+  .device-note{text-align:center; font-size:11px; color:var(--gw-text-subtle); padding:8px 0 2px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;}
+  .coverage-note{margin:10px 14px 0; background:var(--gw-pine-50); border:1px solid var(--gw-pine-200); border-radius:10px; padding:9px 12px; font-size:11.5px; line-height:1.5; color:var(--gw-pine-700);}
+  .coverage-note strong{color:var(--gw-pine-900);}
+
+  /* ── Dark hero (approved template) — this page has no real KPI numbers,
+       so the hero anchors on identity/role + account health instead of a
+       big dollar metric, which fits the content better than forcing one. */
+  .hero-dark{position:relative; overflow:hidden; background:linear-gradient(160deg, var(--gw-pine-900) 0%, var(--gw-pine-800) 55%, var(--gw-pine-700) 100%); padding:14px 20px 20px; color:#fff;}
+  .hero-dark::before{content:''; position:absolute; top:-60px; right:-60px; width:220px; height:220px; background:radial-gradient(circle, rgba(255,255,255,.09), transparent 70%); border-radius:50%;}
+  .hero-dark::after{content:''; position:absolute; bottom:-80px; left:-40px; width:200px; height:200px; background:radial-gradient(circle, rgba(143,209,174,.10), transparent 70%); border-radius:50%;}
+  .hero-status{display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,.12); margin-bottom:14px;}
+  .status-left{display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:rgba(255,255,255,.75);}
+  .status-dot{width:6px; height:6px; border-radius:50%; background:var(--gw-pine-300); animation:blink 1.6s infinite;}
+  @keyframes blink{0%,100%{opacity:1} 50%{opacity:.35}}
+  .status-right{font-size:10.5px; color:rgba(255,255,255,.45); font-family:var(--gw-mono);}
+  .hero-top{display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1;}
+  .hero-brand{font-size:10px; font-weight:800; letter-spacing:.13em; color:rgba(255,255,255,.5); text-transform:uppercase;}
+  .hero-avatar{width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#fff;}
+
+  .hero-id-row{position:relative; z-index:1; display:flex; align-items:center; gap:12px; margin-top:14px;}
+  .hero-id-avatar{width:52px; height:52px; border-radius:16px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:800; flex-shrink:0;}
+  .hero-id-name{font-size:19px; font-weight:800;}
+  .hero-id-role{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:var(--gw-pine-300); margin-top:3px; background:rgba(143,209,174,.15); padding:2px 9px; border-radius:20px;}
+
+  /* Account health glass row — Google connected? / Signature set? / Last
+     backup. Fixed 2-up grid inside hero, no scroll (locked convention). */
+  .glass-row{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; position:relative; z-index:1;}
+  .glass-card{background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); border-radius:14px; padding:12px 13px; color:#fff;}
+  .glass-card.span2{grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between;}
+  .glass-card-label{font-size:10px; font-weight:700; color:rgba(255,255,255,.75); text-transform:uppercase; letter-spacing:.04em; display:flex; align-items:center; gap:5px;}
+  .glass-card-val{font-size:16px; font-weight:800; margin-top:4px; font-family:var(--gw-mono); color:#fff;}
+  .glass-card-val.ok{color:var(--gw-pine-300);}
+  .glass-card-val.warn{color:#F0C879;}
+  .glass-card-sub{font-size:10px; color:rgba(255,255,255,.65); margin-top:3px;}
+  .glass-dot{width:6px; height:6px; border-radius:50%; flex-shrink:0;}
+
+  .section-label{padding:22px 20px 8px; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--gw-text-primary); display:flex; align-items:center; justify-content:space-between;}
+  .section-sub{padding:0 20px 6px; font-size:11.5px; color:var(--gw-text-muted); margin-top:-4px;}
+  .section-link{font-size:12px; font-weight:700; color:var(--gw-pine-600); background:none; border:none; font-family:inherit;}
+  .section-tag{font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px;}
+  .section-tag.owner{background:var(--gw-pine-100); color:var(--gw-pine-700);}
+
+  /* Card grid for Your Account (Google + Signature) — stacked full width
+     on mobile, not the desktop 2-col grid (each card needs room to breathe) */
+  .acct-card{margin:0 14px 10px; background:#fff; border:1px solid var(--gw-border-strong); border-radius:14px; padding:14px; box-shadow:var(--gw-shadow-xs);}
+  .acct-card-head{display:flex; align-items:center; justify-content:between; gap:10px; margin-bottom:10px;}
+  .acct-card-title{font-size:13px; font-weight:800; display:flex; align-items:center; gap:7px;}
+  .acct-status-pill{display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; padding:3px 10px; border-radius:20px; margin-top:6px;}
+  .acct-status-pill.connected{background:var(--gw-pine-100); color:var(--gw-pine-700);}
+  .acct-status-pill.notconnected{background:var(--gw-sand-100); color:var(--gw-sand-700);}
+  .acct-row{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--gw-border); font-size:12.5px;}
+  .acct-row:last-child{border-bottom:none;}
+  .acct-row-label{color:var(--gw-text-muted);}
+  .acct-row-val{font-weight:700;}
+  .acct-btn{width:100%; margin-top:10px; background:var(--gw-pine-600); color:#fff; border:none; border-radius:10px; padding:11px; font-weight:800; font-size:13px; font-family:inherit; min-height:var(--gw-tap);}
+  .acct-btn.outline{background:#fff; border:1px solid var(--gw-border-strong); color:var(--gw-text-primary);}
+  .sig-preview{background:var(--gw-bark-50); border:1px dashed var(--gw-border-strong); border-radius:10px; padding:12px; font-family:'Brush Script MT', cursive; font-size:22px; color:var(--gw-text-primary); text-align:center; margin-bottom:4px;}
+
+  /* Data & Backup — 3 stacked action cards on mobile */
+  .data-card{margin:0 14px 10px; background:#fff; border:1px solid var(--gw-border-strong); border-radius:14px; padding:14px; box-shadow:var(--gw-shadow-xs);}
+  .data-card.cloud{border-color:rgba(77,138,134,.35); background:linear-gradient(180deg,#fff, var(--gw-teal-100) 220%);}
+  .data-card.locked{opacity:.65;}
+  .data-card-title{font-size:13px; font-weight:800; margin-bottom:4px;}
+  .data-card-desc{font-size:12px; color:var(--gw-text-muted); line-height:1.5; margin-bottom:10px;}
+  .data-btn-row{display:flex; flex-direction:column; gap:8px;}
+  .data-btn{width:100%; text-align:center; border-radius:10px; padding:11px; font-weight:700; font-size:12.5px; font-family:inherit; min-height:var(--gw-tap); border:1px solid var(--gw-border-strong); background:#fff; color:var(--gw-text-primary);}
+  .data-btn.primary{background:var(--gw-pine-600); border-color:var(--gw-pine-600); color:#fff;}
+  .data-btn.teal{background:var(--gw-teal-600); border-color:var(--gw-teal-600); color:#fff;}
+  .data-file-input{width:100%; font-size:12px; padding:9px; border:1px solid var(--gw-border-strong); border-radius:10px; margin-bottom:8px; background:var(--gw-bark-50);}
+
+  /* Administration row — single tap-through card */
+  .admin-link-card{margin:0 14px; background:#fff; border:1px solid var(--gw-border-strong); border-radius:14px; padding:14px; box-shadow:var(--gw-shadow-xs); display:flex; align-items:center; gap:12px;}
+  .admin-link-icon{width:38px; height:38px; border-radius:10px; background:var(--gw-pine-100); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .admin-link-text{flex:1; min-width:0;}
+  .admin-link-title{font-size:13px; font-weight:800;}
+  .admin-link-sub{font-size:11px; color:var(--gw-text-muted); margin-top:1px;}
+  .admin-link-chevron{color:var(--gw-text-subtle); flex-shrink:0;}
+
+  /* Commissions — zone-accordion pattern reused from Command Center E */
+  .zone-card{margin:0 14px 10px; background:#fff; border:1px solid var(--gw-border-strong); border-radius:14px; overflow:hidden; box-shadow:var(--gw-shadow-xs);}
+  .zone-head{display:flex; align-items:center; gap:12px; padding:14px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .zone-icon{width:36px; height:36px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .zone-info{flex:1; min-width:0;}
+  .zone-title{font-size:13.5px; font-weight:800; color:var(--gw-text-primary);}
+  .zone-teaser{font-size:11.5px; color:var(--gw-text-muted); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .zone-badge{font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0; white-space:nowrap;}
+  .zone-chevron{width:18px; height:18px; flex-shrink:0; color:var(--gw-text-subtle); transition:transform .2s;}
+  .zone-card.open .zone-chevron{transform:rotate(180deg);}
+  .zone-body{max-height:0; overflow:hidden; transition:max-height .3s ease;}
+  .zone-card.open .zone-body{max-height:2000px;}
+  .zone-body-inner{padding:2px 14px 16px; border-top:1px solid var(--gw-border);}
+
+  .zw-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; font-size:12.5px; border-bottom:1px solid var(--gw-border);}
+  .zw-row:last-child{border-bottom:none;}
+  .zw-row-left{min-width:0;}
+  .zw-row-title{font-weight:700; color:var(--gw-text-primary);}
+  .zw-row-sub{font-size:11px; color:var(--gw-text-muted); margin-top:1px;}
+  .zw-row-right{text-align:right; flex-shrink:0; font-family:var(--gw-mono); font-weight:700; font-size:12px;}
+  .zw-mini-note{font-size:11.5px; color:var(--gw-text-muted); line-height:1.5; padding:8px 0;}
+  .zw-btn-row{display:flex; flex-wrap:wrap; gap:8px; padding-top:6px;}
+  .zw-btn{background:var(--gw-bark-50); border:1px solid var(--gw-border-strong); border-radius:9px; padding:8px 12px; font-size:11.5px; font-weight:700; font-family:inherit; color:var(--gw-text-primary); display:inline-flex; align-items:center; gap:6px;}
+  .zw-sim-slider-row{padding:8px 0;}
+  .zw-sim-label{display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:4px;}
+  .zw-sim-track{height:6px; background:var(--gw-bark-100); border-radius:3px; position:relative;}
+  .zw-sim-fill{height:100%; border-radius:3px; background:var(--gw-pine-600);}
+  .zw-sim-thumb{position:absolute; top:50%; width:16px; height:16px; border-radius:50%; background:#fff; border:3px solid var(--gw-pine-600); transform:translate(-50%,-50%); box-shadow:var(--gw-shadow-xs);}
+
+  /* Danger Zone */
+  .danger-label{padding:26px 20px 8px; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--gw-clay-700);}
+  .danger-card{margin:0 14px; background:var(--gw-clay-100); border:1px solid var(--gw-clay-200); border-radius:14px; padding:14px;}
+  .danger-title{font-size:13px; font-weight:800; color:var(--gw-clay-700); margin-bottom:4px;}
+  .danger-desc{font-size:12px; color:var(--gw-clay-700); opacity:.85; line-height:1.5; margin-bottom:10px;}
+  .danger-btn{width:100%; background:var(--gw-clay-600); color:#fff; border:none; border-radius:10px; padding:11px; font-weight:800; font-size:12.5px; font-family:inherit; min-height:var(--gw-tap);}
+
+  .cc-bottom-nav{position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto; background:var(--gw-pine-900); display:flex; justify-content:space-around; align-items:center; padding:8px 6px calc(8px + env(safe-area-inset-bottom)); box-shadow:0 -4px 20px rgba(0,0,0,.2);}
+  .cc-nav-btn{display:flex; flex-direction:column; align-items:center; gap:3px; color:rgba(255,255,255,.5); background:none; border:none; font-family:inherit; font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:10px; min-width:44px;}
+  .cc-nav-btn.active{color:#fff; background:rgba(255,255,255,.1);}
+</style>
+</head>
+<body>
+
+<div class="version-tag">Admin / General — Approved Style, Full Content</div>
+<div class="device-note">Mockup only — 375px mobile width — not wired to real data</div>
+<div class="coverage-note">
+  <strong>Real content included (this page had ZERO dedicated mobile handling before):</strong> Your Account (Google connection + Signature), Data &amp; Backup (Export / Cloud Sync / Import), Administration (User &amp; Access Management link), Commissions (Rules, Simulator, Audit Trail, Admin Tools — tucked into tap-to-expand accordions like the Command Center's zones), and Danger Zone (Reset). Shown here in the Owner/Admin view, which sees the most sections — Rep and Office Manager views see fewer (no Administration/Commissions/Danger Zone for Reps).
+</div>
+
+<header class="hero-dark">
+  <div class="hero-status">
+    <div class="status-left"><span class="status-dot"></span>Account &amp; system settings</div>
+    <div class="status-right">Synced 2m ago</div>
+  </div>
+  <div class="hero-top">
+    <span class="hero-brand">Groundwork · Admin</span>
+    <div class="hero-avatar">TA</div>
+  </div>
+
+  <div class="hero-id-row">
+    <div class="hero-id-avatar">TA</div>
+    <div>
+      <div class="hero-id-name">Tyler Avalon</div>
+      <div class="hero-id-role">★ Owner View</div>
+    </div>
+  </div>
+
+  <!-- Account health snapshot — Google / Signature / Backup status -->
+  <section class="glass-row">
+    <div class="glass-card">
+      <div class="glass-card-label"><span class="glass-dot" style="background:var(--gw-pine-300)"></span>Google</div>
+      <div class="glass-card-val ok">Connected</div>
+      <div class="glass-card-sub">tyler@avalonfence.com</div>
+    </div>
+    <div class="glass-card">
+      <div class="glass-card-label"><span class="glass-dot" style="background:var(--gw-pine-300)"></span>Signature</div>
+      <div class="glass-card-val ok">Set</div>
+      <div class="glass-card-sub">Used on estimates &amp; invoices</div>
+    </div>
+    <div class="glass-card span2">
+      <div>
+        <div class="glass-card-label">Last Cloud Backup</div>
+        <div class="glass-card-val">Today, 6:04 AM</div>
+      </div>
+      <div class="glass-card-sub" style="text-align:right">Auto-sync healthy</div>
+    </div>
+  </section>
+</header>
+
+<!-- ═══════════ YOUR ACCOUNT ═══════════ -->
+<div class="section-label">Your Account</div>
+
+<div class="acct-card">
+  <div class="acct-card-title">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="var(--gw-pine-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="12" rx="2"/><path d="M2 6l8 5 8-5"/></svg>
+    Google Workspace
+  </div>
+  <span class="acct-status-pill connected">✓ Connected</span>
+  <div style="margin-top:10px">
+    <div class="acct-row"><span class="acct-row-label">Account</span><span class="acct-row-val">tyler@avalonfence.com</span></div>
+    <div class="acct-row"><span class="acct-row-label">Calendar sync</span><span class="acct-row-val" style="color:var(--gw-pine-600)">Active</span></div>
+    <div class="acct-row"><span class="acct-row-label">Gmail send-as</span><span class="acct-row-val" style="color:var(--gw-pine-600)">Active</span></div>
+  </div>
+  <button class="acct-btn outline">Manage Connection</button>
+</div>
+
+<div class="acct-card">
+  <div class="acct-card-title">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="var(--gw-sand-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l9-9 3 3-9 9H3v-3z"/></svg>
+    Signature
+  </div>
+  <div class="sig-preview">Tyler Avalon</div>
+  <div style="font-size:11px;color:var(--gw-text-muted);text-align:center;margin-bottom:2px">Appears on estimates, invoices &amp; emails</div>
+  <button class="acct-btn">Edit Signature</button>
+</div>
+
+<!-- ═══════════ DATA & BACKUP ═══════════ -->
+<div class="section-label">Data &amp; Backup</div>
+
+<div class="data-card">
+  <div class="data-card-title">Export</div>
+  <div class="data-card-desc">Download your pipeline, notes, and settings for backup or reporting.</div>
+  <div class="data-btn-row">
+    <button class="data-btn primary">⬇ Download JSON Backup</button>
+    <button class="data-btn">⬇ Download Pipeline CSV</button>
+    <button class="data-btn" style="border-color:rgba(77,138,134,.5);color:var(--gw-teal-600)">☁ Full Company Export (Cloud)</button>
+  </div>
+</div>
+
+<div class="data-card cloud">
+  <div class="data-card-title">Cloud Sync &amp; Recovery</div>
+  <div class="data-card-desc">If leads aren't showing up for teammates, use <strong>Recover My Leads</strong> to push your local data to the cloud. Safe to run anytime — no duplicates.</div>
+  <div class="data-btn-row">
+    <button class="data-btn teal">↑ Recover My Leads to Cloud</button>
+    <button class="data-btn">⟲ Sync from Cloud Now</button>
+  </div>
+</div>
+
+<div class="data-card">
+  <div class="data-card-title">Import</div>
+  <div class="data-card-desc">Restore a JSON backup from this same app. <strong style="color:var(--gw-clay-600)">Admin only.</strong></div>
+  <input class="data-file-input" type="text" value="Choose file — no file selected" disabled>
+  <button class="data-btn">Import Backup</button>
+</div>
+
+<!-- ═══════════ ADMINISTRATION (admin-only) ═══════════ -->
+<div class="section-label">Administration <span class="section-tag owner">Owner Only</span></div>
+<div class="admin-link-card">
+  <div class="admin-link-icon">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--gw-pine-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6"/><circle cx="15" cy="7" r="2"/><path d="M12.5 11.5c1.8.2 3 1.6 3 4"/></svg>
+  </div>
+  <div class="admin-link-text">
+    <div class="admin-link-title">User &amp; Access Management</div>
+    <div class="admin-link-sub">Manage users, roles, permissions &amp; Google Workspace</div>
+  </div>
+  <svg class="admin-link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3l5 5-5 5"/></svg>
+</div>
+
+<!-- ═══════════ COMMISSIONS (admin-only) — 4 accordion panels ═══════════ -->
+<div class="section-label">Commissions <span class="section-tag owner">Owner Only</span></div>
+
+<div class="zone-card" id="zone-comm-rules">
+  <div class="zone-head" onclick="toggleZone('zone-comm-rules')">
+    <div class="zone-icon" style="background:var(--gw-pine-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-pine-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l4-5 3 3 6-8"/><path d="M13 5h3v3"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Commission Rules</div>
+      <div class="zone-teaser">Rates, caps &amp; thresholds</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-pine-100);color:var(--gw-pine-700)">Default plan</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-mini-note">Using default Avalon commission structure. No custom overrides active.</div>
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Tier 1 (0–$10K)</span></div><span class="zw-row-right">6%</span></div>
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Tier 2 ($10K–$30K)</span></div><span class="zw-row-right">8%</span></div>
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Tier 3 ($30K+)</span></div><span class="zw-row-right">10%</span></div>
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Monthly payout cap</span></div><span class="zw-row-right">$8,000</span></div>
+      <div class="zw-btn-row"><button class="zw-btn">✎ Edit Rules</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="zone-card" id="zone-comm-sim">
+  <div class="zone-head" onclick="toggleZone('zone-comm-sim')">
+    <div class="zone-icon" style="background:var(--gw-teal-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-teal-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M6 10h8M10 6v8"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Commission Simulator</div>
+      <div class="zone-teaser">Test payout scenarios</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-teal-100);color:var(--gw-teal-700)">Interactive</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-sim-slider-row">
+        <div class="zw-sim-label"><span>Deal Size</span><span style="font-weight:800">$24,000</span></div>
+        <div class="zw-sim-track"><div class="zw-sim-fill" style="width:48%"></div><div class="zw-sim-thumb" style="left:48%"></div></div>
+      </div>
+      <div class="zw-sim-slider-row">
+        <div class="zw-sim-label"><span>Rep Tier</span><span style="font-weight:800">Tier 2</span></div>
+        <div class="zw-sim-track"><div class="zw-sim-fill" style="width:65%;background:var(--gw-teal-600)"></div><div class="zw-sim-thumb" style="left:65%;border-color:var(--gw-teal-600)"></div></div>
+      </div>
+      <div class="zw-row" style="border-top:1px solid var(--gw-border);margin-top:8px;padding-top:10px">
+        <div class="zw-row-left"><span class="zw-row-title">Estimated Payout</span></div>
+        <span class="zw-row-right" style="font-size:15px;color:var(--gw-pine-600)">$1,920</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="zone-card" id="zone-comm-audit">
+  <div class="zone-head" onclick="toggleZone('zone-comm-audit')">
+    <div class="zone-icon" style="background:var(--gw-sand-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-sand-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h10v14H5z"/><path d="M7 7h6M7 10h6M7 13h4"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Commission Audit Trail</div>
+      <div class="zone-teaser">Change history</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-sand-100);color:var(--gw-sand-700)">3 entries</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Tier 2 rate 7% → 8%</span><div class="zw-row-sub">By Tyler Avalon</div></div><span class="zw-row-right" style="font-size:11px;font-weight:600">Aug 3</span></div>
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Monthly cap $6K → $8K</span><div class="zw-row-sub">By Tyler Avalon</div></div><span class="zw-row-right" style="font-size:11px;font-weight:600">Jul 18</span></div>
+      <div class="zw-row"><div class="zw-row-left"><span class="zw-row-title">Initial rules created</span><div class="zw-row-sub">By Tyler Avalon</div></div><span class="zw-row-right" style="font-size:11px;font-weight:600">Jun 2</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="zone-card" id="zone-comm-admin">
+  <div class="zone-head" onclick="toggleZone('zone-comm-admin')">
+    <div class="zone-icon" style="background:var(--gw-bark-100)">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--gw-bark-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1v2.5M10 16.5V19M2.6 5.6l1.8 1.8M15.6 12.6l1.8 1.8M1 10h2.5M16.5 10H19M2.6 14.4l1.8-1.8M15.6 7.4l1.8-1.8"/></svg>
+    </div>
+    <div class="zone-info">
+      <div class="zone-title">Commission Admin Tools</div>
+      <div class="zone-teaser">Migration, QA &amp; feature flags</div>
+    </div>
+    <span class="zone-badge" style="background:var(--gw-bark-100);color:var(--gw-bark-700)">System</span>
+    <svg class="zone-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+  </div>
+  <div class="zone-body">
+    <div class="zone-body-inner">
+      <div class="zw-mini-note">Run these only when directed by support — they affect all reps' commission data.</div>
+      <div class="zw-btn-row">
+        <button class="zw-btn">📦 Run Data Migration</button>
+        <button class="zw-btn">🔍 Run QA Self-Check</button>
+        <button class="zw-btn">🚩 Feature Flags</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ DANGER ZONE (admin-only) ═══════════ -->
+<div class="danger-label">Danger Zone <span class="section-tag owner" style="background:var(--gw-clay-100);color:var(--gw-clay-700)">Owner Only</span></div>
+<div class="danger-card">
+  <div class="danger-title">Reset All Data</div>
+  <div class="danger-desc">Clears all opportunities, notes, and checklist progress on this browser. <strong>Cannot be undone.</strong></div>
+  <button class="danger-btn">Reset All Local Data</button>
+</div>
+
+<nav class="cc-bottom-nav">
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6v7a1 1 0 01-1 1h-4v-5H8v5H4a1 1 0 01-1-1v-7z"/></svg>Home</button>
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c0-4 3-6 6.5-6s6.5 2 6.5 6"/></svg>Pipeline</button>
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="13" rx="1.5"/><path d="M2 8.5h16"/></svg>Schedule</button>
+  <button class="cc-nav-btn"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h9l3 3v12a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 8h6M6 11h6M6 14h4"/></svg>Finance</button>
+  <button class="cc-nav-btn active"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 1v2.5M10 16.5V19M2.6 5.6l1.8 1.8M15.6 12.6l1.8 1.8M1 10h2.5M16.5 10H19M2.6 14.4l1.8-1.8M15.6 7.4l1.8-1.8"/></svg>Admin</button>
+</nav>
+
+<script>
+  function toggleZone(id) {
+    document.getElementById(id).classList.toggle('open');
+  }
+</script>
+
+</body>
+</html>

@@ -13311,6 +13311,277 @@ h1.pl-title,
 /* ── end mobile My Day ── */
 
 /* ══════════════════════════════════════════════════════════════════════════
+   gwm-* — SHARED MOBILE DESIGN LANGUAGE (max-width: 768px)
+
+   Ported verbatim from the user-approved mockups (Command Center Version E,
+   Financial Hub, Pipeline, Schedule/Ops, Admin/General — all approved
+   "all is good. build."). One visual language, five real pages:
+
+     .gwm-hero              dark pine-gradient hero header
+     .gwm-glass-row/-card   2-up glass stat tiles inside the hero (NEVER
+                            horizontal-scroll — that was the Version D bug)
+     .gwm-pq-*              "Priority Queue" ranked attention rows
+     .gwm-pill-row/-btn     fixed-grid quick-action buttons
+     .gwm-zone-*            tap-to-expand accordion sections (widget groups)
+     .gwm-crew-table        compact live-status table
+
+   Namespaced gwm- (Groundwork Mobile) rather than reusing the mockups' bare
+   class names 1:1, so this can never collide with existing desktop classes
+   elsewhere in this 18k-line file. Every real page's mobile renderer should
+   build markup using these classes going forward.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Dark hero header ─────────────────────────────────────────────────── */
+  .gwm-hero {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(160deg, var(--gw-pine-900) 0%, var(--gw-pine-800) 55%, var(--gw-pine-700) 100%);
+    padding: 14px 16px 20px;
+    color: #fff;
+    margin: -14px -14px 0;
+  }
+  .gwm-hero::before {
+    content: ''; position: absolute; top: -60px; right: -60px; width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(255,255,255,.09), transparent 70%);
+    border-radius: 50%;
+  }
+  .gwm-hero::after {
+    content: ''; position: absolute; bottom: -80px; left: -40px; width: 200px; height: 200px;
+    background: radial-gradient(circle, rgba(143,209,174,.10), transparent 70%);
+    border-radius: 50%;
+  }
+  .gwm-hero-status {
+    display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1;
+    padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,.12); margin-bottom: 14px;
+  }
+  .gwm-status-left { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: rgba(255,255,255,.75); }
+  .gwm-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gw-pine-300); animation: gwmBlink 1.6s infinite; }
+  @keyframes gwmBlink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .gwm-status-right { font-size: 10.5px; color: rgba(255,255,255,.45); font-family: var(--gw-mono); }
+
+  .gwm-hero-top { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+  .gwm-hero-brand { font-size: 10px; font-weight: 800; letter-spacing: .13em; color: rgba(255,255,255,.5); text-transform: uppercase; }
+  .gwm-hero-avatar {
+    width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; color: #fff; flex-shrink: 0;
+  }
+  .gwm-hero-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gw-pine-300); margin-top: 12px; position: relative; z-index: 1; }
+  .gwm-hero-value { font-size: 34px; font-weight: 800; letter-spacing: -.01em; margin-top: 2px; position: relative; z-index: 1; font-family: var(--gw-mono); }
+  .gwm-hero-delta {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700;
+    color: var(--gw-pine-300); margin-top: 7px; position: relative; z-index: 1;
+    background: rgba(143,209,174,.15); padding: 3px 10px; border-radius: 20px;
+  }
+  .gwm-hero-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800;
+    color: var(--gw-pine-300); background: rgba(143,209,174,.15); padding: 3px 10px; border-radius: 20px;
+    position: relative; z-index: 1;
+  }
+  .gwm-spark { display: flex; align-items: flex-end; gap: 4px; height: 30px; margin-top: 16px; position: relative; z-index: 1; }
+  .gwm-spark-bar { flex: 1; background: rgba(255,255,255,.16); border-radius: 3px 3px 0 0; }
+  .gwm-spark-bar.hi { background: var(--gw-pine-300); }
+
+  /* Stat grid — a fixed 2-up grid living inside the hero's normal document
+     flow. This is load-bearing: horizontal-scroll for hero stat/action rows
+     was the Version D bug fixed before mockup sign-off. Never scroll here. */
+  .gwm-glass-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-top: 18px; position: relative; z-index: 1;
+  }
+  .gwm-glass-card {
+    background: rgba(255,255,255,.16);
+    border: 1px solid rgba(255,255,255,.28);
+    border-radius: 14px; padding: 12px 13px;
+    color: #fff;
+  }
+  .gwm-glass-card.gwm-span2 { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+  .gwm-glass-card-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.75); text-transform: uppercase; letter-spacing: .04em; }
+  .gwm-glass-card-val { font-size: 19px; font-weight: 800; margin-top: 4px; font-family: var(--gw-mono); color: #fff; }
+  .gwm-glass-card-sub { font-size: 10.5px; color: rgba(255,255,255,.65); margin-top: 3px; }
+  .gwm-glass-card.gwm-span2 .gwm-glass-card-label { margin: 0; }
+  .gwm-glass-card.gwm-span2 .gwm-glass-card-val { margin: 0; font-size: 17px; }
+
+  /* ── Section labels ────────────────────────────────────────────────────── */
+  .gwm-section-label {
+    padding: 22px 16px 8px; font-size: 11.5px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--gw-ink, var(--gw-text-primary)); display: flex; align-items: center; justify-content: space-between;
+  }
+  .gwm-section-count {
+    background: var(--gw-clay-100); color: var(--gw-clay-700); font-size: 10.5px; font-weight: 800;
+    padding: 1px 7px; border-radius: 20px;
+  }
+  .gwm-section-link { font-size: 12px; font-weight: 700; color: var(--gw-pine-600); background: none; border: none; font-family: inherit; }
+
+  /* ── Priority Queue — ranked, actionable "needs attention" rows ─────────── */
+  .gwm-pq-list { padding: 0 12px; }
+  .gwm-pq-row {
+    display: flex; align-items: stretch; gap: 0; margin-bottom: 7px;
+    background: var(--gw-surface, #fff); border: 1px solid var(--gw-line, var(--gw-border)); border-radius: 10px; overflow: hidden;
+    box-shadow: var(--gw-shadow-xs); transition: transform .1s;
+  }
+  .gwm-pq-row:active { transform: scale(.98); }
+  .gwm-pq-stripe { width: 4px; flex-shrink: 0; }
+  .gwm-pq-stripe.gwm-urgent { background: var(--gw-clay-600); }
+  .gwm-pq-stripe.gwm-warn { background: var(--gw-sand-600); }
+  .gwm-pq-stripe.gwm-info { background: var(--gw-teal-600); }
+  .gwm-pq-body { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; gap: 10px; min-width: 0; }
+  .gwm-pq-text { min-width: 0; }
+  .gwm-pq-title { font-size: 13px; font-weight: 700; color: var(--gw-ink, var(--gw-text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gwm-pq-sub { font-size: 11.5px; color: var(--gw-text-muted); margin-top: 1px; }
+  .gwm-pq-right { text-align: right; flex-shrink: 0; }
+  .gwm-pq-val { font-size: 13.5px; font-weight: 800; font-family: var(--gw-mono); color: var(--gw-ink, var(--gw-text-primary)); }
+  .gwm-pq-tag { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
+  .gwm-pq-tag.gwm-urgent { color: var(--gw-clay-600); }
+  .gwm-pq-tag.gwm-warn { color: var(--gw-sand-600); }
+  .gwm-pq-tag.gwm-info { color: var(--gw-teal-600); }
+  .gwm-pq-empty {
+    padding: 16px 13px; text-align: center; font-size: 12.5px; color: var(--gw-text-muted);
+    background: var(--gw-surface, #fff); border: 1px solid var(--gw-line, var(--gw-border)); border-radius: 10px;
+  }
+
+  /* ── Quick actions — fixed grid, never horizontal-scroll ─────────────────── */
+  .gwm-pill-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 4px; }
+  .gwm-pill-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    border-radius: 999px; border: 1px solid var(--gw-border-strong); background: var(--gw-surface, #fff);
+    padding: 10px 14px; font-weight: 700; font-size: 12.5px; color: var(--gw-ink, var(--gw-text-primary));
+    box-shadow: var(--gw-shadow-xs); white-space: nowrap; font-family: inherit;
+    min-height: var(--gw-tap, 44px);
+  }
+  .gwm-pill-btn svg { color: var(--gw-pine-600); flex-shrink: 0; }
+
+  /* ── Zone accordions — tap-to-expand widget groups ────────────────────────
+     (reuses .gw-mobile-accordion's collapsed/expanded philosophy, but is its
+     own class family since these are richer, multi-widget bodies rather than
+     a single settings panel.) */
+  .gwm-zones-head { padding: 26px 16px 4px; }
+  .gwm-zones-head h2 { font-size: 15px; font-weight: 800; margin: 0; }
+  .gwm-zones-head p { font-size: 12px; color: var(--gw-text-muted); margin-top: 2px; }
+
+  .gwm-zone-card {
+    margin: 12px 12px 0; background: var(--gw-surface, #fff); border: 1px solid var(--gw-border-strong); border-radius: 14px;
+    overflow: hidden; box-shadow: var(--gw-shadow-xs);
+  }
+  .gwm-zone-head {
+    display: flex; align-items: center; gap: 12px; padding: 14px 14px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .gwm-zone-icon {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .gwm-zone-info { flex: 1; min-width: 0; }
+  .gwm-zone-title { font-size: 13.5px; font-weight: 800; color: var(--gw-ink, var(--gw-text-primary)); }
+  .gwm-zone-teaser { font-size: 11.5px; color: var(--gw-text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gwm-zone-badge { font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 20px; flex-shrink: 0; white-space: nowrap; }
+  .gwm-zone-chevron { width: 18px; height: 18px; flex-shrink: 0; color: var(--gw-text-subtle); transition: transform .2s; }
+  .gwm-zone-card.open .gwm-zone-chevron { transform: rotate(180deg); }
+  .gwm-zone-body { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
+  .gwm-zone-card.open .gwm-zone-body { max-height: 3000px; }
+  .gwm-zone-body-inner { padding: 2px 14px 16px; border-top: 1px solid var(--gw-line, var(--gw-border)); }
+
+  .gwm-zw-widget { padding: 12px 0 10px; border-bottom: 1px solid var(--gw-line, var(--gw-border)); }
+  .gwm-zw-widget:last-child { border-bottom: none; padding-bottom: 2px; }
+  .gwm-zw-widget-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--gw-text-subtle); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .gwm-zw-widget-link { font-size: 11px; font-weight: 700; color: var(--gw-pine-600); background: none; border: none; font-family: inherit; }
+
+  .gwm-zw-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 12.5px; }
+  .gwm-zw-row-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .gwm-zw-row-title { font-weight: 700; color: var(--gw-ink, var(--gw-text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gwm-zw-row-sub { font-size: 11px; color: var(--gw-text-muted); flex-shrink: 0; }
+  .gwm-zw-row-right { text-align: right; flex-shrink: 0; font-family: var(--gw-mono); font-weight: 700; font-size: 12px; }
+
+  .gwm-zw-check { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--gw-border-strong); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .gwm-zw-check.done { background: var(--gw-pine-600); border-color: var(--gw-pine-600); color: #fff; }
+
+  .gwm-zw-mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; }
+  .gwm-zw-mini-cell { background: var(--gw-bark-50, var(--gw-surface-3)); border-radius: 10px; padding: 8px 10px; }
+  .gwm-zw-mini-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--gw-text-subtle); }
+  .gwm-zw-mini-val { font-size: 15px; font-weight: 800; margin-top: 2px; font-family: var(--gw-mono); }
+
+  .gwm-zw-bar-track { height: 6px; background: var(--gw-bark-100); border-radius: 3px; overflow: hidden; margin-top: 5px; }
+  .gwm-zw-bar-fill { height: 100%; border-radius: 3px; }
+
+  .gwm-zw-spark { display: flex; align-items: flex-end; gap: 3px; height: 24px; margin: 4px 0 8px; }
+  .gwm-zw-spark-bar { flex: 1; background: var(--gw-pine-100); border-radius: 2px 2px 0 0; }
+  .gwm-zw-spark-bar.hi { background: var(--gw-pine-500); }
+
+  .gwm-zw-stars { color: var(--gw-sand-600); font-size: 12px; letter-spacing: 1px; }
+  .gwm-zw-rank {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--gw-pine-100); color: var(--gw-pine-700);
+    font-size: 10.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .gwm-zw-clock-card {
+    display: flex; align-items: center; justify-content: space-between; background: var(--gw-pine-50);
+    border: 1px solid var(--gw-pine-200); border-radius: 12px; padding: 12px 14px; margin-top: 2px;
+  }
+  .gwm-zw-clock-btn {
+    background: var(--gw-pine-600); color: #fff; border: none; border-radius: 999px; padding: 8px 16px;
+    font-weight: 800; font-size: 12px; font-family: inherit;
+  }
+
+  /* ── Compact live-status table (crew preview, etc.) ───────────────────────── */
+  .gwm-crew-table { margin: 0 16px 4px; border: 1px solid var(--gw-border-strong); border-radius: 12px; overflow: hidden; box-shadow: var(--gw-shadow-xs); }
+  .gwm-crew-head {
+    display: grid; grid-template-columns: 1.4fr .8fr .8fr; background: var(--gw-bark-50, var(--gw-surface-3));
+    padding: 8px 13px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--gw-text-subtle);
+    border-bottom: 1px solid var(--gw-border-strong);
+  }
+  .gwm-crew-row {
+    display: grid; grid-template-columns: 1.4fr .8fr .8fr; padding: 10px 13px; align-items: center;
+    border-bottom: 1px solid var(--gw-line, var(--gw-border)); font-size: 12.5px; background: var(--gw-surface, #fff);
+  }
+  .gwm-crew-row:last-child { border-bottom: none; }
+  .gwm-crew-name { display: flex; align-items: center; gap: 6px; font-weight: 700; min-width: 0; }
+  .gwm-crew-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .gwm-crew-status { font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 20px; text-align: center; width: fit-content; }
+
+  /* ── Stacked account / data cards (Admin/General) ─────────────────────────── */
+  .gwm-stack-card {
+    margin: 0 16px 12px; background: var(--gw-surface, #fff); border: 1px solid var(--gw-border-strong);
+    border-radius: 14px; padding: 14px; box-shadow: var(--gw-shadow-xs);
+  }
+  .gwm-stack-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .gwm-stack-card-title { font-size: 13.5px; font-weight: 800; color: var(--gw-ink, var(--gw-text-primary)); display: flex; align-items: center; gap: 8px; }
+
+  /* ── Filter/crew chip strips — the approved judgment-call exception:
+     horizontal-scroll IS used here (matches the app's existing accepted
+     .pl-filter-group / crew-chip pattern), distinct from the hero
+     stat/action rows above, which must never scroll. ─────────────────────── */
+  .gwm-chip-strip {
+    display: flex; gap: 8px; padding: 0 16px 10px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .gwm-chip-strip::-webkit-scrollbar { display: none; }
+  .gwm-chip {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 999px; border: 1px solid var(--gw-border-strong); background: var(--gw-surface, #fff);
+    padding: 7px 13px; font-weight: 700; font-size: 12px; color: var(--gw-text-secondary);
+    white-space: nowrap; font-family: inherit;
+  }
+  .gwm-chip.active { background: var(--gw-pine-600); border-color: var(--gw-pine-600); color: #fff; }
+
+  /* ── Simple data list cards (Financial Hub Recent/Open lists, etc.) ────── */
+  .gwm-list-card { margin: 0 12px; background: var(--gw-surface, #fff); border: 1px solid var(--gw-border-strong); border-radius: 14px; overflow: hidden; box-shadow: var(--gw-shadow-xs); }
+  .gwm-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--gw-line, var(--gw-border)); -webkit-tap-highlight-color: transparent; }
+  .gwm-list-row:last-child { border-bottom: none; }
+  .gwm-list-row-left { min-width: 0; }
+  .gwm-list-row-name { font-size: 13px; font-weight: 700; color: var(--gw-ink, var(--gw-text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gwm-list-row-sub { font-size: 11px; color: var(--gw-text-muted); margin-top: 1px; }
+  .gwm-list-row-val { font-size: 13.5px; font-weight: 800; font-family: var(--gw-mono); flex-shrink: 0; }
+
+  /* ── Full-width hero call-to-action button (Pipeline "+ Add Lead", etc.) ── */
+  .gwm-hero-cta {
+    position: relative; z-index: 1; margin-top: 12px; width: 100%;
+    background: #fff; color: var(--gw-pine-800); border: none; border-radius: 12px;
+    padding: 12px; font-weight: 800; font-size: 13.5px; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18); min-height: var(--gw-tap, 44px);
+  }
+
+} /* ── end gwm-* shared mobile design language ── */
+
+/* ══════════════════════════════════════════════════════════════════════════
    MOBILE PIPELINE  — gw-pipe-* classes
    Replaces kanban with a grouped vertical list on screens ≤ 768px.
    ══════════════════════════════════════════════════════════════════════════ */
