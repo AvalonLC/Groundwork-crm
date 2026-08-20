@@ -26565,7 +26565,11 @@ function systemTemplates() {
 @media (max-width: 768px) {
 #gw-mobile-nav {
   position:fixed;bottom:0;left:0;right:0;z-index:8000;
-  background:#111827;border-top:1px solid rgba(255,255,255,.1);
+  /* Match the desktop sidebar's brand pine background (var(--gw-sidebar-bg),
+     #1A4740) instead of a generic dark-navy #111827 that didn't reflect the
+     rest of the theme. Falls back to the same hex if the var isn't loaded
+     yet for any reason. */
+  background:var(--gw-sidebar-bg, #1A4740);border-top:1px solid rgba(255,255,255,.1);
   display:flex;align-items:stretch;
   /* Taller bar: 68px visible + safe-area for notch phones */
   height:calc(68px + env(safe-area-inset-bottom));

@@ -13353,22 +13353,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b011">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -13391,38 +13376,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
-  <script src="/js/platform_core.js?v=20260820b010"></script>
-  <script src="/js/client_portal.js?v=20260820b010"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b011"></script>
+  <script src="/js/client_portal.js?v=20260820b011"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -14056,70 +14011,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b010">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b010">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b011">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b011">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b011">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b011">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14505,7 +14400,15 @@ function getHtml(): string {
         min-height: var(--gw-tap, 44px) !important;
       }
 
-      .primary-btn, .secondary-btn, .danger-btn, .install-btn,
+      /* NOTE: .install-btn is deliberately NOT in this selector list. It is
+         force-hidden earlier in this block via a display:none rule, since
+         it is a low-priority action on mobile, but that earlier rule has
+         the same specificity plus !important as this one -- so when
+         .install-btn was included here too, this later display:inline-flex
+         rule cascaded on top and silently un-hid the button, clipping into
+         the topbar search field (confirmed via screenshot: install button
+         text bleeding off the left edge). */
+      .primary-btn, .secondary-btn, .danger-btn,
       .rp-btn, .rp-btn--primary, .rp-btn--ghost,
       .est-btn-primary, .est-btn-secondary, .est-btn-ghost,
       .gw-btn-ghost, .tab, .int-action-btn,
@@ -14560,6 +14463,20 @@ function getHtml(): string {
         min-height: 0 !important;
         width: 22px !important;
         height: 22px !important;
+      }
+
+      /* Verify-email banner: clear the 68px bottom nav bar + safe-area, matching
+         the .toast pattern in groundwork-design.css. The banner is bottom:16px
+         by default (fine on desktop with no bottom nav), but on mobile that
+         collides with/gets hidden behind the bottom nav and overlaps page
+         content (confirmed via screenshot: Quick Links cards + clock-action
+         toast messages both got covered). */
+      #gw-verify-banner {
+        bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+        left: 12px !important;
+        right: 12px !important;
+        transform: none !important;
+        max-width: none !important;
       }
     }
   </style>
@@ -14774,46 +14691,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260820b010"></script>
-<script src="/js/gw-icons.js?v=20260820b010"></script>
-<script src="/js/sales-process.js?v=20260820b010"></script>
-<script src="/js/richtext.js?v=20260820b010"></script>
-<script src="/js/db.js?v=20260820b010"></script>
-<script src="/js/data.js?v=20260820b010"></script>
-<script src="/js/reps.js?v=20260820b010"></script>
-<script src="/js/record-page.js?v=20260820b010"></script>
-<script src="/js/academy.js?v=20260820b010"></script>
-<script src="/js/task_engine.js?v=20260820b010"></script>
-<script src="/js/gw_i18n.js?v=20260820b010"></script>
-<script src="/js/app_premium.js?v=20260820b010"></script>
-<script src="/js/estimates.js?v=20260820b010"></script>
-<script src="/js/multiday.js?v=20260820b010"></script>
-<script src="/js/proposals.js?v=20260820b010"></script>
-<script src="/js/pricing.js?v=20260820b010"></script>
-<script src="/js/invoices.js?v=20260820b010"></script>
-<script src="/js/csv_import.js?v=20260820b010"></script>
-<script src="/js/onboarding.js?v=20260820b010"></script>
-<script src="/js/gw_copilot.js?v=20260820b010"></script>
-<script src="/js/groundwork_ai.js?v=20260820b010"></script>
-<script src="/js/recurring_plans.js?v=20260820b010"></script>
-<script src="/js/reviews.js?v=20260820b010"></script>
-<script src="/js/stripe.js?v=20260820b010"></script>
-<script src="/js/email.js?v=20260820b010"></script>
-<script src="/js/notifications.js?v=20260820b010"></script>
-<script src="/js/integrations.js?v=20260820b010"></script>
-<script src="/js/sms.js?v=20260820b010"></script>
-<script src="/js/calendar_sync.js?v=20260820b010"></script>
-<script src="/js/ai_followup.js?v=20260820b010"></script>
-<script src="/js/user_management.js?v=20260820b010"></script>
-<script src="/js/platform_admin.js?v=20260820b010"></script>
-<script src="/js/time_tracker.js?v=20260820b010"></script>
-<script src="/js/field_workday.js?v=20260820b010"></script>
-<script src="/js/platform_core.js?v=20260820b010"></script>
-<script src="/js/approval_engine.js?v=20260820b010"></script>
-<script src="/js/automation_engine.js?v=20260820b010"></script>
-<script src="/js/client_portal.js?v=20260820b010"></script>
-<script src="/js/field_mode.js?v=20260820b010"></script>
-<script src="/js/assets_hub.js?v=20260820b010"></script><script src="/js/marketing.js?v=20260820b010"></script><script>
+<script src="/js/gw_date.js?v=20260820b011"></script>
+<script src="/js/gw-icons.js?v=20260820b011"></script>
+<script src="/js/sales-process.js?v=20260820b011"></script>
+<script src="/js/richtext.js?v=20260820b011"></script>
+<script src="/js/db.js?v=20260820b011"></script>
+<script src="/js/data.js?v=20260820b011"></script>
+<script src="/js/reps.js?v=20260820b011"></script>
+<script src="/js/record-page.js?v=20260820b011"></script>
+<script src="/js/academy.js?v=20260820b011"></script>
+<script src="/js/task_engine.js?v=20260820b011"></script>
+<script src="/js/gw_i18n.js?v=20260820b011"></script>
+<script src="/js/app_premium.js?v=20260820b011"></script>
+<script src="/js/estimates.js?v=20260820b011"></script>
+<script src="/js/multiday.js?v=20260820b011"></script>
+<script src="/js/proposals.js?v=20260820b011"></script>
+<script src="/js/pricing.js?v=20260820b011"></script>
+<script src="/js/invoices.js?v=20260820b011"></script>
+<script src="/js/csv_import.js?v=20260820b011"></script>
+<script src="/js/onboarding.js?v=20260820b011"></script>
+<script src="/js/gw_copilot.js?v=20260820b011"></script>
+<script src="/js/groundwork_ai.js?v=20260820b011"></script>
+<script src="/js/recurring_plans.js?v=20260820b011"></script>
+<script src="/js/reviews.js?v=20260820b011"></script>
+<script src="/js/stripe.js?v=20260820b011"></script>
+<script src="/js/email.js?v=20260820b011"></script>
+<script src="/js/notifications.js?v=20260820b011"></script>
+<script src="/js/integrations.js?v=20260820b011"></script>
+<script src="/js/sms.js?v=20260820b011"></script>
+<script src="/js/calendar_sync.js?v=20260820b011"></script>
+<script src="/js/ai_followup.js?v=20260820b011"></script>
+<script src="/js/user_management.js?v=20260820b011"></script>
+<script src="/js/platform_admin.js?v=20260820b011"></script>
+<script src="/js/time_tracker.js?v=20260820b011"></script>
+<script src="/js/field_workday.js?v=20260820b011"></script>
+<script src="/js/platform_core.js?v=20260820b011"></script>
+<script src="/js/approval_engine.js?v=20260820b011"></script>
+<script src="/js/automation_engine.js?v=20260820b011"></script>
+<script src="/js/client_portal.js?v=20260820b011"></script>
+<script src="/js/field_mode.js?v=20260820b011"></script>
+<script src="/js/assets_hub.js?v=20260820b011"></script><script src="/js/marketing.js?v=20260820b011"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
