@@ -67,6 +67,25 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
   headcount the way `rep` was.
 
 ## Real gaps — not built, and why
+0. **Stripe customers are created on the PLATFORM account but charged on the
+   CONNECTED account.** `src/portal.tsx` creates `/v1/customers` with no
+   `Stripe-Account` header, so `clients.stripe_customer_id` is a platform
+   customer — while `chargeSavedPM` (same file) and
+   `POST /api/invoices/:id/charge` send `Stripe-Account`. A platform customer id
+   does not exist on the connected account, so every saved-card charge fails
+   with "No such customer".
+
+   Found 2026-08-20 during the Connect audit. NOT fixed in that change: moving
+   customers to connected accounts invalidates every stored
+   `stripe_customer_id`, so it needs a migration and a re-collection path for
+   saved cards, not an added header.
+
+   Related: the charge model is split. Portal pay, payment link and portal
+   deposit are DIRECT charges (company is merchant of record); invoice autopay
+   and `/api/invoices/:id/charge` are DESTINATION charges (Groundwork is).
+   Unifying on direct is approved but blocked behind this same customer
+   migration.
+
 1. **Classifier/ingest rules are still placeholders**, not confirmed
    business logic. Now a config edit (via `/finance/config` or the JSON
    files directly), not a code-writing task — see

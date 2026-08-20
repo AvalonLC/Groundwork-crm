@@ -41,7 +41,30 @@ export interface PaymentFailedEffect {
   reason: string;
 }
 
-export type EventEffect = RefundEffect | DisputeEffect | PaymentFailedEffect | { kind: 'ignored'; type: string };
+export interface PaymentSucceededEffect {
+  kind: 'payment_succeeded';
+  payment_intent_id: string;
+  amount_cents: number;
+  /**
+   * From the PaymentIntent's own metadata.
+   *
+   * This is the field that makes direct charges recordable at all. The checkout
+   * routes set `payment_intent_data[metadata][invoice_id]`, which lands on the
+   * PaymentIntent and NOT on the Checkout Session — while the session handler
+   * reads `session.metadata.invoice_id`, which is undefined. So every portal
+   * payment was silently skipped even before the routing problem.
+   *
+   * payment_intent.succeeded carries that metadata directly, so handling it
+   * fixes the existing sessions without depending on the session-level metadata
+   * the routes only started setting alongside this change.
+   */
+  invoice_id: string;
+  company_id: string;
+}
+
+export type EventEffect =
+  | RefundEffect | DisputeEffect | PaymentFailedEffect | PaymentSucceededEffect
+  | { kind: 'ignored'; type: string };
 
 const int = (v: unknown): number => {
   const n = Number(v);
@@ -84,6 +107,18 @@ export function classifyStripeEvent(event: any): EventEffect {
         dispute_id: String(obj.id || ''),
         payment_intent_id: String(obj.payment_intent || ''),
         status: String(obj.status || ''),
+      };
+    }
+
+    case 'payment_intent.succeeded': {
+      const amount = int(obj.amount_received ?? obj.amount);
+      if (amount <= 0) return { kind: 'ignored', type };
+      return {
+        kind: 'payment_succeeded',
+        payment_intent_id: String(obj.id || ''),
+        amount_cents: amount,
+        invoice_id: String(obj.metadata?.invoice_id || ''),
+        company_id: String(obj.metadata?.company_id || ''),
       };
     }
 
@@ -133,4 +168,69 @@ export function refundDelta(capturedCents: number, refundedTotalCents: number, a
   const captured = Math.max(0, int(capturedCents));
   const target = Math.min(captured, Math.max(0, int(refundedTotalCents)));
   return Math.max(0, target - Math.max(0, int(alreadyLedgeredCents)));
+}
+
+// ── Connected-account routing and readiness ─────────────────────────────────
+
+/**
+ * Which Stripe account an event came from.
+ *
+ * Direct charges execute ON the connected account, so their events arrive with
+ * `account` set to that acct_. Platform-context events (account.updated, and
+ * anything from a destination charge) have no `account` field.
+ *
+ * This is the authoritative tenant signal and metadata is not: metadata is
+ * whatever the request that created the object happened to set, and an event
+ * can arrive for an object nobody in this codebase created.
+ */
+export function eventAccountId(event: any): string {
+  return String(event?.account || '');
+}
+
+export type ConnectionStatus = '' | 'pending' | 'active' | 'restricted';
+
+export interface AccountReadiness {
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  /** Comma-separated Stripe requirement keys, '' when none are outstanding. */
+  requirements_due: string;
+  status: ConnectionStatus;
+}
+
+/**
+ * Read an account.updated payload into the four things the product needs.
+ *
+ * `status` is derived, not sent by Stripe:
+ *
+ *   pending      onboarding started, details not submitted yet
+ *   active       details in, charges enabled
+ *   restricted   details submitted but charges are off, or requirements are
+ *                past due — the state an account lands in when Stripe pulls a
+ *                capability back
+ *
+ * The old handler only ever wrote flags when charges_enabled was truthy, so an
+ * account that BECAME restricted kept its live flags and the app kept sending
+ * customers to a Checkout that Stripe would refuse. Returning the full picture
+ * every time, including the false cases, is what makes clearing possible.
+ */
+export function accountReadiness(acct: any): AccountReadiness {
+  const charges = !!acct?.charges_enabled;
+  const payouts = !!acct?.payouts_enabled;
+  const details = !!acct?.details_submitted;
+
+  const req = acct?.requirements ?? {};
+  const due = [
+    ...(Array.isArray(req.currently_due) ? req.currently_due : []),
+    ...(Array.isArray(req.past_due) ? req.past_due : []),
+  ];
+  const requirements_due = [...new Set(due.map(String))].join(',');
+  const hasPastDue = Array.isArray(req.past_due) && req.past_due.length > 0;
+
+  let status: ConnectionStatus;
+  if (!details) status = 'pending';
+  else if (charges && !hasPastDue) status = 'active';
+  else status = 'restricted';
+
+  return { charges_enabled: charges, payouts_enabled: payouts, details_submitted: details, requirements_due, status };
 }
