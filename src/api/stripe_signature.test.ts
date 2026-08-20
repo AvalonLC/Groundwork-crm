@@ -117,3 +117,46 @@ describe('verifyStripeSignature', () => {
     expect((await verifyStripeSignature('{"b":2,"a":1}', header, SECRET, NOW)).ok).toBe(false);
   });
 });
+
+describe('verifyStripeSignature — two destinations, two secrets', () => {
+  const CONNECT = 'whsec_connect_destination';
+
+  it('SIG-16 accepts an event signed with EITHER configured secret', async () => {
+    // Connect needs two destinations on one URL: platform-context events and
+    // connected-account events are separate scopes in Stripe, each with its own
+    // signing secret. Accepting only one meant whichever was configured second
+    // had every event rejected.
+    const header = await sign(BODY, NOW, SECRET);
+    expect(await verifyStripeSignature(BODY, header, [SECRET, CONNECT], NOW)).toEqual({ ok: true });
+
+    const connectHeader = `t=${NOW},v1=${await computeSignature(CONNECT, NOW, BODY)}`;
+    expect(await verifyStripeSignature(BODY, connectHeader, [SECRET, CONNECT], NOW)).toEqual({ ok: true });
+  });
+
+  it('SIG-17 still rejects a secret that is not configured', async () => {
+    const forged = `t=${NOW},v1=${await computeSignature('whsec_neither_of_them', NOW, BODY)}`;
+    expect(await verifyStripeSignature(BODY, forged, [SECRET, CONNECT], NOW))
+      .toEqual({ ok: false, reason: 'No signature matched' });
+  });
+
+  it('SIG-18 an array of empty or missing secrets fails closed', async () => {
+    const header = await sign(BODY, NOW);
+    for (const secrets of [[], [undefined], ['', '  '], [undefined, '']]) {
+      const r = await verifyStripeSignature(BODY, header, secrets as any, NOW);
+      expect(r, JSON.stringify(secrets)).toEqual({ ok: false, reason: 'STRIPE_WEBHOOK_SECRET is not configured' });
+    }
+  });
+
+  it('SIG-19 a single string still works, unchanged', async () => {
+    // The old call shape must keep working — every existing caller passes one.
+    expect(await verifyStripeSignature(BODY, await sign(BODY, NOW), SECRET, NOW)).toEqual({ ok: true });
+  });
+
+  it('SIG-20 one configured secret plus one missing is not a bypass', async () => {
+    // A half-configured environment (platform secret set, Connect one not yet)
+    // must verify the one it has and refuse the other, never wave both through.
+    const connectHeader = `t=${NOW},v1=${await computeSignature(CONNECT, NOW, BODY)}`;
+    expect((await verifyStripeSignature(BODY, connectHeader, [SECRET, undefined], NOW)).ok).toBe(false);
+    expect((await verifyStripeSignature(BODY, await sign(BODY, NOW), [SECRET, undefined], NOW)).ok).toBe(true);
+  });
+});

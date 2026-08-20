@@ -100,11 +100,25 @@ export type VerifyResult =
 export async function verifyStripeSignature(
   payload: string,
   header: string | null | undefined,
-  secret: string | undefined,
+  /**
+   * One secret, or several.
+   *
+   * Connect needs two destinations pointed at this one URL — platform-context
+   * events and connected-account events are separate scopes in Stripe — and
+   * each destination has its OWN signing secret. Accepting a single secret meant
+   * whichever destination was configured second would have every event rejected.
+   *
+   * Also what makes a secret roll possible without dropping events: configure
+   * both, roll one, remove the old.
+   */
+  secret: string | undefined | Array<string | undefined>,
   nowSeconds: number = Math.floor(Date.now() / 1000),
   toleranceSeconds: number = DEFAULT_TOLERANCE_SECONDS,
 ): Promise<VerifyResult> {
-  if (!secret) return { ok: false, reason: 'STRIPE_WEBHOOK_SECRET is not configured' };
+  const secrets = (Array.isArray(secret) ? secret : [secret])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+  if (!secrets.length) return { ok: false, reason: 'STRIPE_WEBHOOK_SECRET is not configured' };
 
   const parsed = parseSignatureHeader(header);
   if (!parsed) return { ok: false, reason: 'Missing or malformed Stripe-Signature header' };
@@ -114,9 +128,15 @@ export async function verifyStripeSignature(
     return { ok: false, reason: `Timestamp outside tolerance (${age}s)` };
   }
 
-  const expected = await computeSignature(secret, parsed.timestamp, payload);
-  for (const candidate of parsed.signatures) {
-    if (timingSafeEqual(expected, candidate)) return { ok: true };
+  // Every configured secret against every offered signature. Both lists are
+  // tiny — at most two secrets and a couple of v1 values during a roll — and
+  // stopping early on the first secret would reject a valid event from the
+  // other destination.
+  for (const s of secrets) {
+    const expected = await computeSignature(s, parsed.timestamp, payload);
+    for (const candidate of parsed.signatures) {
+      if (timingSafeEqual(expected, candidate)) return { ok: true };
+    }
   }
   return { ok: false, reason: 'No signature matched' };
 }
