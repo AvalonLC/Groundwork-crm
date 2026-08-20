@@ -394,6 +394,14 @@ window.fieldDashboard = function fieldDashboard() {
   const viewEl = document.getElementById('view');
   if (!viewEl) return;
 
+  // Must be set on every render so the clock-in/out/break handlers in this
+  // file (which gate their post-action re-render on window._currentView ===
+  // 'fieldDashboard') actually fire. Field roles land here via gwDashboard()'s
+  // isField branch, which never sets _currentView itself -- without this line
+  // the hero status card (Clock In / Clocked In / On Break) goes stale the
+  // instant a field worker taps Clock In, Break, or Clock Out.
+  window._currentView = 'fieldDashboard';
+
   const rep = _fwRep();
   if (!rep) {
     viewEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--gw-muted)">Loading…</div>';
