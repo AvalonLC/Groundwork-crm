@@ -3504,6 +3504,16 @@ function _gwTodayRender() {
   const recent = [...opps].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
 
   // ── Mobile path ──────────────────────────────────────────────────────────
+  // Needs Follow-Up (stale leads) computed here too — mobile's Priority
+  // Queue needs the raw list + gwStageClock() detail (not just the HTML),
+  // so it's computed before the widget-content strings below and passed
+  // through untouched.
+  const _staleLeadsMobile = _open
+    .filter(o => gwLeadIsOpen(o))
+    .map(o => ({ o, clock: gwStageClock(o) }))
+    .filter(x => x.clock.level === 'late')
+    .sort((a,b) => b.clock.ratio - a.clock.ratio)
+    .slice(0,6);
   if (window.innerWidth <= 768) {
     const _dailyCl = data.checklists.find(c=>c.id==='daily');
     const _clHtml  = _dailyCl ? renderChecklist(_dailyCl, true) : '';
@@ -3519,6 +3529,13 @@ function _gwTodayRender() {
       taskWorkspace: _taskWorkspace,
       checklist: _clHtml,
       recent,
+      // ── Additional real data for the Version-E mobile rebuild ──────────
+      open: _open, propo: _propo, pipeVal: _pipeVal, won: _won, wonMTD: _wonMTD, wonMTDVal: _wonMTDVal,
+      avgScore: _avgScore,
+      staleLeads: _staleLeadsMobile,
+      pipeChartHtml: _pipeChartHtml,
+      repLeaderboardHtml: _repLeaderboardHtml,
+      budgetVsActualHtml: _budgetVsActualHtml,
     });
     return;
   }
