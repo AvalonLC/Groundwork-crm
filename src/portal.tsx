@@ -14,6 +14,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from 'hono'
 import type { AppEnv } from './env'
+import { decideCustomer, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import mig0041 from '../migrations/0041_properties.sql?raw'
 import mig0042 from '../migrations/0042_portal_identity.sql?raw'
@@ -754,13 +755,24 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
 
   // ══ RELEASE 2: PAYMENT METHODS, AUTOPAY, DEPOSITS, CONTACTS ═══════════════
   //
-  // Payment model (matches existing staff flows in index.tsx):
-  //  - Saved payment methods live on a PLATFORM-account Stripe Customer per
-  //    client (clients.stripe_customer_id). Off-session charges use
-  //    transfer_data[destination] to route funds to the connected account.
-  //  - Hosted Checkout (deposit fallback) is created ON the connected account,
-  //    same as the public invoice pay page.
-  //  - All portal-initiated charges require the company to be Stripe-connected.
+  // Payment model — DIRECT charges on the connected account, everywhere.
+  //
+  //  - Customers and saved cards live on the CONNECTED account, and
+  //    clients.stripe_customer_account_id records which one (migration 0080).
+  //    They used to be created on the platform while charges executed on the
+  //    connected account, so every saved-card charge failed with "No such
+  //    customer".
+  //  - Off-session charges send Stripe-Account, not transfer_data[destination].
+  //    The company is merchant of record: funds settle to them, and they carry
+  //    the processing fee, refunds, disputes and negative balances. Groundwork
+  //    takes application_fee_amount and never holds funds.
+  //  - Hosted Checkout is created ON the connected account, same as the public
+  //    invoice pay page — that part was always right.
+  //  - All portal-initiated charges require the company to be Stripe-connected
+  //    AND charges_enabled; targetAccountFor() is the single check.
+  //
+  //  A card cannot follow its customer between accounts. Cards saved before
+  //  0080 carry stripe_account_id '' and are refused rather than attempted.
 
   const stripeKeyOf = (c: any) => (c.env as any).STRIPE_SECRET_KEY as string | undefined
 
@@ -772,24 +784,46 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
     return withPerm.length === 1 || (withPerm.length > 1 && s.clientIds.length === 1) ? (withPerm[0] ?? null) : (withPerm[0] || null)
   }
 
-  async function stripeCustomerFor(db: D1Database, stripeKey: string, companyId: string, clientId: string): Promise<string> {
-    const client: any = await db.prepare(`SELECT id, name, email, stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(clientId, companyId).first()
+  /**
+   * A Stripe customer valid for the account this company charges on.
+   *
+   * This used to create every customer on the PLATFORM — no Stripe-Account
+   * header — while chargeSavedPM below charges ON the connected account. A
+   * platform customer id does not exist there, so every saved-card charge failed
+   * with "No such customer".
+   *
+   * Now the account is passed in and recorded. A stored id belonging to a
+   * different account is treated as absent and a new customer is created on the
+   * right one; the old row is left alone rather than overwritten.
+   */
+  async function stripeCustomerFor(
+    db: D1Database, stripeKey: string, companyId: string, clientId: string, targetAccount: string,
+  ): Promise<string> {
+    const client: any = await db.prepare(
+      `SELECT id, name, email, stripe_customer_id, stripe_customer_account_id
+         FROM clients WHERE id=? AND company_id=? LIMIT 1`,
+    ).bind(clientId, companyId).first()
     if (!client) throw new Error('Client not found')
-    if (client.stripe_customer_id) return client.stripe_customer_id
+
+    const decision = decideCustomer(
+      { customer_id: client.stripe_customer_id || '', account_id: client.stripe_customer_account_id || '' },
+      targetAccount,
+    )
+    if (decision.action === 'reuse') return decision.customer_id
+
     const form = new URLSearchParams({ name: client.name || '', 'metadata[client_id]': clientId, 'metadata[company_id]': companyId })
     if (client.email) form.set('email', client.email)
-    // NOTE: this creates the customer on the PLATFORM account, with no
-    // Stripe-Account header — while chargeSavedPM below charges ON the connected
-    // account. A platform customer id does not exist there, so a saved-card
-    // charge fails with "No such customer". Not fixed here: moving customers to
-    // connected accounts invalidates every stored stripe_customer_id and needs
-    // its own migration. Tracked in docs/PUNCHLIST.md.
-    const res = await fetch('https://api.stripe.com/v1/customers', {
-      method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
-    })
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    if (targetAccount) headers['Stripe-Account'] = targetAccount
+
+    const res = await fetch('https://api.stripe.com/v1/customers', { method: 'POST', headers, body: form.toString() })
     const cust: any = await res.json()
     if (!res.ok) throw new Error(cust.error?.message || 'Could not create Stripe customer')
-    await db.prepare(`UPDATE clients SET stripe_customer_id=? WHERE id=?`).bind(cust.id, clientId).run()
+    await db.prepare(
+      `UPDATE clients SET stripe_customer_id=?, stripe_customer_account_id=? WHERE id=?`,
+    ).bind(cust.id, targetAccount, clientId).run()
     return cust.id
   }
 
@@ -813,16 +847,23 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
 
   // Off-session charge on the platform customer, routed to the connected acct.
   async function chargeSavedPM(stripeKey: string, company: any, customerId: string, pmId: string, amountCents: number, metadata: Record<string, string>) {
-    const feePct = company?.stripe_platform_fee_pct || 2.9
+    // DIRECT charge on the connected account. This used to send
+    // transfer_data[destination] — a destination charge, making Groundwork
+    // merchant of record — while the customer it charged was created on the
+    // platform. Both halves were wrong in different directions.
+    const target = targetAccountFor(company)
     const form = new URLSearchParams({
       amount: String(amountCents), currency: 'usd', customer: customerId,
       payment_method: pmId, confirm: 'true', 'off_session': 'true',
-      'application_fee_amount': String(Math.round(amountCents * feePct / 100)),
-      'transfer_data[destination]': company.stripe_account_id
+      'application_fee_amount': String(applicationFeeCents(amountCents, Number(company?.stripe_platform_fee_bps || 290))),
     })
     for (const [k, v] of Object.entries(metadata)) form.set(`metadata[${k}]`, v)
+    const chargeHeaders: Record<string, string> = {
+      'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    if (target) chargeHeaders['Stripe-Account'] = target
     const res = await fetch('https://api.stripe.com/v1/payment_intents', {
-      method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+      method: 'POST', headers: chargeHeaders, body: form.toString()
     })
     const pi: any = await res.json()
     if (!res.ok) throw new Error(pi.error?.message || 'Charge failed')
@@ -870,7 +911,14 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
     const stripeKey = stripeKeyOf(c)
     if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
     try {
-      const customerId = await stripeCustomerFor(db, stripeKey, s.companyId, clientId)
+      // The card must be attached on the SAME account that will later charge it.
+      // Attaching to a platform customer and charging on the connected account
+      // is exactly the mismatch that made every saved-card charge fail.
+      const company: any = await db.prepare(
+        `SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled FROM companies WHERE id=? LIMIT 1`,
+      ).bind(s.companyId).first()
+      const targetAccount = targetAccountFor(company)
+      const customerId = await stripeCustomerFor(db, stripeKey, s.companyId, clientId, targetAccount)
       const origin = new URL(c.req.url).origin
       const form = new URLSearchParams({
         mode: 'setup', customer: customerId, 'payment_method_types[]': 'card',
@@ -878,8 +926,12 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
         'cancel_url': `${origin}/portal/home#billing`,
         'metadata[client_id]': clientId, 'metadata[company_id]': s.companyId
       })
+      const setupHeaders: Record<string, string> = {
+        'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded',
+      }
+      if (targetAccount) setupHeaders['Stripe-Account'] = targetAccount
       const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-        method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+        method: 'POST', headers: setupHeaders, body: form.toString()
       })
       const session: any = await res.json()
       if (!res.ok) throw new Error(session.error?.message || 'Could not start setup')
@@ -948,12 +1000,21 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
       pmLabel = pm.label
     } else { pmId = '' }
     const maxAmountCents = Math.round(maxAmount * 100)
+    // Record WHICH account this card lives on. A card cannot be charged by an
+    // account it is not attached to, and without this the autopay path has no
+    // way to tell a usable card from one saved against the platform before
+    // migration 0080.
+    const apCompany: any = await db.prepare(
+      `SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled FROM companies WHERE id=? LIMIT 1`,
+    ).bind(s.companyId).first()
+    const pmAccount = targetAccountFor(apCompany)
     await db.prepare(
-      `INSERT INTO client_autopay (id, company_id, client_id, enabled, stripe_pm_id, pm_label, max_amount, max_amount_cents, updated_by)
-       VALUES (?,?,?,?,?,?,?,?,?)
+      `INSERT INTO client_autopay (id, company_id, client_id, enabled, stripe_pm_id, pm_label, max_amount, max_amount_cents, updated_by, stripe_account_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(client_id) DO UPDATE SET enabled=excluded.enabled, stripe_pm_id=excluded.stripe_pm_id,
+         stripe_account_id=excluded.stripe_account_id,
          pm_label=excluded.pm_label, max_amount=excluded.max_amount, max_amount_cents=excluded.max_amount_cents, updated_by=excluded.updated_by, updated_at=datetime('now')`
-    ).bind(`ap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, s.companyId, clientId, enabled, pmId, pmLabel, maxAmount, maxAmountCents, s.user.id).run()
+    ).bind(`ap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, s.companyId, clientId, enabled, pmId, pmLabel, maxAmount, maxAmountCents, s.user.id, pmAccount).run()
     await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId, eventType: 'portal_autopay_updated', meta: { enabled: !!enabled, max_amount: maxAmount }, ip: clientIp(c) })
     await notifyCompany(db, s.companyId, 'portal_autopay', `Autopay ${enabled ? 'enabled' : 'disabled'} by client`, `${s.user.name || s.user.email} ${enabled ? 'enabled' : 'disabled'} autopay${enabled && maxAmount ? ` (cap $${maxAmount})` : ''}.`, 'client', clientId, '#clients')
     return c.json({ ok: true })
