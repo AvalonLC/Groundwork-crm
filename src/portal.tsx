@@ -778,6 +778,12 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
     if (client.stripe_customer_id) return client.stripe_customer_id
     const form = new URLSearchParams({ name: client.name || '', 'metadata[client_id]': clientId, 'metadata[company_id]': companyId })
     if (client.email) form.set('email', client.email)
+    // NOTE: this creates the customer on the PLATFORM account, with no
+    // Stripe-Account header — while chargeSavedPM below charges ON the connected
+    // account. A platform customer id does not exist there, so a saved-card
+    // charge fails with "No such customer". Not fixed here: moving customers to
+    // connected accounts invalidates every stored stripe_customer_id and needs
+    // its own migration. Tracked in docs/PUNCHLIST.md.
     const res = await fetch('https://api.stripe.com/v1/customers', {
       method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
     })

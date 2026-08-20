@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
-import { classifyStripeEvent, refundDelta, invoiceStatusFor } from './api/stripe_events'
+import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { serveStatic } from 'hono/cloudflare-workers'
@@ -11626,6 +11626,11 @@ app.post('/api/invoices/portal/:token/pay', async (c) => {
       'payment_intent_data[application_fee_amount]': String(Math.round(owedCents * feePct / 100)),
       'payment_intent_data[metadata][invoice_id]': inv.id,
       'payment_intent_data[metadata][company_id]': inv.company_id,
+      // Session-level too. payment_intent_data lands on the PaymentIntent, so
+      // checkout.session.completed saw session.metadata as undefined and the
+      // handler's guard skipped every portal payment in silence.
+      'metadata[invoice_id]': inv.id,
+      'metadata[company_id]': inv.company_id,
     })
     if (inv.client_email) form.set('customer_email', inv.client_email)
     const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
@@ -11849,6 +11854,9 @@ app.post('/api/stripe/payment-link', requireAuth, async (c) => {
       'payment_intent_data[application_fee_amount]': String(applicationFeeAmount),
       'payment_intent_data[metadata][invoice_id]': invoice_id || '',
       'payment_intent_data[metadata][company_id]': companyId,
+      // See the portal pay route: session.metadata is what the webhook reads.
+      'metadata[invoice_id]': invoice_id || '',
+      'metadata[company_id]': companyId,
     })
     if (client_email) form.set('customer_email', client_email)
     const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
@@ -11900,6 +11908,51 @@ app.post('/api/stripe/webhook', async (c) => {
   try {
     const event = JSON.parse(body)
     const db = c.env.DB as D1Database
+
+    // ── Event-level idempotency ────────────────────────────────────────────
+    //
+    // Insert first, act second. INSERT OR IGNORE returns 0 changes when the id
+    // is already there, which means this event has been processed and there is
+    // nothing to do. Doing it before any work makes "exactly once" a property
+    // of the table rather than something each handler re-derives — the payment
+    // row's deterministic id only ever covered captures.
+    const accountId = eventAccountId(event)
+    const eventId = String(event.id || '')
+
+    // Which company this event belongs to. `account` is authoritative: a direct
+    // charge executes ON the connected account, so its events carry the acct_
+    // that owns the money. Metadata is not authoritative — it is whatever the
+    // request that created the object happened to set.
+    let eventCompanyId = ''
+    if (accountId) {
+      const owner: any = await db.prepare(
+        `SELECT id FROM companies WHERE stripe_account_id = ? LIMIT 1`,
+      ).bind(accountId).first()
+      if (!owner) {
+        // Quarantine, not failure. A 500 makes Stripe retry for three days and
+        // then disable the endpoint; a 200 with no record loses the fact that
+        // an unrecognised account is sending us events. Record it and move on.
+        if (eventId) {
+          await db.prepare(
+            `INSERT OR IGNORE INTO stripe_event (id, company_id, account_id, type) VALUES (?,?,?,?)`,
+          ).bind(eventId, '', accountId, String(event.type || '')).run()
+        }
+        console.log('stripe webhook: unknown connected account', accountId, event.type)
+        return c.json({ received: true, quarantined: 'unknown_account' }, 202)
+      }
+      eventCompanyId = owner.id
+    }
+
+    if (eventId) {
+      const seen = await db.prepare(
+        `INSERT OR IGNORE INTO stripe_event (id, company_id, account_id, type) VALUES (?,?,?,?)`,
+      ).bind(eventId, eventCompanyId, accountId, String(event.type || '')).run()
+      if (!seen.meta.changes) {
+        console.log('stripe webhook: already processed', eventId)
+        return c.json({ received: true, duplicate: true })
+      }
+    }
+
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object
       const invoiceId  = session.metadata?.invoice_id
@@ -11969,6 +12022,57 @@ app.post('/api/stripe/webhook', async (c) => {
     // money, had moved on. See src/api/stripe_events.ts for what each event
     // means; this is the part that writes it down.
     const effect = classifyStripeEvent(event)
+
+    if (effect.kind === 'payment_succeeded') {
+      // The path that actually records a direct charge.
+      //
+      // checkout.session.completed carries session.metadata, which the routes
+      // never set — they set payment_intent_data[metadata], which lands here
+      // instead. So this is where a portal payment becomes a row, and the
+      // session handler is the platform-context path.
+      const invoiceId = effect.invoice_id
+      const companyId = eventCompanyId || effect.company_id
+      if (invoiceId && companyId) {
+        const inv: any = await db.prepare(
+          `SELECT total_cents, status, invoice_number, client_id FROM invoices WHERE id=? AND company_id=? LIMIT 1`,
+        ).bind(invoiceId, companyId).first()
+
+        // Scoped by company_id as well as id: an event from company A can never
+        // reach company B's invoice even if its metadata claims otherwise.
+        if (inv) {
+          const pymtId = `py_${effect.payment_intent_id}`
+          const already = await db.prepare(`SELECT id FROM payments WHERE id=? AND company_id=?`)
+            .bind(pymtId, companyId).first()
+          if (!already) {
+            await db.prepare(
+              `INSERT INTO payments
+                 (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents,
+                  status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
+            ).bind(
+              pymtId, companyId, invoiceId, inv.client_id || null,
+              effect.amount_cents / 100, effect.amount_cents, effect.amount_cents / 100, effect.amount_cents,
+              'succeeded', 'card', effect.payment_intent_id, 'Stripe payment', inv.invoice_number || '',
+            ).run()
+          }
+
+          // Invoice derived from the ledger, same as the refund path — so a
+          // capture and a refund arriving out of order settle to the same place.
+          const ledger: any = await db.prepare(
+            `SELECT COALESCE(SUM(amount_cents), 0) AS c FROM payments WHERE invoice_id=? AND company_id=?`,
+          ).bind(invoiceId, companyId).first()
+          const nowPaid = Math.max(0, Number(ledger?.c || 0))
+          await db.prepare(
+            `UPDATE invoices SET amount_paid=?, amount_paid_cents=?, status=?, updated_at=datetime('now')
+              WHERE id=? AND company_id=?`,
+          ).bind(nowPaid / 100, nowPaid, invoiceStatusFor(Number(inv.total_cents || 0), nowPaid), invoiceId, companyId).run()
+
+          if (nowPaid >= Number(inv.total_cents || 0)) {
+            await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, null)
+          }
+        }
+      }
+    }
 
     if (effect.kind === 'refund') {
       // Find the invoice through the payment we recorded when it was captured.
@@ -12057,9 +12161,23 @@ app.post('/api/stripe/webhook', async (c) => {
 
     if (event.type === 'account.updated') {
       const acct = event.data.object
-      if (acct.charges_enabled) {
-        await db.prepare(`UPDATE companies SET stripe_charges_enabled=1, stripe_onboarded=1 WHERE stripe_account_id=?`).bind(acct.id).run()
-      }
+      // Write the whole picture every time, including the false cases. The old
+      // version only ever SET flags — `if (acct.charges_enabled) UPDATE ... =1`
+      // — so an account that lost its capability kept its live flags and the
+      // app went on sending customers to a Checkout Stripe would refuse.
+      const r = accountReadiness(acct)
+      await db.prepare(
+        `UPDATE companies
+            SET stripe_charges_enabled=?, stripe_payouts_enabled=?, stripe_details_submitted=?,
+                stripe_requirements_due=?, stripe_connection_status=?,
+                stripe_onboarded=?
+          WHERE stripe_account_id=?`,
+      ).bind(
+        r.charges_enabled ? 1 : 0, r.payouts_enabled ? 1 : 0, r.details_submitted ? 1 : 0,
+        r.requirements_due, r.status,
+        r.details_submitted ? 1 : 0,
+        acct.id,
+      ).run()
     }
     return c.json({ received: true })
   } catch (e: any) {
@@ -13158,22 +13276,22 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -13196,38 +13314,38 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
-  <script src="/js/platform_core.js?v=20260819b013"></script>
-  <script src="/js/client_portal.js?v=20260819b013"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b003"></script>
+  <script src="/js/client_portal.js?v=20260820b003"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13861,70 +13979,70 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
-  <link rel="stylesheet" href="/js/premium.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260819b013">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260819b013">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b003">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14579,46 +14697,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260819b013"></script>
-<script src="/js/gw-icons.js?v=20260819b013"></script>
-<script src="/js/sales-process.js?v=20260819b013"></script>
-<script src="/js/richtext.js?v=20260819b013"></script>
-<script src="/js/db.js?v=20260819b013"></script>
-<script src="/js/data.js?v=20260819b013"></script>
-<script src="/js/reps.js?v=20260819b013"></script>
-<script src="/js/record-page.js?v=20260819b013"></script>
-<script src="/js/academy.js?v=20260819b013"></script>
-<script src="/js/task_engine.js?v=20260819b013"></script>
-<script src="/js/gw_i18n.js?v=20260819b013"></script>
-<script src="/js/app_premium.js?v=20260819b013"></script>
-<script src="/js/estimates.js?v=20260819b013"></script>
-<script src="/js/multiday.js?v=20260819b013"></script>
-<script src="/js/proposals.js?v=20260819b013"></script>
-<script src="/js/pricing.js?v=20260819b013"></script>
-<script src="/js/invoices.js?v=20260819b013"></script>
-<script src="/js/csv_import.js?v=20260819b013"></script>
-<script src="/js/onboarding.js?v=20260819b013"></script>
-<script src="/js/gw_copilot.js?v=20260819b013"></script>
-<script src="/js/groundwork_ai.js?v=20260819b013"></script>
-<script src="/js/recurring_plans.js?v=20260819b013"></script>
-<script src="/js/reviews.js?v=20260819b013"></script>
-<script src="/js/stripe.js?v=20260819b013"></script>
-<script src="/js/email.js?v=20260819b013"></script>
-<script src="/js/notifications.js?v=20260819b013"></script>
-<script src="/js/integrations.js?v=20260819b013"></script>
-<script src="/js/sms.js?v=20260819b013"></script>
-<script src="/js/calendar_sync.js?v=20260819b013"></script>
-<script src="/js/ai_followup.js?v=20260819b013"></script>
-<script src="/js/user_management.js?v=20260819b013"></script>
-<script src="/js/platform_admin.js?v=20260819b013"></script>
-<script src="/js/time_tracker.js?v=20260819b013"></script>
-<script src="/js/field_workday.js?v=20260819b013"></script>
-<script src="/js/platform_core.js?v=20260819b013"></script>
-<script src="/js/approval_engine.js?v=20260819b013"></script>
-<script src="/js/automation_engine.js?v=20260819b013"></script>
-<script src="/js/client_portal.js?v=20260819b013"></script>
-<script src="/js/field_mode.js?v=20260819b013"></script>
-<script src="/js/assets_hub.js?v=20260819b013"></script><script src="/js/marketing.js?v=20260819b013"></script><script>
+<script src="/js/gw_date.js?v=20260820b003"></script>
+<script src="/js/gw-icons.js?v=20260820b003"></script>
+<script src="/js/sales-process.js?v=20260820b003"></script>
+<script src="/js/richtext.js?v=20260820b003"></script>
+<script src="/js/db.js?v=20260820b003"></script>
+<script src="/js/data.js?v=20260820b003"></script>
+<script src="/js/reps.js?v=20260820b003"></script>
+<script src="/js/record-page.js?v=20260820b003"></script>
+<script src="/js/academy.js?v=20260820b003"></script>
+<script src="/js/task_engine.js?v=20260820b003"></script>
+<script src="/js/gw_i18n.js?v=20260820b003"></script>
+<script src="/js/app_premium.js?v=20260820b003"></script>
+<script src="/js/estimates.js?v=20260820b003"></script>
+<script src="/js/multiday.js?v=20260820b003"></script>
+<script src="/js/proposals.js?v=20260820b003"></script>
+<script src="/js/pricing.js?v=20260820b003"></script>
+<script src="/js/invoices.js?v=20260820b003"></script>
+<script src="/js/csv_import.js?v=20260820b003"></script>
+<script src="/js/onboarding.js?v=20260820b003"></script>
+<script src="/js/gw_copilot.js?v=20260820b003"></script>
+<script src="/js/groundwork_ai.js?v=20260820b003"></script>
+<script src="/js/recurring_plans.js?v=20260820b003"></script>
+<script src="/js/reviews.js?v=20260820b003"></script>
+<script src="/js/stripe.js?v=20260820b003"></script>
+<script src="/js/email.js?v=20260820b003"></script>
+<script src="/js/notifications.js?v=20260820b003"></script>
+<script src="/js/integrations.js?v=20260820b003"></script>
+<script src="/js/sms.js?v=20260820b003"></script>
+<script src="/js/calendar_sync.js?v=20260820b003"></script>
+<script src="/js/ai_followup.js?v=20260820b003"></script>
+<script src="/js/user_management.js?v=20260820b003"></script>
+<script src="/js/platform_admin.js?v=20260820b003"></script>
+<script src="/js/time_tracker.js?v=20260820b003"></script>
+<script src="/js/field_workday.js?v=20260820b003"></script>
+<script src="/js/platform_core.js?v=20260820b003"></script>
+<script src="/js/approval_engine.js?v=20260820b003"></script>
+<script src="/js/automation_engine.js?v=20260820b003"></script>
+<script src="/js/client_portal.js?v=20260820b003"></script>
+<script src="/js/field_mode.js?v=20260820b003"></script>
+<script src="/js/assets_hub.js?v=20260820b003"></script><script src="/js/marketing.js?v=20260820b003"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

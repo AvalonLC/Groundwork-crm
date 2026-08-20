@@ -111,3 +111,96 @@ describe('refundDelta — what is missing from the ledger', () => {
     expect(refundDelta(-1, 10_000, 0)).toBe(0);
   });
 });
+
+// ── Connected-account routing and readiness ─────────────────────────────────
+
+import { eventAccountId, accountReadiness } from './stripe_events';
+
+describe('payment_intent.succeeded', () => {
+  it('SE-15 carries the metadata the session event never had', () => {
+    // The checkout routes set payment_intent_data[metadata][...], which lands on
+    // the PaymentIntent — while the session handler reads session.metadata,
+    // which is undefined. Every portal payment was silently skipped for this
+    // reason alone, before the routing problem even applied.
+    const e = classifyStripeEvent({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_1', amount_received: 50_000, metadata: { invoice_id: 'inv-9', company_id: 'avalon' } } },
+    });
+    expect(e).toMatchObject({
+      kind: 'payment_succeeded', payment_intent_id: 'pi_1',
+      amount_cents: 50_000, invoice_id: 'inv-9', company_id: 'avalon',
+    });
+  });
+
+  it('SE-16 prefers amount_received over amount', () => {
+    // A partially captured intent succeeded for what was actually taken.
+    const e = classifyStripeEvent({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_2', amount: 50_000, amount_received: 20_000, metadata: {} } },
+    }) as any;
+    expect(e.amount_cents).toBe(20_000);
+  });
+
+  it('SE-17 ignores a succeeded intent that received nothing', () => {
+    expect(classifyStripeEvent({
+      type: 'payment_intent.succeeded', data: { object: { id: 'pi_3', amount_received: 0 } },
+    }).kind).toBe('ignored');
+  });
+});
+
+describe('eventAccountId', () => {
+  it('SE-18 reads the connected account a direct charge fired on', () => {
+    expect(eventAccountId({ account: 'acct_123', type: 'payment_intent.succeeded' })).toBe('acct_123');
+  });
+
+  it('SE-19 is empty for platform-context events', () => {
+    // account.updated and destination-charge events have no `account` field.
+    for (const e of [{ type: 'account.updated' }, {}, null, { account: null }]) {
+      expect(eventAccountId(e), JSON.stringify(e)).toBe('');
+    }
+  });
+});
+
+describe('accountReadiness', () => {
+  it('SE-20 pending until details are submitted', () => {
+    const r = accountReadiness({ details_submitted: false, charges_enabled: false, payouts_enabled: false });
+    expect(r.status).toBe('pending');
+  });
+
+  it('SE-21 active once details are in and charges are on', () => {
+    const r = accountReadiness({ details_submitted: true, charges_enabled: true, payouts_enabled: true });
+    expect(r).toMatchObject({ status: 'active', charges_enabled: true, payouts_enabled: true, requirements_due: '' });
+  });
+
+  it('SE-22 restricted when charges are pulled back after onboarding', () => {
+    // The state the old handler could never represent: it only ever SET flags
+    // when charges_enabled was truthy, so an account that lost the capability
+    // stayed marked live and the app kept sending customers to a dead Checkout.
+    const r = accountReadiness({ details_submitted: true, charges_enabled: false, payouts_enabled: false });
+    expect(r.status).toBe('restricted');
+    expect(r.charges_enabled).toBe(false);
+  });
+
+  it('SE-23 restricted when a requirement is past due, even with charges on', () => {
+    const r = accountReadiness({
+      details_submitted: true, charges_enabled: true, payouts_enabled: true,
+      requirements: { past_due: ['individual.id_number'] },
+    });
+    expect(r.status).toBe('restricted');
+    expect(r.requirements_due).toBe('individual.id_number');
+  });
+
+  it('SE-24 collects currently_due and past_due, deduped', () => {
+    const r = accountReadiness({
+      details_submitted: true, charges_enabled: true,
+      requirements: { currently_due: ['tos_acceptance.date', 'individual.id_number'], past_due: ['individual.id_number'] },
+    });
+    expect(r.requirements_due.split(',').sort()).toEqual(['individual.id_number', 'tos_acceptance.date']);
+  });
+
+  it('SE-25 survives a payload with no requirements object at all', () => {
+    expect(accountReadiness({ details_submitted: true, charges_enabled: true }).requirements_due).toBe('');
+    expect(accountReadiness({}).status).toBe('pending');
+    expect(accountReadiness(null).status).toBe('pending');
+  });
+});
