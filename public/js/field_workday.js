@@ -102,6 +102,19 @@ async function _gwPillSyncState() {
     }
 
     gwRenderClockPill(_gwPillState);
+
+    // Initial-load race: fieldDashboard() can render (via _initialRoute() ->
+    // gwDashboard()/show('fieldDashboard')) BEFORE this async server sync
+    // resolves, since gwInitClockPill() is kicked off on its own timer and
+    // isn't awaited by the dashboard render path. When that happens the hero
+    // card is drawn from the stale initial 'not-in' default and, unlike the
+    // click-driven clock-in/out/break actions, nothing re-renders it once the
+    // real state arrives here -- so a laborer who is actually clocked in can
+    // load the page and see "Not Clocked In" until they navigate away and
+    // back. Re-render now that we have the authoritative state.
+    if (window._currentView === 'fieldDashboard' && typeof window.fieldDashboard === 'function') {
+      window.fieldDashboard();
+    }
   } catch (e) {
     console.warn('[GW Clock Pill] sync failed:', e.message);
   }
@@ -410,7 +423,15 @@ window.fieldDashboard = function fieldDashboard() {
 
   const isSupervisor = rep.role === 'foreman' || rep.role === 'field_supervisor';
   const todayJobs    = (typeof _getMySchedule === 'function') ? _getMySchedule() : [];
-  const state        = window._gwPillState || 'not-in';
+  // NOTE: _gwPillState is a top-level `let` in this (classic, non-module) script,
+  // so it's a lexical binding, NOT a window property -- `window._gwPillState` is
+  // ALWAYS undefined. Every other read/write site in this file (15 of them) uses
+  // the bare identifier; this was the one outlier, and it silently forced `state`
+  // to fall back to 'not-in' on every fieldDashboard() render regardless of the
+  // real clock-in/break/clock-out state. This is why the hero card stayed stuck
+  // on "Not Clocked In" even after window._currentView was fixed to trigger a
+  // re-render: the re-render fired, but always recomputed the wrong state.
+  const state        = _gwPillState || 'not-in';
   const entry        = window._ttState && window._ttState.activeEntry;
 
   // ── Crew / foreman context ────────────────────────────────────────────────
