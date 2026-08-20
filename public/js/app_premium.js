@@ -19355,9 +19355,13 @@ function _sbRender() {
                   : 'No crew members'}</em>
               </span>
             </span>
-            <span class="sb-lane-cap" title="Planned people-hours against this crew's productive capacity. Booked is calendar time on the grid — a different number.">
+            <span class="sb-lane-cap" title="${capMeta && capMeta.capacity_source === 'profile'
+              ? 'Capacity is the sum of these people\u2019s own billable hours from their employee profiles.'
+              : capMeta && capMeta.capacity_source === 'mixed'
+                ? 'Part estimate: ' + (capMeta.capacity_fallback_rep_ids || []).length + ' of these people have no hours on their employee profile yet, so they are counted at the company default.'
+                : 'Estimated from the company default working day \u2014 nobody on this crew has hours set on their employee profile yet.'}">
               <span class="sb-lane-cap-nums">${capMeta ? (capMeta.week_planned_minutes/60).toFixed(1) + 'h / ' + (capMeta.week_capacity_minutes/60).toFixed(0) + 'h' : scheduledHours.toFixed(1) + 'h booked'}</span>
-              ${utilization !== null ? `<span class="sb-lane-cap-pct${utilization > 100 ? ' is-over' : ''}">${utilization}%</span>` : ''}
+              ${utilization !== null ? `<span class="sb-lane-cap-pct${utilization > 100 ? ' is-over' : ''}" title="Planned people-hours against this crew's capacity for the WEEK. The warnings band above reports the same crew per DAY, so the two percentages differ on purpose.">${utilization}% wk</span>` : ''}
             </span>
             <i class="sb-lane-bar"><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i>
           </div>

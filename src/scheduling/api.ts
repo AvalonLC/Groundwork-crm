@@ -698,7 +698,12 @@ schedulingRouter.get('/week', async (c) => {
       if (d.utilization_pct != null && d.utilization_pct > 100) {
         warnings.push({
           type: 'crew_over_capacity', severity: 'warn', date: d.date, crew_id: cr.id,
-          message: `${cr.name} is booked to ${d.utilization_pct}% of capacity`,
+          // "for the day" is not padding. This percentage is one DAY against
+          // one day's capacity, while the crew lane beside it shows the same
+          // crew's WEEK against a week's capacity — the same jobs producing
+          // 1423% here and 356% there, with nothing on either saying which
+          // period it meant. Both were right and the pair read as a bug.
+          message: `${cr.name} is booked to ${d.utilization_pct}% of capacity for the day`,
         });
       }
       if (!d.is_working_day && d.planned_minutes > 0) {
