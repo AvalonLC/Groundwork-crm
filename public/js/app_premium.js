@@ -3514,6 +3514,24 @@ function _gwTodayRender() {
     .filter(x => x.clock.level === 'late')
     .sort((a,b) => b.clock.ratio - a.clock.ratio)
     .slice(0,6);
+  // The following four are normally computed further down (desktop-only
+  // continuation, after the mobile early-return below). They're hoisted /
+  // duplicated here — cheap, pure string builds, no side effects — so the
+  // mobile rebuild's "My Work" and "Sales & Pipeline" zones can use the
+  // exact same real content as desktop without restructuring the function.
+  const _mobileQuickActionsHtml = `<div class="gwm-pill-row">
+      <button class="gwm-pill-btn" onclick="show('lead')">${(typeof gwIcon==='function')?gwIcon('leads',14):''} New Lead</button>
+      <button class="gwm-pill-btn" onclick="show('scheduleBoard')">${(typeof gwIcon==='function')?gwIcon('calendar',14):''} Schedule</button>
+      <button class="gwm-pill-btn" onclick="show('invoices')">${(typeof gwIcon==='function')?gwIcon('document',14):''} Invoices</button>
+      <button class="gwm-pill-btn" onclick="show('estimates')">${(typeof gwIcon==='function')?gwIcon('estimate',14):''} Estimates</button>
+    </div>`;
+  const _mobileScratchpadHtml = `<textarea class="gw-myday-scratch" placeholder="Jot quick notes here — saved automatically, just for you…"
+      oninput="gwMyDayScratchSave(this)">${escapeHtml(_gwMyDayScratchLoad())}</textarea>`;
+  const _mobileRecentWins = _won.slice().sort((a,b)=>(b.closedDate||b.updatedAt||'').localeCompare(a.closedDate||a.updatedAt||'')).slice(0,5);
+  const _mobileRecentWinsHtml = _mobileRecentWins.length
+    ? _mobileRecentWins.map(o => `<div class="gwm-zw-row"><div class="gwm-zw-row-left"><span class="gwm-zw-row-title">${escapeHtml(o.client||'Unnamed Lead')}</span></div><span class="gwm-zw-row-right" style="color:var(--gw-pine-600)">${_fmt(Number(o.jobValue||0))}</span></div>`).join('')
+    : `<div class="gw-myday-placeholder">No wins yet — go close one!</div>`;
+  const _mobileActivityHtml = (typeof renderTodayActivityWidget === 'function') ? renderTodayActivityWidget() : '';
   if (window.innerWidth <= 768) {
     const _dailyCl = data.checklists.find(c=>c.id==='daily');
     const _clHtml  = _dailyCl ? renderChecklist(_dailyCl, true) : '';
@@ -3536,6 +3554,11 @@ function _gwTodayRender() {
       pipeChartHtml: _pipeChartHtml,
       repLeaderboardHtml: _repLeaderboardHtml,
       budgetVsActualHtml: _budgetVsActualHtml,
+      opsDeeperHtml: _opsDeeperHtml,
+      quickActionsHtml: _mobileQuickActionsHtml,
+      scratchpadHtml: _mobileScratchpadHtml,
+      recentWinsHtml: _mobileRecentWinsHtml,
+      activityHtml: _mobileActivityHtml,
     });
     return;
   }
