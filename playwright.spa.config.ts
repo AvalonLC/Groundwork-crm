@@ -58,7 +58,7 @@ export default defineConfig({
     // `npm run db:migrate:local` migrates. This is a pre-existing bug in
     // package.json's own dev:local/preview scripts, unrelated to this branch's
     // change — logged in docs/PUNCHLIST.md rather than fixed here (out of scope).
-    command: "npx vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json && wrangler pages dev dist --local --ip 0.0.0.0 --port 3000 --binding STRIPE_WEBHOOK_SECRET=whsec_e2e_test_secret",
+    command: "npx vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json && wrangler pages dev dist --local --ip 0.0.0.0 --port 3000 --binding STRIPE_WEBHOOK_SECRET=whsec_e2e_test_secret --binding STRIPE_CONNECT_WEBHOOK_SECRET=whsec_e2e_connect_secret",
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 120_000,
