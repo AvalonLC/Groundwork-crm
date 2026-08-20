@@ -18240,20 +18240,27 @@ function _sbDayRailHtml() {
       <button class="sb-rail-close" onclick="_sbCloseRail()" aria-label="Close details">&times;</button>
     </div>
 
-    <div class="sb-rail-title">
-      <div class="sb-rail-wo">
-        <span class="sb-rail-wonum">${escapeHtml(wo.wo_number || '')}</span>
-        <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span>
-      </div>
-      <h3>${escapeHtml(wo.title || wo.client_name || 'Job')}</h3>
-      <dl class="sb-rail-facts">
-        ${wo.property_addr ? `<div><dt>Site</dt><dd>${escapeHtml(wo.property_addr)}</dd></div>` : ''}
-        <div><dt>Date</dt><dd>${escapeHtml(gwDateFormat(wo.scheduled_date, { weekday:'short', month:'short', day:'numeric' }))}${wo.scheduled_time ? ' &middot; ' + escapeHtml(_sbDisplayTime(wo.scheduled_time)) : ''}</dd></div>
-        <div><dt>Crew</dt><dd>${crew ? `<span class="sb-rail-crewdot" style="background:${crew.color}"></span>${escapeHtml(crew.name)}` : 'Not assigned'}</dd></div>
-      </dl>
-    </div>
-
+    <!-- The title scrolls WITH the sections rather than being pinned above
+         them. Pinned, it was 121px of a rail that can be 183px tall once the
+         warnings band is showing on a 720px screen — head 49 + title 121 +
+         actions 97 = 267px of fixed furniture in 183px, which starved
+         .sb-rail-body to ZERO and made every section header unreachable: no
+         scroll position exists that clears both the block above and the action
+         bar below. It is reference text, not chrome, so it gives way first. -->
     <div class="sb-rail-body">
+      <div class="sb-rail-title">
+        <div class="sb-rail-wo">
+          <span class="sb-rail-wonum">${escapeHtml(wo.wo_number || '')}</span>
+          <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span>
+        </div>
+        <h3>${escapeHtml(wo.title || wo.client_name || 'Job')}</h3>
+        <dl class="sb-rail-facts">
+          ${wo.property_addr ? `<div><dt>Site</dt><dd>${escapeHtml(wo.property_addr)}</dd></div>` : ''}
+          <div><dt>Date</dt><dd>${escapeHtml(gwDateFormat(wo.scheduled_date, { weekday:'short', month:'short', day:'numeric' }))}${wo.scheduled_time ? ' &middot; ' + escapeHtml(_sbDisplayTime(wo.scheduled_time)) : ''}</dd></div>
+          <div><dt>Crew</dt><dd>${crew ? `<span class="sb-rail-crewdot" style="background:${crew.color}"></span>${escapeHtml(crew.name)}` : 'Not assigned'}</dd></div>
+        </dl>
+      </div>
+
       ${_sbRailSection('Labor', null, `
         <div class="sb-rail-hours" id="sbm-hours">
           <div class="sb-rail-skel" style="height:44px"></div>

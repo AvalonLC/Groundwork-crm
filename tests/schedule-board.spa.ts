@@ -488,4 +488,71 @@ test.describe('schedule board', () => {
       else if (width > 1100) expect(m.poolWidth, `${width}px: expected the pool collapsed`).toBeLessThan(100);
     }
   });
+
+  test('RSP-02 the day rail stays usable on a short screen, with the warnings band up', async ({ page }) => {
+    // The regression guard for a bug four EQB specs were already failing on,
+    // which read as flakiness because the symptom was a click timing out.
+    //
+    // The rail gets whatever height .sb-workspace has left. On a 720px screen
+    // with the warnings band showing that measured 183px, against fixed
+    // furniture of head 49 + title 121 + actions 97 = 267 — so .sb-rail-body
+    // computed to ZERO and no section could be opened at all. A 43px section
+    // header has no scroll position that clears both the block above it and the
+    // action bar below it, so Playwright's click landed alternately on
+    // .sb-rail-title and .sb-rail-actions until it timed out.
+    //
+    // Height, not width, is the axis at risk here, and RSP-01 varies only width.
+    // Six 8h jobs on one crew on one day is what raises the warnings band, and
+    // is also just a normal Monday.
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      ids.push(await makeJob(page.request, { client_name: `Squeeze ${i}`, crew_id: ctx.crewA, scheduled_date: MONDAY }));
+    }
+
+    for (const height of [720, 800, 900]) {
+      await page.setViewportSize({ width: 1280, height });
+      await openBoard(page);
+      // The warnings band renders inside the KPI band, so it is only on screen
+      // when metrics are. openBoard leaves that at its stored default.
+      await page.evaluate(() => {
+        (globalThis as any)._sbState.showMetrics = true;
+        (globalThis as any)._sbRender();
+      });
+      await page.waitForTimeout(600);
+      // Opened through the card's own handler rather than by clicking the card.
+      // Six jobs in one cell is what raises the warnings band this test needs,
+      // and it also overflows the cell — .sb-workstation .sb-lane-cell is
+      // overflow:visible so the hover panel can escape, which lets the CARDS
+      // escape too, and later lane cells then paint over them. Clicking one is
+      // a coin toss that has nothing to do with what is under test here. The
+      // board-side bug is real and logged separately; DND-01 covers the card
+      // being wired to the DOM.
+      await page.evaluate((id) => (globalThis as any)._sbOpenDayRail(id, 1), ids[0]);
+      await page.waitForSelector('.sb-rail-sec', { timeout: 10_000 });
+      await page.waitForTimeout(800);
+
+      const m = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        const body = doc.querySelector('.sb-rail-body');
+        const secHead = doc.querySelector('.sb-rail-sec-head');
+        return {
+          warningsUp: !!doc.querySelector('.sb-warnings'),
+          bodyH: body ? Math.round(body.getBoundingClientRect().height) : 0,
+          secHeadH: secHead ? Math.round(secHead.getBoundingClientRect().height) : 0,
+        };
+      });
+
+      expect(m.warningsUp, `${height}px: expected the warnings band, which is what does the squeezing`).toBe(true);
+      // The invariant, not the pixel count: the scroll area can hold the thing
+      // you are trying to click.
+      expect(m.bodyH, `${height}px: the rail's scroll area was starved to ${m.bodyH}px`)
+        .toBeGreaterThanOrEqual(m.secHeadH);
+
+      // And prove it by actually clicking one, which is what the EQB specs do.
+      const head = page.locator('.sb-rail-sec').filter({ hasText: 'Materials' }).locator('.sb-rail-sec-head').first();
+      await head.click({ timeout: 8_000 });
+      await page.waitForTimeout(400);
+      expect(await readEquipment(page)).toHaveProperty('open', true);
+    }
+  });
 });

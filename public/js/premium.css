@@ -18331,3 +18331,39 @@ h1.pl-title,
    avoids. */
 .sb-workstation .sb-lane-corner { border-top-left-radius: 10px; }
 .sb-workstation .sb-lane-day-head:last-of-type { border-top-right-radius: 10px; }
+
+/* ── Job Day rail: the scroll area can never be starved ───────────────────────
+   The rail's height is whatever .sb-workspace has left, and that is not much on
+   a short screen: at 1280x720 with the warnings band showing it measured 183px.
+   Against that, the fixed furniture was head 49 + title 121 + actions 97 = 267,
+   so .sb-rail-body computed to ZERO and no section could be opened at all — a
+   43px section header has no scroll position that clears the block above it and
+   the action bar below it, which is why a click there landed alternately on
+   .sb-rail-title and .sb-rail-actions. Four EQB specs caught this and the cause
+   was read as flakiness.
+
+   Three layers, so the panel degrades instead of breaking:
+     1. the title now scrolls with the sections (see _sbDayRailHtml)
+     2. the body keeps a floor of roughly four collapsed section headers
+     3. if even that will not fit, the RAIL scrolls rather than clipping its own
+        controls out of reach — overflow was hidden, which is what turned "too
+        short" into "unusable" instead of "scroll a bit". */
+.sb-rail { overflow-y: auto; overflow-x: hidden; }
+.sb-rail-body { min-height: 168px; }
+
+/* Deliberately NOT sticky, either end. Pinning the head or the action bar to a
+   scroll container overlays the very content being scrolled to: an element
+   scrolled to the bottom lands behind the action bar, which is the same
+   unreachable-header failure in a new place — and it showed up exactly that way
+   under a full suite run, where earlier specs leave enough jobs on the day to
+   grow the warnings band further. In the normal case flex already holds the bar
+   at the bottom, because .sb-rail-body takes the slack; in the squeezed case it
+   scrolls with everything else and stays reachable. */
+
+/* The action bar was 97px — two full-width rows — of a rail that can be 183px.
+   Below 1400px the rail is 306px wide and three buttons genuinely do not fit on
+   one line, so the wrap stays; it just stops being the tallest thing in the
+   panel. */
+.sb-workstation .sb-rail-actions { padding: 8px 10px; gap: 6px; }
+.sb-workstation .sb-rail-actions .rp-btn,
+.sb-workstation .sb-rail-danger { min-height: 30px; font-size: 12px; }
