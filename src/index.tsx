@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
 import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
+import { decideFailureActions, clientFailureEmail } from './api/dunning'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { serveStatic } from 'hono/cloudflare-workers'
@@ -3623,6 +3624,53 @@ function _unpackClientRow(row: any): any {
   delete out.extra
   return out
 }
+
+/**
+ * GET /api/stripe/cards-needing-reauth — clients whose saved card is stranded.
+ *
+ * A card is attached to one Stripe account and cannot be charged by another.
+ * Cards saved before migration 0080 live on the platform while charges now
+ * execute on the connected account, so they are refused rather than attempted.
+ *
+ * The client sees a banner in their portal; this is the other half — the company
+ * can see who is affected and chase them, instead of finding out when an invoice
+ * quietly stops auto-paying.
+ *
+ * Returns an empty list, not an error, when the company is not connected: there
+ * is nothing stranded if there is nowhere to strand it.
+ */
+app.get('/api/stripe/cards-needing-reauth', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+
+  const company: any = await db.prepare(
+    `SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled FROM companies WHERE id=? LIMIT 1`,
+  ).bind(companyId).first()
+  const target = targetAccountFor(company)
+  if (!target) return c.json({ ok: true, data: [], connected: false })
+
+  const rows = await db.prepare(`
+    SELECT ap.client_id, ap.pm_label, ap.stripe_account_id, cl.name AS client_name, cl.email AS client_email
+      FROM client_autopay ap
+      JOIN clients cl ON cl.id = ap.client_id AND cl.company_id = ap.company_id
+     WHERE ap.company_id = ? AND ap.enabled = 1 AND ap.stripe_pm_id != ''
+       AND ap.stripe_account_id != ?
+     ORDER BY cl.name
+  `).bind(companyId, target).all<any>()
+
+  return c.json({
+    ok: true,
+    connected: true,
+    data: (rows.results || []).map((r: any) => ({
+      client_id: r.client_id,
+      client_name: r.client_name,
+      client_email: r.client_email,
+      card: r.pm_label || 'saved card',
+      // '' means the card predates 0080 and is on the platform account.
+      reason: r.stripe_account_id ? 'saved on a different Stripe account' : 'saved before the payment processor changed',
+    })),
+  })
+})
 
 app.get('/api/clients', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -12144,6 +12192,13 @@ app.post('/api/stripe/webhook', async (c) => {
               WHERE id=? AND company_id=?`,
           ).bind(nowPaid / 100, nowPaid, invoiceStatusFor(Number(inv.total_cents || 0), nowPaid), invoiceId, companyId).run()
 
+          // An invoice that failed and then paid should not keep wearing the
+          // flag. The COUNT is kept — how many attempts it took is history worth
+          // having — but the outstanding-failure marker is cleared.
+          await db.prepare(
+            `UPDATE invoices SET payment_failed_at=NULL, payment_failed_reason='' WHERE id=? AND company_id=?`,
+          ).bind(invoiceId, companyId).run()
+
           if (nowPaid >= Number(inv.total_cents || 0)) {
             await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, null)
           }
@@ -12230,9 +12285,75 @@ app.post('/api/stripe/webhook', async (c) => {
     }
 
     if (effect.kind === 'payment_failed') {
-      // Nothing to write down on the invoice — no money moved. Acknowledged so
-      // Stripe stops retrying, and logged so a failure is findable rather than
-      // silent. Dunning is a separate feature and is not being invented here.
+      // Flag, tell the client, tell the company. Never re-charge — see
+      // src/api/dunning.ts for why that is a decision and not an omission.
+      const pi: any = event.data?.object ?? {}
+      const invoiceId = String(pi.metadata?.invoice_id || '')
+      const companyId = eventCompanyId || String(pi.metadata?.company_id || '')
+
+      if (invoiceId && companyId) {
+        const inv: any = await db.prepare(
+          `SELECT id, invoice_number, total_cents, amount_paid_cents, portal_token, client_id, payment_failed_count
+             FROM invoices WHERE id=? AND company_id=? LIMIT 1`,
+        ).bind(invoiceId, companyId).first()
+
+        if (inv) {
+          const client: any = inv.client_id
+            ? await db.prepare(`SELECT name, email FROM clients WHERE id=? AND company_id=? LIMIT 1`)
+                .bind(inv.client_id, companyId).first()
+            : null
+          const company: any = await db.prepare(`SELECT name FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
+
+          const actions = decideFailureActions({
+            invoice_id: invoiceId,
+            company_id: companyId,
+            reason: effect.reason,
+            prior_failures: Number(inv.payment_failed_count || 0),
+            has_portal_token: !!inv.portal_token,
+            client_email: client?.email || '',
+          })
+
+          await db.prepare(
+            `UPDATE invoices SET payment_failed_at=datetime('now'), payment_failed_reason=?, payment_failed_count=?,
+                                 updated_at=datetime('now')
+              WHERE id=? AND company_id=?`,
+          ).bind(actions.display_reason, actions.failure_count, invoiceId, companyId).run()
+
+          const owedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
+
+          if (actions.email_client) {
+            const stripeOrigin = new URL(c.req.url).origin
+            const mail = clientFailureEmail({
+              invoiceNumber: inv.invoice_number || '',
+              amountCents: owedCents,
+              payUrl: `${stripeOrigin}/invoices/portal/${inv.portal_token}`,
+              displayReason: actions.display_reason,
+              companyName: company?.name || '',
+            })
+            const key = (c.env as any).SENDGRID_API_KEY as string | undefined
+            if (key) await sendEmail(key, client.email, mail.subject, mail.html)
+          }
+
+          if (actions.notify_company) {
+            // Unconditional, even when the client could not be emailed — a
+            // failure nobody can see is the problem this replaces.
+            const managers = await db.prepare(
+              `SELECT id FROM reps WHERE company_id=? AND role IN ('admin','owner','office_manager') AND active=1`,
+            ).bind(companyId).all<any>()
+            for (const mgr of (managers.results || [])) {
+              await db.prepare(
+                `INSERT OR IGNORE INTO notifications (id, company_id, rep_id, type, title, body, action_url)
+                 VALUES (?,?,?,?,?,?,?)`,
+              ).bind(
+                `notif_pf_${effect.payment_intent_id}_${mgr.id}`.slice(0, 120), companyId, mgr.id, 'payment_failed',
+                `Payment failed: ${inv.invoice_number || invoiceId}`,
+                `${actions.display_reason}${actions.email_skipped_reason ? ` The client was not emailed — ${actions.email_skipped_reason}.` : ' The client has been emailed a payment link.'}`,
+                '/invoices',
+              ).run()
+            }
+          }
+        }
+      }
       console.log('stripe payment failed:', effect.payment_intent_id, effect.reason)
     }
 
@@ -13353,7 +13474,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b011">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b014">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -13376,8 +13497,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260820b011"></script>
-  <script src="/js/client_portal.js?v=20260820b011"></script>  <script>
+  <script src="/js/platform_core.js?v=20260820b014"></script>
+  <script src="/js/client_portal.js?v=20260820b014"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -14011,10 +14132,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b011">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b011">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b011">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b011">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260820b014">
+  <link rel="stylesheet" href="/js/styles.css?v=20260820b014">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b014">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b014">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14691,46 +14812,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260820b011"></script>
-<script src="/js/gw-icons.js?v=20260820b011"></script>
-<script src="/js/sales-process.js?v=20260820b011"></script>
-<script src="/js/richtext.js?v=20260820b011"></script>
-<script src="/js/db.js?v=20260820b011"></script>
-<script src="/js/data.js?v=20260820b011"></script>
-<script src="/js/reps.js?v=20260820b011"></script>
-<script src="/js/record-page.js?v=20260820b011"></script>
-<script src="/js/academy.js?v=20260820b011"></script>
-<script src="/js/task_engine.js?v=20260820b011"></script>
-<script src="/js/gw_i18n.js?v=20260820b011"></script>
-<script src="/js/app_premium.js?v=20260820b011"></script>
-<script src="/js/estimates.js?v=20260820b011"></script>
-<script src="/js/multiday.js?v=20260820b011"></script>
-<script src="/js/proposals.js?v=20260820b011"></script>
-<script src="/js/pricing.js?v=20260820b011"></script>
-<script src="/js/invoices.js?v=20260820b011"></script>
-<script src="/js/csv_import.js?v=20260820b011"></script>
-<script src="/js/onboarding.js?v=20260820b011"></script>
-<script src="/js/gw_copilot.js?v=20260820b011"></script>
-<script src="/js/groundwork_ai.js?v=20260820b011"></script>
-<script src="/js/recurring_plans.js?v=20260820b011"></script>
-<script src="/js/reviews.js?v=20260820b011"></script>
-<script src="/js/stripe.js?v=20260820b011"></script>
-<script src="/js/email.js?v=20260820b011"></script>
-<script src="/js/notifications.js?v=20260820b011"></script>
-<script src="/js/integrations.js?v=20260820b011"></script>
-<script src="/js/sms.js?v=20260820b011"></script>
-<script src="/js/calendar_sync.js?v=20260820b011"></script>
-<script src="/js/ai_followup.js?v=20260820b011"></script>
-<script src="/js/user_management.js?v=20260820b011"></script>
-<script src="/js/platform_admin.js?v=20260820b011"></script>
-<script src="/js/time_tracker.js?v=20260820b011"></script>
-<script src="/js/field_workday.js?v=20260820b011"></script>
-<script src="/js/platform_core.js?v=20260820b011"></script>
-<script src="/js/approval_engine.js?v=20260820b011"></script>
-<script src="/js/automation_engine.js?v=20260820b011"></script>
-<script src="/js/client_portal.js?v=20260820b011"></script>
-<script src="/js/field_mode.js?v=20260820b011"></script>
-<script src="/js/assets_hub.js?v=20260820b011"></script><script src="/js/marketing.js?v=20260820b011"></script><script>
+<script src="/js/gw_date.js?v=20260820b014"></script>
+<script src="/js/gw-icons.js?v=20260820b014"></script>
+<script src="/js/sales-process.js?v=20260820b014"></script>
+<script src="/js/richtext.js?v=20260820b014"></script>
+<script src="/js/db.js?v=20260820b014"></script>
+<script src="/js/data.js?v=20260820b014"></script>
+<script src="/js/reps.js?v=20260820b014"></script>
+<script src="/js/record-page.js?v=20260820b014"></script>
+<script src="/js/academy.js?v=20260820b014"></script>
+<script src="/js/task_engine.js?v=20260820b014"></script>
+<script src="/js/gw_i18n.js?v=20260820b014"></script>
+<script src="/js/app_premium.js?v=20260820b014"></script>
+<script src="/js/estimates.js?v=20260820b014"></script>
+<script src="/js/multiday.js?v=20260820b014"></script>
+<script src="/js/proposals.js?v=20260820b014"></script>
+<script src="/js/pricing.js?v=20260820b014"></script>
+<script src="/js/invoices.js?v=20260820b014"></script>
+<script src="/js/csv_import.js?v=20260820b014"></script>
+<script src="/js/onboarding.js?v=20260820b014"></script>
+<script src="/js/gw_copilot.js?v=20260820b014"></script>
+<script src="/js/groundwork_ai.js?v=20260820b014"></script>
+<script src="/js/recurring_plans.js?v=20260820b014"></script>
+<script src="/js/reviews.js?v=20260820b014"></script>
+<script src="/js/stripe.js?v=20260820b014"></script>
+<script src="/js/email.js?v=20260820b014"></script>
+<script src="/js/notifications.js?v=20260820b014"></script>
+<script src="/js/integrations.js?v=20260820b014"></script>
+<script src="/js/sms.js?v=20260820b014"></script>
+<script src="/js/calendar_sync.js?v=20260820b014"></script>
+<script src="/js/ai_followup.js?v=20260820b014"></script>
+<script src="/js/user_management.js?v=20260820b014"></script>
+<script src="/js/platform_admin.js?v=20260820b014"></script>
+<script src="/js/time_tracker.js?v=20260820b014"></script>
+<script src="/js/field_workday.js?v=20260820b014"></script>
+<script src="/js/platform_core.js?v=20260820b014"></script>
+<script src="/js/approval_engine.js?v=20260820b014"></script>
+<script src="/js/automation_engine.js?v=20260820b014"></script>
+<script src="/js/client_portal.js?v=20260820b014"></script>
+<script src="/js/field_mode.js?v=20260820b014"></script>
+<script src="/js/assets_hub.js?v=20260820b014"></script><script src="/js/marketing.js?v=20260820b014"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
