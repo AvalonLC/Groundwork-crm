@@ -74,13 +74,12 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    old row intact. The charge model is now DIRECT everywhere — no
    `transfer_data[destination]` survives in `src/`.
 
-   OUTSTANDING, and it is a real user-visible consequence: a saved CARD cannot
-   follow its customer between Stripe accounts. Cards saved before 0080 carry
-   `stripe_account_id = ''` and are refused rather than attempted, so any client
-   with autopay enabled must re-enter their card. That is inherent to Stripe's
-   model. Nobody has autopay configured today (0 rows locally), so the practical
-   impact now is nil — but it will not stay that way, and re-collection has no
-   UI prompt yet.
+   ~~OUTSTANDING: re-collection has no UI prompt.~~ — **DONE** 2026-08-20.
+   `GET /api/portal/autopay` returns `needs_card_reauth` with a plain-language
+   message, and `GET /api/stripe/cards-needing-reauth` gives the company the
+   list of affected clients so they can chase. A saved card still cannot follow
+   its customer between Stripe accounts — that is Stripe's model — but nobody
+   now finds out by having an invoice quietly stop auto-paying.
 
    Original note follows.
 

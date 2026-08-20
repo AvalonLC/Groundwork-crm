@@ -15,6 +15,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from './env'
 import { decideCustomer, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
+import { needsCardReCollection } from './api/dunning'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import mig0041 from '../migrations/0041_properties.sql?raw'
 import mig0042 from '../migrations/0042_portal_identity.sql?raw'
@@ -973,8 +974,28 @@ export function registerPortal(app: Hono<AppEnv>, deps: {
     const s: PortalScope = c.var.portalScope
     const clientId = pickClientId(s, c.req.query('client_id'), 'manage_autopay')
     if (!clientId) return c.json({ error: 'Not permitted' }, 403)
-    const row: any = await db.prepare(`SELECT enabled, stripe_pm_id, pm_label, max_amount_cents / 100.0 AS max_amount, updated_at FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
-    return c.json({ ok: true, data: row || { enabled: 0, stripe_pm_id: '', pm_label: '', max_amount: 0 }, client_id: clientId })
+    const row: any = await db.prepare(`SELECT enabled, stripe_pm_id, pm_label, max_amount_cents / 100.0 AS max_amount, updated_at, stripe_account_id FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
+
+    // A card is attached to one Stripe account and cannot be charged by another.
+    // Cards saved before migration 0080 live on the platform while charges now
+    // execute on the connected account, so they are refused rather than
+    // attempted — and the client has to re-add one. Telling them here is the
+    // difference between that being a surprise at the next invoice and being a
+    // thing they can fix in advance.
+    const acctCompany: any = await db.prepare(
+      `SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled FROM companies WHERE id=? LIMIT 1`,
+    ).bind(s.companyId).first()
+    const needsReAdd = needsCardReCollection(row, targetAccountFor(acctCompany))
+
+    return c.json({
+      ok: true,
+      data: row || { enabled: 0, stripe_pm_id: '', pm_label: '', max_amount: 0 },
+      client_id: clientId,
+      needs_card_reauth: needsReAdd,
+      needs_card_reauth_message: needsReAdd
+        ? 'Your saved card needs to be added again — your contractor moved to a new payment processor. Nothing has been charged, and your autopay will resume once a card is on file.'
+        : '',
+    })
   })
 
   // PUT /api/portal/autopay — enable/disable, choose method, set cap
