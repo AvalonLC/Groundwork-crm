@@ -19,7 +19,24 @@ function _invAgo(d) {
   // 3pm EDT on the 21st, "2026-08-21" is 8pm on the 20th local, ms is negative,
   // and Math.floor(-0.04) is -1 — hence "-1d ago" on a brand new invoice.
   // _invDate directly above already normalises this; this did not.
-  const t = new Date(d + (String(d).includes('T') ? '' : 'T00:00:00')).getTime();
+  // Two different shapes arrive here and they mean different things:
+  //
+  //   "2026-08-21"            a DATE the user chose (due_date). Local midnight.
+  //   "2026-08-21 17:08:25"   a TIMESTAMP from SQLite's datetime('now'), which
+  //                           is UTC — the workerd runtime is pinned to UTC and
+  //                           nothing converts it on the way out.
+  //
+  // Both used to be handed straight to new Date(). The second is the real cause
+  // of "-1d ago" on a brand new invoice: parsed as LOCAL, a UTC timestamp is up
+  // to four hours in the future in EDT, so Date.now() is behind it and
+  // Math.floor of a small negative is -1. Appending 'Z' says what it already
+  // was; appending 'T00:00:00' to it produced an Invalid Date and a blank
+  // Issued column instead, which is how I found the rest of this.
+  const raw = String(d).trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw)            ? raw + 'T00:00:00'
+            : /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(raw) ? raw.replace(' ', 'T') + 'Z'
+            : raw;
+  const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
   // Clamp rather than render a negative age. A future-dated invoice is a real
