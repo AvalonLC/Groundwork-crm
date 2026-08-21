@@ -18692,3 +18692,18 @@ h1.pl-title,
 .sb-workstation .sb-card-meta { flex-wrap: wrap; row-gap: 2px; }
 .sb-workstation .sb-job-card > * { min-width: 0; max-width: 100%; }
 .sb-workstation .sb-card-status { overflow: hidden; text-overflow: ellipsis; }
+
+/* ── The verify-email banner must not sit on the board ────────────────────────
+   #gw-verify-banner is position:fixed, bottom:16px, z-index:9000 (src/index.tsx),
+   so it floats over whatever is at the bottom of the viewport. On a scrolling
+   page that is survivable — the content underneath can be scrolled clear of it.
+   The schedule shell cannot: it is inset:0 inside .view and scrolls internally,
+   so the bottom of the board is pinned under the banner permanently. Measured at
+   1440x720, 1440x800 and 1440x900: a constant 46px of .sb-board covered, which
+   is the last crew lane's cells and the type legend.
+
+   Answered with padding rather than by moving the banner, because the banner is
+   right where it wants to be — this is the board's job to accommodate, and
+   moving shared chrome to suit one page would push the problem onto whichever
+   page came next. 66px = the banner's 50px plus its 16px offset. */
+body:has(#gw-verify-banner) .sb-workstation { padding-bottom: 66px; }
