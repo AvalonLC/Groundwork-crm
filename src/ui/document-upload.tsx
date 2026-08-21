@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { ingestFile } from "../ai/ingest";
+import { ingestFile, ingestXlsxFile } from "../ai/ingest";
 import { processReceiptUpload, scoreFieldConfidence, type ExtractedReceiptFields } from "../ai/receipts";
 import type { IngestResult } from "../ai/ingest";
 import type { ProcessReceiptResult } from "../ai/receipts";
@@ -9,6 +9,16 @@ import type { VocabularyMode } from "./vocabulary";
 import { readPageArgs, Page, Card, Why, Confidence, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type DocumentUploadBindings = { DB: D1Database; RECEIPTS: R2Bucket };
+
+/** Mirrors onboarding.tsx's isCsvLike/isReceiptLike pattern — routes an
+ * uploaded financial export to ingestXlsxFile (binary, grid-shape
+ * detection) instead of ingestFile (text, header-row detection). See
+ * src/ai/xlsx.ts / src/ai/ingest.ts's detectXlsxSource for why xlsx needs
+ * a genuinely different parse path, not just a different MIME check. */
+function isXlsxLike(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+}
 
 /**
  * Item 2: src/ai/ingest.ts (ingestFile) and src/ai/receipts.ts
@@ -166,9 +176,12 @@ function renderPage(
         sent to the Work Queue instead of guessed at.
       </div>
 
-      <Card title="Upload a financial export" sub="P&L, class/division P&L, balance sheet, bank/card CSV, or payroll export">
+      <Card title="Upload a financial export" sub="P&L, class/division P&L, balance sheet, bank/card CSV or Excel, or payroll export">
         <form method="post" action={`${basePath}/ingest${qs}`} enctype="multipart/form-data">
-          <input type="file" name="file" accept=".csv,text/csv,text/plain" required data-testid="ingest-file-input" />
+          <input
+            type="file" name="file" required data-testid="ingest-file-input"
+            accept=".csv,text/csv,text/plain,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          />
           <button type="submit" data-testid="ingest-submit" style="display:block;margin-top:12px;background:var(--gw-pine);color:#fff;border:0;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">
             Upload export
           </button>
@@ -251,8 +264,9 @@ documentUploadRouter.post("/ingest", async (c) => {
   }
 
   const ownerId = c.var.repId ?? "office-upload";
-  const text = await file.text();
-  const result = await ingestFile(c.env.DB, tenant_id, text, ownerId);
+  const result = isXlsxLike(file)
+    ? await ingestXlsxFile(c.env.DB, tenant_id, await file.arrayBuffer(), ownerId)
+    : await ingestFile(c.env.DB, tenant_id, await file.text(), ownerId);
   return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, result, null, null, null, null, partial));
 });
 

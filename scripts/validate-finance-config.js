@@ -36,8 +36,19 @@ const CHECKS = {
     requireArray(obj, "sources", file);
     requireObject(obj, "fallback", file);
     for (const source of obj.sources ?? []) {
-      if (!Array.isArray(source.detect?.required_headers) || source.detect.required_headers.length === 0) {
-        bad.push(`${file}: source "${source.id}" must have a non-empty detect.required_headers array`);
+      if (!Array.isArray(source.detect?.required_headers)) {
+        bad.push(`${file}: source "${source.id}" must have a detect.required_headers array`);
+        continue;
+      }
+      // csv sources detect off the header row, so they need at least one
+      // required header or every upload would match. xlsx sources detect
+      // off file type + `shape` instead (see src/ai/ingest.ts's
+      // detectSource) — an empty array there is intentional, not a typo.
+      if (source.format === "csv" && source.detect.required_headers.length === 0) {
+        bad.push(`${file}: csv source "${source.id}" must have a non-empty detect.required_headers array`);
+      }
+      if (source.format === "xlsx" && !source.shape) {
+        bad.push(`${file}: xlsx source "${source.id}" must set a "shape"`);
       }
     }
   },

@@ -1,7 +1,14 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "fs";
 import { resetFinanceDb, exec } from "./test-seed";
 
 const TENANT = "t-e2e-onboarding";
+
+/** Same real Avalon fixture as document-upload.e2e.ts / src/ai/xlsx.test.ts
+ * / src/ai/ingest.test.ts — see document-upload.e2e.ts's comment for why
+ * this can read the binary directly here (plain Node, not the DB worker
+ * runtime). */
+const avalonXlsxBuffer = readFileSync("fixtures/ingest/qbo-class-pnl-wide-avalon.xlsx");
 
 test.beforeEach(async ({ request }) => {
   await resetFinanceDb(request, TENANT);
@@ -60,6 +67,27 @@ test("UOB2-04 a clean financial export (no unmapped divisions) shows good to go,
   await page.getByTestId("onboarding-submit").click();
   await expect(page.getByTestId("file-status-0")).toContainText("ok");
   await expect(page.getByTestId("gap-state-1")).toContainText("good");
+});
+
+test("UOB2-07 a real Avalon .xlsx export dropped alongside other files is classified as a financial export, not unrecognized", async ({ page }) => {
+  await page.goto(`/onboarding?tenant_id=${TENANT}&role=owner`);
+
+  await page.getByTestId("onboarding-file-input").setInputFiles([
+    {
+      name: "January-June, 2026 CLASS P&L.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: avalonXlsxBuffer,
+    },
+    { name: "receipt.jpg", mimeType: "image/jpeg", buffer: Buffer.from("fake-receipt-bytes-onboarding-xlsx") },
+  ]);
+  await page.getByTestId("onboarding-submit").click();
+
+  await expect(page.getByTestId("file-result-0")).toContainText("January-June, 2026 CLASS P&L.xlsx");
+  await expect(page.getByTestId("file-result-0")).toContainText("QuickBooks Class/Division P&L Export");
+  // 96 lines total, 41 unmapped (Landscaping + G&A) — some review needed,
+  // never rounded up to "ok".
+  await expect(page.getByTestId("file-status-0")).toContainText("needs review");
+  await expect(page.getByTestId("gap-state-1")).toContainText("needs review");
 });
 
 test("UOB2-05 crew and crew_lead are denied", async ({ page }) => {

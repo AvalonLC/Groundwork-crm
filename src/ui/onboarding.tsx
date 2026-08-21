@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { ingestFile } from "../ai/ingest";
+import { ingestFile, ingestXlsxFile } from "../ai/ingest";
 import { processReceiptUpload } from "../ai/receipts";
 import {
   getTenantFinancePolicy, insertUploadBatch, listReceiptsForTenant, listUploadBatchesForTenant,
@@ -54,6 +54,13 @@ function isReceiptLike(file: File): boolean {
   return file.type.startsWith("image/") || name.endsWith(".pdf") || file.type === "application/pdf";
 }
 
+/** Mirrors document-upload.tsx's isXlsxLike — same binary-vs-text branch,
+ * just inside this page's multi-file loop instead of a single-file form. */
+function isXlsxLike(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+}
+
 async function computeConfidenceGap(db: D1Database, tenantId: string): Promise<GapRow[]> {
   const [policy, exports, receipts] = await Promise.all([
     getTenantFinancePolicy(db, tenantId),
@@ -105,13 +112,16 @@ function renderPage(
         what's covered and what isn't.
       </div>
 
-      <Card title="Upload financial documents" sub="P&L / bank exports (CSV) and receipts (image/PDF), any mix, all at once">
+      <Card title="Upload financial documents" sub="P&L / bank exports (CSV or Excel) and receipts (image/PDF), any mix, all at once">
         <form
           method="post"
           action={`${basePath}/upload?tenant_id=${encodeURIComponent(tenant ?? "")}&role=${role}`}
           enctype="multipart/form-data"
         >
-          <input type="file" name="files" multiple required data-testid="onboarding-file-input" />
+          <input
+            type="file" name="files" multiple required data-testid="onboarding-file-input"
+            accept=".csv,.txt,text/csv,text/plain,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*,.pdf,application/pdf"
+          />
           <button
             type="submit"
             data-testid="onboarding-submit"
@@ -240,9 +250,10 @@ onboardingRouter.post("/upload", async (c) => {
 
   for (const file of files) {
     const id = `ub-${crypto.randomUUID().slice(0, 12)}`;
-    if (isCsvLike(file)) {
-      const text = await file.text();
-      const result = await ingestFile(c.env.DB, tenant_id, text, ownerId);
+    if (isXlsxLike(file) || isCsvLike(file)) {
+      const result = isXlsxLike(file)
+        ? await ingestXlsxFile(c.env.DB, tenant_id, await file.arrayBuffer(), ownerId)
+        : await ingestFile(c.env.DB, tenant_id, await file.text(), ownerId);
       const domain: UploadDomain = result.source_id ? "financial_export" : "unrecognized";
       const anyLineNeedsReview = result.lines.some((l) => l.needs_review);
       await insertUploadBatch(c.env.DB, {
