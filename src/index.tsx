@@ -9074,6 +9074,26 @@ app.get('/api/invoices/:id', requireAuth, async (c) => {
   ).bind(c.req.param('id'), companyId).first()
   if (!row) return c.json({ error: 'Not found' }, 404)
   try { row.line_items = JSON.parse(row.line_items || '[]') } catch(_) { row.line_items = [] }
+
+  // A deposit is requested on the ESTIMATE — there is no deposit column on
+  // invoices, and adding one would be a second place for the same figure to
+  // live. An invoice raised from an estimate inherits it, and the send-invoice
+  // email needs it so a client who was asked for a deposit is told the deposit
+  // figure rather than only the full balance.
+  //
+  // Reported as REMAINING, not as requested: a deposit already collected is not
+  // something to ask for again.
+  row.deposit_due = 0
+  if (row.estimate_id) {
+    const est: any = await db.prepare(
+      `SELECT deposit_amt_cents, deposit_paid_amount_cents FROM estimates WHERE id=? AND company_id=? LIMIT 1`
+    ).bind(row.estimate_id, companyId).first().catch(() => null)
+    if (est) {
+      const requested = Number(est.deposit_amt_cents || 0)
+      const collected = Number(est.deposit_paid_amount_cents || 0)
+      row.deposit_due = Math.max(0, requested - collected) / 100
+    }
+  }
   return c.json(row)
 })
 
@@ -9118,6 +9138,23 @@ app.post('/api/invoices', requireAuth, async (c) => {
     .bind(companyId).first()
   const invoiceNumber = b.invoice_number || `INV-${String(counter?.last_number || 1).padStart(4, '0')}`
 
+  // An invoice with no due date is not a bill, it is a suggestion. It also broke
+  // the send-invoice email — "Due Date:" reached the customer blank — and left
+  // _invIsOverdue with nothing to compare, so the row could never be classified
+  // overdue. Terms already default to Net 30 further down; the due date now
+  // follows from them rather than being left empty.
+  //
+  // Only this path needed it: the from-estimate route below already computes
+  // one, which is why an invoice raised from an estimate had a due date and one
+  // created by hand did not.
+  const netDays = (() => {
+    const m = /net\s*(\d{1,3})/i.exec(String(b.terms || 'Net 30'))
+    return m ? Math.min(365, Math.max(0, Number(m[1]))) : 30
+  })()
+  const defaultDue = new Date()
+  defaultDue.setDate(defaultDue.getDate() + netDays)
+  const dueDateOrDefault = b.due_date || defaultDue.toISOString().slice(0, 10)
+
   const id = `inv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
   const portalToken = crypto.randomUUID()
   const lineItems = Array.isArray(b.line_items) ? JSON.stringify(b.line_items) : b.line_items || '[]'
@@ -9143,7 +9180,7 @@ app.post('/api/invoices', requireAuth, async (c) => {
     b.tax_rate||0, taxAmount, Math.round(taxAmount*100),
     discountAmount, Math.round(discountAmount*100),
     total, Math.round(total*100), amountPaid, Math.round(amountPaid*100),
-    balanceDue, Math.round(balanceDue*100), b.due_date||'',
+    balanceDue, Math.round(balanceDue*100), dueDateOrDefault,
     lineItems, b.notes||'', b.internal_notes||'',
     b.terms||'Net 30', b.footer_note||'', portalToken
   ).run()
