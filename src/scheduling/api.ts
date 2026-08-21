@@ -22,7 +22,9 @@ import { summarizeDayEquipment, normalizeStatus } from './equipment';
 import {
   DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
   parseWorkingDays,
+  crewCapacityFromMemberHours,
   crewDailyCapacityMinutes,
+  distributeWeeklyCapacity,
   utilizationPct,
   netActualMinutes,
 } from './capacity';
@@ -571,16 +573,80 @@ schedulingRouter.get('/week', async (c) => {
     };
   });
 
-  // Capacity per crew per day: people on the crew x productive minutes, against
-  // the labor actually planned for that crew that day.
+  // ── Each member's own hours ────────────────────────────────────────────────
+  //
+  // Resolved once per crew membership and memoised for this request. The
+  // resolver's own contract is "never cache across dates" — a profile is
+  // effective-dated and can change underneath a stale value — and this does
+  // not: one request, one as-of date, the week's start.
+  //
+  // Resolved per (crew, member) rather than per member because the BH-06
+  // cascade is employee -> crew -> role -> tenant, so the same person on two
+  // crews can legitimately resolve differently. Failures are swallowed to null,
+  // not thrown: a missing rate profile is the normal state for a company that
+  // has not filled them in, and it must degrade to the old company-wide number
+  // rather than take the board down.
+  const memberBillableHours = new Map<string, number | null>();
+  await Promise.all(
+    (membersRes.results || []).map(async (m: any) => {
+      const key = `${m.crew_id}|${m.rep_id}`;
+      if (memberBillableHours.has(key)) return;
+      try {
+        const rate = await resolveLaborRate(db, {
+          company_id: companyId,
+          employee_id: m.rep_id,
+          work_date: start,
+          crew_id: m.crew_id,
+          role: m.crew_role || undefined,
+        });
+        memberBillableHours.set(key, rate ? rate.billable_hours : null);
+      } catch {
+        memberBillableHours.set(key, null);
+      }
+    }),
+  );
+
+  // Capacity per crew per day: each member's own billable hours spread across
+  // the working days, against the labor actually planned for that crew that day.
   const crews = (crewsRes.results || [])
     .filter((cr: any) => !crewFilter || cr.id === crewFilter)
     .map((cr: any) => {
       const members = membersByCrew.get(cr.id) || [];
-      const dailyCapacity = crewDailyCapacityMinutes(members.length, settings.productive_minutes_per_day);
+      // Capacity is the sum of the people actually on the crew, not headcount
+      // times a company constant — see crewCapacityFromMemberHours. Hours come
+      // from the rate resolver rather than from labor_rate_profile directly,
+      // because the burdened rate divides by this same figure and the two must
+      // not be able to disagree (CLAUDE.md: no module computes its own labor
+      // arithmetic).
+      const crewCapacity = crewCapacityFromMemberHours(
+        members.map((m: any) => ({
+          rep_id: m.rep_id,
+          billable_hours: memberBillableHours.get(`${cr.id}|${m.rep_id}`) ?? null,
+        })),
+        workingDays,
+        settings.productive_minutes_per_day,
+      );
+      const dailyCapacity = crewCapacity.daily_minutes;
+      // The week is reported as the sum of the days shown, which is correct — a
+      // view starting mid-week really does contain fewer working days. But one
+      // rounded per-day figure multiplied back up does not return the week, so
+      // the week's minutes are distributed across its working days instead and
+      // the parts sum to the whole exactly. Assigned in date order, so the
+      // spare minutes land on the earliest days rather than always on Friday.
+      const workingDatesInView = days.filter((date) =>
+        workingDays.includes(new Date(`${date}T00:00:00Z`).getUTCDay()));
+      // Only the working days actually on screen count. A full week is all of
+      // them and gets the whole figure; a partial week gets its share.
+      const weekMinutesInView = workingDays.length === 0
+        ? 0
+        : Math.round(crewCapacity.weekly_minutes * (workingDatesInView.length / workingDays.length));
+      const perWorkingDay = distributeWeeklyCapacity(weekMinutesInView, workingDatesInView.length);
+      const capacityByDate = new Map<string, number>(
+        workingDatesInView.map((date, i) => [date, perWorkingDay[i] ?? 0]),
+      );
       const byDay = days.map((date) => {
         const isWorkingDay = workingDays.includes(new Date(`${date}T00:00:00Z`).getUTCDay());
-        const capacity = isWorkingDay ? dailyCapacity : 0;
+        const capacity = isWorkingDay ? (capacityByDate.get(date) ?? 0) : 0;
         const planned = assignments
           .filter((a) => a.crew_id === cr.id && a.date === date)
           .reduce((sum, a) => sum + a.planned_minutes, 0);
@@ -602,6 +668,12 @@ schedulingRouter.get('/week', async (c) => {
         members,
         member_count: members.length,
         daily_capacity_minutes: dailyCapacity,
+        // Travels with the number, per the rule that confidence and stale
+        // components render alongside every figure they qualify. 'default'
+        // means nobody on this crew has an hours profile yet and the week is
+        // the old company-wide guess; 'mixed' names exactly whose to fill in.
+        capacity_source: crewCapacity.source,
+        capacity_fallback_rep_ids: crewCapacity.fallback_members,
         week_capacity_minutes: weekCapacity,
         week_planned_minutes: weekPlanned,
         week_utilization_pct: utilizationPct(weekPlanned, weekCapacity),
@@ -626,7 +698,12 @@ schedulingRouter.get('/week', async (c) => {
       if (d.utilization_pct != null && d.utilization_pct > 100) {
         warnings.push({
           type: 'crew_over_capacity', severity: 'warn', date: d.date, crew_id: cr.id,
-          message: `${cr.name} is booked to ${d.utilization_pct}% of capacity`,
+          // "for the day" is not padding. This percentage is one DAY against
+          // one day's capacity, while the crew lane beside it shows the same
+          // crew's WEEK against a week's capacity — the same jobs producing
+          // 1423% here and 356% there, with nothing on either saying which
+          // period it meant. Both were right and the pair read as a bug.
+          message: `${cr.name} is booked to ${d.utilization_pct}% of capacity for the day`,
         });
       }
       if (!d.is_working_day && d.planned_minutes > 0) {

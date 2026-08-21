@@ -49,6 +49,12 @@ beforeEach(async () => {
   for (const t of [
     'wo_day_employees', 'wo_days', 'time_entries', 'work_orders',
     'crew_members', 'crews', 'reps', 'workday_settings', 'estimates',
+    // Crew capacity now resolves each member's hours from here, so a profile
+    // left behind by an earlier test silently changes another test's capacity.
+    // It survived the D1 test database between runs too, which is why the
+    // arithmetic came out two minutes off a hand-checked figure rather than
+    // failing outright — the most annoying kind of wrong.
+    'labor_rate_profile',
   ]) {
     await db().prepare(`DELETE FROM ${t} WHERE company_id=?`).bind(CO).run();
   }
@@ -358,6 +364,56 @@ describe('GET /week', () => {
     expect(crew.week_capacity_minutes).toBe(4500);
     // The Week view's hardcoded assumption is 40h = 2400 minutes.
     expect(crew.week_capacity_minutes).not.toBe(2400);
+  });
+
+  it("sizes the week from each member's OWN hours once they have a profile", async () => {
+    // The flat-90h bug, end to end. Before this, two crews of the same size had
+    // the same week whoever was on it, because headcount x a company constant is
+    // all the old figure could express. REP_A is full time, REP_B is not.
+    //
+    // 1622 billable/yr / 52 = 31.19h/wk -> 1872 min
+    //  1040 billable/yr / 52 = 20h/wk    -> 1200 min
+    const profile = (scopeId: string, paid: number, pto: number, shop: number, idle: number) =>
+      db().prepare(
+        `INSERT INTO labor_rate_profile (company_id, scope, scope_id, wage_cents, paid_hours,
+           pto_hours, shop_hours, idle_hours, tax_rate, comp_rate, benefits_monthly_cents,
+           support_truck_annual_cents, support_tools_annual_cents, support_equipment_annual_cents,
+           require_rate_approval, effective_from, effective_to)
+         VALUES (?, 'employee', ?, 2500, ?, ?, ?, ?, 800, 600, 0, 0, 0, 0, 0, '2020-01-01', NULL)`,
+      ).bind(CO, scopeId, paid, pto, shop, idle).run();
+
+    await profile(REP_A, 2080, 96, 168, 194);   // 1622 billable
+    await profile(REP_B, 1200, 60, 50, 50);     // 1040 billable
+
+    const body = await json(await req(`/week?start=${MONDAY}`));
+    const crew = body.crews.find((c: any) => c.id === CREW);
+
+    expect(crew.week_capacity_minutes).toBe(1872 + 1200);
+    // And specifically NOT the old headcount answer.
+    expect(crew.week_capacity_minutes).not.toBe(4500);
+    // The figure says where it came from, so the UI never presents a guess as
+    // a derivation.
+    expect(crew.capacity_source).toBe('profile');
+    expect(crew.capacity_fallback_rep_ids).toEqual([]);
+  });
+
+  it('names whoever is still missing a profile instead of averaging them in', async () => {
+    // Half-configured is the state every company passes through, and it must
+    // not look like a finished number. REP_A has hours, REP_B does not.
+    await db().prepare(
+      `INSERT INTO labor_rate_profile (company_id, scope, scope_id, wage_cents, paid_hours,
+         pto_hours, shop_hours, idle_hours, tax_rate, comp_rate, benefits_monthly_cents,
+         support_truck_annual_cents, support_tools_annual_cents, support_equipment_annual_cents,
+         require_rate_approval, effective_from, effective_to)
+       VALUES (?, 'employee', ?, 2500, 2080, 96, 168, 194, 800, 600, 0, 0, 0, 0, 0, '2020-01-01', NULL)`,
+    ).bind(CO, REP_A).run();
+
+    const body = await json(await req(`/week?start=${MONDAY}`));
+    const crew = body.crews.find((c: any) => c.id === CREW);
+    expect(crew.capacity_source).toBe('mixed');
+    expect(crew.capacity_fallback_rep_ids).toEqual([REP_B]);
+    // REP_A from profile, REP_B at the company default of 450 x 5.
+    expect(crew.week_capacity_minutes).toBe(1872 + 450 * 5);
   });
 
   it('reports null utilisation for a crew with nobody on it, not 0%', async () => {

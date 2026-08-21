@@ -1220,6 +1220,7 @@ function umUserRow(u, gc) {
         : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
       <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">Onboard</button>
       <button class="secondary-btn um-action-btn" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
+      <button class="secondary-btn um-action-btn" onclick="window._umOpenHoursForm('${u.id}','${umEscape(u.name)}')" title="Hours and labour rate — drives this person's share of their crew's weekly capacity">Hours &amp; rate</button>
     </div>
   </div>
 
@@ -1230,6 +1231,7 @@ function umUserRow(u, gc) {
       : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
     <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">Onboard</button>
     <button class="secondary-btn um-action-btn" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
+    <button class="secondary-btn um-action-btn" onclick="window._umOpenHoursForm('${u.id}','${umEscape(u.name)}')" title="Hours and labour rate — drives this person's share of their crew's weekly capacity">Hours &amp; rate</button>
   </div>
 
   <!-- ── Section 3: Bottom strip — invite notice or Google status ── -->
@@ -1254,6 +1256,183 @@ function umUserRow(u, gc) {
   }
 </div>`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMPLOYMENT HOURS & LABOUR RATE
+//
+// One person's row in labor_rate_profile. The same row does two jobs, and that
+// is deliberate rather than convenient:
+//
+//   billable = paid - pto - shop - idle  is the denominator of the burdened
+//   rate, AND it is what the schedule board sizes this person's week from.
+//   Before this, capacity was headcount x a company-wide constant, so every
+//   crew of three reported the same week whoever was on it.
+//
+// Keeping them one number means the cost of an hour and the availability of an
+// hour can never come to disagree.
+//
+// Compensation-gated, because the row carries a wage. Scheduling never reads it
+// through here — it goes via resolveLaborRate, which returns billable_hours and
+// no money at all, so a crew user gets a correct board and no wages.
+//
+// Writes go to POST /internal/rates/profile, which already enforces the rules
+// this must not reinvent: rate rows are IMMUTABLE and effective-dated, so
+// saving INSERTs a new row and closes the previous one. A job costed last March
+// still resolves last March's rate.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+window._umOpenHoursForm = async function(repId, repName) {
+  const modal = document.createElement('div');
+  modal.id = 'um-hours-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `<div class="gw-modal-card" style="width:min(560px,100%);max-height:90vh;overflow-y:auto"><div style="padding:30px;text-align:center;color:#6F7E6A">Loading…</div></div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  let profile = null;
+  let denied = false;
+  try {
+    const res = await fetch(`/internal/rates/profile?scope=employee&scope_id=${encodeURIComponent(repId)}`, { credentials: 'same-origin' });
+    if (res.status === 403) denied = true;
+    else profile = (await res.json())?.profile || null;
+  } catch (_) { /* rendered as "could not load" below */ }
+
+  if (denied) {
+    modal.querySelector('.gw-modal-card').innerHTML = `
+      <h2 style="margin:0 0 12px;font-size:18px">Hours &amp; rate</h2>
+      <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:#6F7E6A">
+        These fields include pay, so they need the <strong>compensation</strong> permission.
+        An owner or admin can grant it on this person's user record.
+      </p>
+      <div style="display:flex;justify-content:flex-end"><button class="secondary-btn" onclick="document.getElementById('um-hours-modal').remove()">Close</button></div>`;
+    return;
+  }
+
+  // Defaults for somebody who has never had a row. 2080 is a full year at 40
+  // hours; the rest start at zero so nothing is invented on this person's
+  // behalf — an unasked-for 80 hours of PTO would quietly change both their
+  // burdened rate and their crew's week.
+  const p = profile || {
+    wage_cents: 0, paid_hours: 2080, pto_hours: 0, shop_hours: 0, idle_hours: 0,
+    tax_rate: 0, comp_rate: 0, benefits_monthly_cents: 0,
+    support_truck_annual_cents: 0, support_tools_annual_cents: 0,
+    support_equipment_annual_cents: 0, effective_from: null,
+  };
+  const money = (cents) => (Number(cents || 0) / 100).toFixed(2);
+  const pct = (tenThousandths) => (Number(tenThousandths || 0) / 100).toFixed(2);
+
+  modal.querySelector('.gw-modal-card').innerHTML = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <h2 style="margin:0;font-size:18px">Hours &amp; rate</h2>
+    <button onclick="document.getElementById('um-hours-modal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <p style="margin:0 0 4px;font-size:13px;color:#3A4A3A">${umEscape(repName || '')}</p>
+  <p style="margin:0 0 18px;font-size:11.5px;line-height:1.5;color:#6F7E6A">
+    ${profile
+      ? `Current rate applies from ${umEscape(p.effective_from || '')}. Saving starts a new one — the old figures stay attached to work already costed.`
+      : `No rate on file yet. Their crew's weekly capacity is currently the company default.`}
+  </p>
+
+  <div style="display:grid;gap:14px">
+    <div>
+      <label class="um-label">Hours per year</label>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        ${[['paid','Paid',p.paid_hours],['pto','PTO',p.pto_hours],['shop','Shop',p.shop_hours],['idle','Idle',p.idle_hours]]
+          .map(([k,label,v]) => `<div>
+            <input id="um-h-${k}" class="um-input" type="number" min="0" step="1" value="${Number(v||0)}" oninput="window._umHoursRecalc()">
+            <span style="display:block;margin-top:3px;font-size:10.5px;color:#6F7E6A">${label}</span>
+          </div>`).join('')}
+      </div>
+      <div id="um-h-derived" style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#4D8A8612;font-size:12px;color:#3A4A3A"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div><label class="um-label">Wage / hr</label><input id="um-h-wage" class="um-input" type="number" min="0" step="0.01" value="${money(p.wage_cents)}"></div>
+      <div><label class="um-label">Payroll tax %</label><input id="um-h-tax" class="um-input" type="number" min="0" step="0.01" value="${pct(p.tax_rate)}"></div>
+      <div><label class="um-label">Work comp %</label><input id="um-h-comp" class="um-input" type="number" min="0" step="0.01" value="${pct(p.comp_rate)}"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div><label class="um-label">Benefits / mo</label><input id="um-h-ben" class="um-input" type="number" min="0" step="0.01" value="${money(p.benefits_monthly_cents)}"></div>
+      <div><label class="um-label">Truck / yr</label><input id="um-h-truck" class="um-input" type="number" min="0" step="0.01" value="${money(p.support_truck_annual_cents)}"></div>
+      <div><label class="um-label">Tools / yr</label><input id="um-h-tools" class="um-input" type="number" min="0" step="0.01" value="${money(p.support_tools_annual_cents)}"></div>
+    </div>
+
+    <div>
+      <label class="um-label">Applies from</label>
+      <input id="um-h-from" class="um-input" type="date" value="${new Date().toISOString().slice(0,10)}">
+      <span style="display:block;margin-top:4px;font-size:10.5px;color:#6F7E6A">Must be after the current rate's start date — two rates cannot be live on the same day.</span>
+    </div>
+
+    <div id="um-h-error" style="display:none;font-size:12px;color:#C0392B;line-height:1.5"></div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:2px">
+      <button class="secondary-btn" onclick="document.getElementById('um-hours-modal').remove()">Cancel</button>
+      <button class="primary-btn" id="um-h-save" onclick="window._umSaveHours('${repId}')">Save</button>
+    </div>
+  </div>`;
+
+  window._umHoursRecalc();
+};
+
+/** Billable hours, the same subtraction the burden engine makes. */
+window._umHoursRecalc = function() {
+  const n = (id) => Math.max(0, Number(document.getElementById(id)?.value) || 0);
+  const billable = n('um-h-paid') - (n('um-h-pto') + n('um-h-shop') + n('um-h-idle'));
+  const box = document.getElementById('um-h-derived');
+  if (!box) return;
+  if (billable <= 0) {
+    box.style.background = '#C0392B12';
+    box.innerHTML = `<strong>Paid hours must exceed PTO + shop + idle.</strong> Otherwise there are no billable hours to spread cost over, and no week to schedule.`;
+    return;
+  }
+  box.style.background = '#4D8A8612';
+  box.innerHTML = `<strong>${billable.toLocaleString()} billable hours a year</strong> &middot; ${(billable / 52).toFixed(1)}h a week
+    <span style="display:block;margin-top:3px;font-size:11px;color:#6F7E6A">This is what the schedule counts as this person's share of their crew's week, and what their hourly cost is divided by.</span>`;
+};
+
+window._umSaveHours = async function(repId) {
+  const n = (id) => Math.max(0, Number(document.getElementById(id)?.value) || 0);
+  const err = document.getElementById('um-h-error');
+  const show = (msg) => { err.style.display = 'block'; err.textContent = msg; };
+  err.style.display = 'none';
+
+  const billable = n('um-h-paid') - (n('um-h-pto') + n('um-h-shop') + n('um-h-idle'));
+  if (billable <= 0) return show('Paid hours must exceed PTO + shop + idle.');
+  if (n('um-h-wage') <= 0) return show('A wage is required — a rate row without one is not a rate.');
+
+  const btn = document.getElementById('um-h-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/internal/rates/profile', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'employee', scope_id: repId,
+        effective_from: document.getElementById('um-h-from').value,
+        wage_cents: Math.round(n('um-h-wage') * 100),
+        paid_hours: n('um-h-paid'), pto_hours: n('um-h-pto'),
+        shop_hours: n('um-h-shop'), idle_hours: n('um-h-idle'),
+        tax_rate: Math.round(n('um-h-tax') * 100),
+        comp_rate: Math.round(n('um-h-comp') * 100),
+        benefits_monthly_cents: Math.round(n('um-h-ben') * 100),
+        support_truck_annual_cents: Math.round(n('um-h-truck') * 100),
+        support_tools_annual_cents: Math.round(n('um-h-tools') * 100),
+        // Left to the equipment engine. Setting it here while that engine is
+        // active double-charges every crew hour — see BH-13. The endpoint
+        // refuses it outright rather than accepting and failing a fixture later.
+        support_equipment_annual_cents: 0,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; return show(json.error || `Save failed (${res.status})`); }
+    document.getElementById('um-hours-modal').remove();
+    umToast(`Hours saved. ${billable.toLocaleString()}h billable a year — the schedule will use ${(billable / 52).toFixed(1)}h a week for this person.`);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Save';
+    show('Could not reach the server. Nothing was saved.');
+  }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB 2 — CREWS (Manage crews + assign to divisions)

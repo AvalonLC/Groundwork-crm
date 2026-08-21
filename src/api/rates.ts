@@ -11,6 +11,18 @@ export type RatesBindings = { DB: D1Database };
 export interface ResolvedLaborRate {
   resolved_rate: number; // ten-thousandths
   burden_multiplier: number;
+  /**
+   * Annual hours the rate was divided by: paid - pto - shop - idle.
+   *
+   * The denominator of the burdened rate, returned because it is also what a
+   * crew's schedulable week is made of. The schedule board sizes crew capacity
+   * from this rather than from a company-wide constant times headcount, and it
+   * reads it HERE rather than from labor_rate_profile directly — CLAUDE.md:
+   * no module computes its own labor arithmetic. One number, one source, and
+   * the burdened rate and the schedule cannot come to disagree about how many
+   * hours somebody works.
+   */
+  billable_hours: number;
   confidence: RateConfidence;
   stale_components: string[];
   requires_review: boolean;
@@ -87,6 +99,12 @@ export async function resolveLaborRate(
   return {
     resolved_rate: Math.round(burden.burdened_rate * 10000),
     burden_multiplier: burden.burden_multiplier,
+    // Straight from the engine, not recomputed here. computeBurden substitutes
+    // 1 when the profile is misconfigured (paid <= pto+shop+idle) to avoid
+    // dividing by zero; that shows up as config_error -> requires_review, and
+    // callers must not read an hours figure that survived that substitution as
+    // if it meant anything.
+    billable_hours: burden.billable_hours,
     confidence,
     stale_components: staleComponents,
     requires_review: burden.requires_review,
@@ -307,6 +325,71 @@ ratesRouter.post("/profile", async (c) => {
     scope, scope_id: scopeId, effective_from: effectiveFrom,
     superseded: prior ? { id: prior.id, effective_to: effectiveFrom } : null,
   }, 201);
+});
+
+// ── GET /profile — the components of the row currently in force ─────────────
+
+/**
+ * The open rate row for one scope, as its own fields rather than as a rate.
+ *
+ * POST /profile writes a whole profile and requires a wage, because a rate row
+ * without one is not a rate. An editor that only wants to change HOURS
+ * therefore has to carry the wage and every cost field forward unchanged, and
+ * it cannot do that without reading them first — /employees returns the
+ * resolved rate, which is the output, not the inputs.
+ *
+ * Compensation-gated like the rest of this router: the row carries wage_cents,
+ * and this returns it. Scheduling reads hours through resolveLaborRate instead,
+ * which exposes billable_hours and no money at all — so the board never needs
+ * this endpoint and crew users never reach it.
+ */
+ratesRouter.get("/profile", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  if (!canViewCompensation({ role: c.var.role, can_view_compensation: c.var.canViewCompensation, is_super_admin: c.var.isSuperAdmin })) {
+    return c.json({ error: "compensation permission required" }, 403);
+  }
+  const scope = String(c.req.query("scope") || "company").toLowerCase();
+  if (!["company", "crew", "employee"].includes(scope)) {
+    return c.json({ error: "scope must be company, crew or employee" }, 400);
+  }
+  const scopeId = scope === "company" ? "" : String(c.req.query("scope_id") || "");
+  if (scope !== "company" && !scopeId) {
+    return c.json({ error: `scope_id is required for scope=${scope}` }, 400);
+  }
+
+  const row = await db
+    .prepare(
+      `SELECT id, wage_cents, paid_hours, pto_hours, shop_hours, idle_hours,
+              tax_rate, comp_rate, benefits_monthly_cents,
+              support_truck_annual_cents, support_tools_annual_cents,
+              support_equipment_annual_cents, require_rate_approval, effective_from
+         FROM labor_rate_profile
+        WHERE company_id=? AND scope=? AND COALESCE(scope_id,'')=?
+          AND (effective_to IS NULL OR effective_to='')
+        ORDER BY effective_from DESC LIMIT 1`,
+    )
+    .bind(companyId, scope, scopeId)
+    .first<any>();
+
+  // null, not an empty profile of zeros. "This person has no rate row" and
+  // "this person works no hours" are different answers, and an editor that
+  // cannot tell them apart will happily write the second while meaning the
+  // first.
+  if (!row) return c.json({ ok: true, scope, scope_id: scopeId, profile: null });
+
+  const billable = row.paid_hours - (row.pto_hours + row.shop_hours + row.idle_hours);
+  return c.json({
+    ok: true, scope, scope_id: scopeId,
+    profile: {
+      ...row,
+      // Derived, never stored — the same subtraction the burden engine makes,
+      // so the editor cannot show a different billable figure from the one the
+      // rate and the schedule are both built on.
+      billable_hours: billable,
+      billable_hours_per_week: billable > 0 ? Math.round((billable / 52) * 10) / 10 : 0,
+    },
+  });
 });
 
 // ── GET /employees — per-person rates, and where each one came from ──────────

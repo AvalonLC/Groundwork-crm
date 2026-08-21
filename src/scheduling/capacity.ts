@@ -50,6 +50,122 @@ export function crewDailyCapacityMinutes(
   return people * perDay;
 }
 
+/**
+ * Weeks in a year, for turning an annual hours profile into a schedulable week.
+ *
+ * labor_rate_profile stores hours ANNUALLY because that is how the burdened
+ * rate is built — wage and support costs are annual, so the divisor must be
+ * too. The schedule needs a week. 52 is the conversion, and it is named rather
+ * than inlined so the two places that care (capacity here, and anything that
+ * later reports weekly cost) cannot pick different numbers.
+ *
+ * Deliberately not 52.1775 (365.25/7). The extra precision is false: nobody's
+ * paid-hours figure is accurate to the sixth of a day it would buy.
+ */
+export const WEEKS_PER_YEAR = 52;
+
+/** One member's annual billable hours, or null when none could be resolved. */
+export interface MemberHours {
+  rep_id: string;
+  /** From resolveLaborRate.billable_hours (paid - pto - shop - idle). */
+  billable_hours: number | null;
+}
+
+export interface CrewCapacity {
+  daily_minutes: number;
+  weekly_minutes: number;
+  /**
+   * Members counted at the company default because they have no usable hours
+   * profile. NAMED, not just counted: "this crew's week is partly a guess" is
+   * only actionable if you know whose profile to go and fill in.
+   */
+  fallback_members: string[];
+  /** profile = every member resolved · mixed = some · default = none. */
+  source: 'profile' | 'mixed' | 'default';
+}
+
+/**
+ * A crew's week, summed from the people actually on it.
+ *
+ * Replaces headcount x productive_minutes_per_day, which could only ever say
+ * that all crews of the same size have the same week. A 20-hour part-timer and
+ * a full-time foreman counted identically, so every crew at Avalon reported a
+ * flat 90h regardless of who was on it — the number was not wrong so much as
+ * incapable of being right.
+ *
+ * The WEEK comes from each person's profile; the DAY is that week divided
+ * across the configured working days. That ordering matters: a company that
+ * moves to four ten-hour days has not changed anybody's weekly hours, and a
+ * per-day constant would have said it had.
+ */
+export function crewCapacityFromMemberHours(
+  members: MemberHours[],
+  workingDays: number[],
+  productiveMinutesPerDay: number = DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
+): CrewCapacity {
+  const days = Math.max(1, workingDays.length);
+  const perDay = Math.max(0, Math.trunc(productiveMinutesPerDay || 0));
+  const fallbackWeek = perDay * days;
+
+  const fallback_members: string[] = [];
+  let weekly = 0;
+
+  for (const member of members || []) {
+    const hours = Number(member?.billable_hours);
+    // > 1, not > 0: computeBurden substitutes billable = 1 on a misconfigured
+    // profile so the rate does not divide by zero, and one billable hour a year
+    // is not a week — it would render a crew at several thousand percent and
+    // present it as derived from the profile.
+    const usable = Number.isFinite(hours) && hours > 1;
+    if (usable) {
+      weekly += Math.round((hours / WEEKS_PER_YEAR) * 60);
+    } else {
+      fallback_members.push(String(member?.rep_id ?? ''));
+      weekly += fallbackWeek;
+    }
+  }
+
+  const counted = (members || []).length;
+  const source: CrewCapacity['source'] =
+    counted === 0 || fallback_members.length === counted
+      ? 'default'
+      : fallback_members.length === 0
+        ? 'profile'
+        : 'mixed';
+
+  return {
+    weekly_minutes: weekly,
+    daily_minutes: Math.round(weekly / days),
+    fallback_members,
+    source,
+  };
+}
+
+/**
+ * Split a week's capacity across its working days so the parts sum to the whole.
+ *
+ * Needed because the week view reports the week as the sum of the days it is
+ * showing — which is right, since a week that starts on a Wednesday genuinely
+ * has fewer working days in it. But a single rounded per-day figure multiplied
+ * back up does not return the week: 3072 minutes over 5 days rounds to 614 a
+ * day, and 614 x 5 is 3070. Two minutes, every week, always downward.
+ *
+ * Largest-remainder: every day gets the floor, and the leftover minutes go one
+ * each to the earliest days. Exact by construction, integers throughout.
+ */
+export function distributeWeeklyCapacity(weeklyMinutes: number, dayCount: number): number[] {
+  const days = Math.max(0, Math.trunc(dayCount || 0));
+  if (days === 0) return [];
+  const total = Math.max(0, Math.trunc(weeklyMinutes || 0));
+  const base = Math.floor(total / days);
+  let remainder = total - base * days;
+  return Array.from({ length: days }, () => {
+    const extra = remainder > 0 ? 1 : 0;
+    remainder -= extra;
+    return base + extra;
+  });
+}
+
 /** One crew across the working days that fall in the given week. */
 export function crewWeeklyCapacityMinutes(
   memberCount: number,

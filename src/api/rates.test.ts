@@ -61,6 +61,25 @@ describe("POST /internal/rates/resolve", () => {
     expect(Number((json.resolved_rate / 10000).toFixed(2))).toBe(42.10);
   });
 
+  it("RA-01b returns the billable hours the rate was divided by", async () => {
+    // The burden engine already computes billable_hours (paid - pto - shop -
+    // idle) because it is the denominator of the burdened rate; the resolver
+    // was throwing it away. The schedule board needs exactly this number to
+    // size a crew's week, and CLAUDE.md is explicit that no module computes its
+    // own labor arithmetic — so it comes back through the one sanctioned entry
+    // point, with the same cascade and the same confidence as the rate itself,
+    // rather than the scheduler reading labor_rate_profile behind its back.
+    //
+    // 2080 paid - 96 pto - 168 shop - 194 idle = 1622, the golden fixture's own
+    // input. Same figure the 42.1002 rate on RA-01 is divided by, which is the
+    // point: one number, one source, and they cannot drift.
+    const A = golden.burden_labor_with_equipment.input;
+    const res = await post("/resolve", { company_id: TENANT, employee_id: "emp-1", work_date: "2026-06-01" });
+    const json = await res.json() as any;
+    expect(json.billable_hours).toBe(A.paid - A.pto - A.shop - A.idle);
+    expect(json.billable_hours).toBe(1622);
+  });
+
   it("RA-02 cascades to tenant scope when no employee/crew/role profile exists", async () => {
     await insertLaborRateProfile(db(), {
       company_id: TENANT, scope: "tenant", scope_id: TENANT,
@@ -186,5 +205,88 @@ describe("tenant isolation", () => {
       company_id: TENANT, equipment_id: "eq-1", work_date: "2026-01-15",
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /internal/rates/profile", () => {
+  const HTENANT = "t-rates-hours";
+  const getProfile = (query: string, companyId = HTENANT, superAdmin = false) =>
+    authedAs(companyId, superAdmin).request(`/profile?${query}&company_id=${companyId}`, {}, env);
+
+  it("RA-20 returns the components an hours editor has to carry forward", async () => {
+    // POST /profile writes a WHOLE profile and requires a wage, so an editor
+    // changing only hours must resend everything else unchanged — and cannot
+    // do that without reading it. /employees returns the resolved rate, which
+    // is the output, not the inputs.
+    await insertLaborRateProfile(db(), {
+      company_id: HTENANT, scope: "employee", scope_id: "emp-h",
+      wage_cents: 2400, paid_hours: 2080, pto_hours: 96, shop_hours: 168, idle_hours: 194,
+      tax_rate: 800, comp_rate: 600, benefits_monthly_cents: 20000,
+      support_truck_annual_cents: 300000, support_tools_annual_cents: 50000,
+      support_equipment_annual_cents: 0, require_rate_approval: 0,
+      effective_from: "2026-01-01", effective_to: null,
+    });
+    const res = await getProfile("scope=employee&scope_id=emp-h");
+    expect(res.status).toBe(200);
+    const json = await res.json() as any;
+    expect(json.profile.wage_cents).toBe(2400);
+    expect(json.profile.paid_hours).toBe(2080);
+    // Derived with the same subtraction the burden engine makes, so the editor
+    // cannot display a different billable figure from the one the rate and the
+    // schedule are both built on.
+    expect(json.profile.billable_hours).toBe(1622);
+    expect(json.profile.billable_hours_per_week).toBe(31.2);
+  });
+
+  it("RA-21 answers null for somebody with no row, not a profile of zeros", async () => {
+    // "no rate row" and "works no hours" are different answers. An editor that
+    // cannot tell them apart will write the second while meaning the first.
+    const res = await getProfile("scope=employee&scope_id=emp-nobody");
+    const json = await res.json() as any;
+    expect(json.ok).toBe(true);
+    expect(json.profile).toBeNull();
+  });
+
+  it("RA-22 returns only the row in force, not a superseded one", async () => {
+    // Rate rows are immutable and effective-dated; a closed row is history and
+    // editing from it would silently restate the open one.
+    await insertLaborRateProfile(db(), {
+      company_id: HTENANT, scope: "employee", scope_id: "emp-super",
+      wage_cents: 1000, paid_hours: 1000, pto_hours: 0, shop_hours: 0, idle_hours: 0,
+      tax_rate: 800, comp_rate: 600, benefits_monthly_cents: 0,
+      support_truck_annual_cents: 0, support_tools_annual_cents: 0,
+      support_equipment_annual_cents: 0, require_rate_approval: 0,
+      effective_from: "2025-01-01", effective_to: "2026-01-01",
+    });
+    await insertLaborRateProfile(db(), {
+      company_id: HTENANT, scope: "employee", scope_id: "emp-super",
+      wage_cents: 3000, paid_hours: 2080, pto_hours: 80, shop_hours: 0, idle_hours: 0,
+      tax_rate: 800, comp_rate: 600, benefits_monthly_cents: 0,
+      support_truck_annual_cents: 0, support_tools_annual_cents: 0,
+      support_equipment_annual_cents: 0, require_rate_approval: 0,
+      effective_from: "2026-01-01", effective_to: null,
+    });
+    const json = await (await getProfile("scope=employee&scope_id=emp-super")).json() as any;
+    expect(json.profile.wage_cents).toBe(3000);
+    expect(json.profile.effective_from).toBe("2026-01-01");
+  });
+
+  it("RA-23 is compensation-gated, because the row carries a wage", async () => {
+    // The schedule reads hours through resolveLaborRate, which returns
+    // billable_hours and no money at all — so the board never needs this
+    // endpoint and a crew user never reaches it.
+    const app = new Hono();
+    app.use("*", async (c, next) => {
+      c.set("companyId" as never, HTENANT as never);
+      c.set("repId" as never, "crew-person" as never);
+      c.set("role" as never, "crew" as never);
+      c.set("canViewCompensation" as never, false as never);
+      c.set("isSuperAdmin" as never, false as never);
+      await next();
+    });
+    app.route("/", ratesRouter);
+    const res = await app.request(`/profile?scope=employee&scope_id=emp-h&company_id=${HTENANT}`, {}, env);
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).not.toContain("wage_cents");
   });
 });

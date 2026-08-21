@@ -18752,20 +18752,27 @@ function _sbDayRailHtml() {
       <button class="sb-rail-close" onclick="_sbCloseRail()" aria-label="Close details">&times;</button>
     </div>
 
-    <div class="sb-rail-title">
-      <div class="sb-rail-wo">
-        <span class="sb-rail-wonum">${escapeHtml(wo.wo_number || '')}</span>
-        <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span>
-      </div>
-      <h3>${escapeHtml(wo.title || wo.client_name || 'Job')}</h3>
-      <dl class="sb-rail-facts">
-        ${wo.property_addr ? `<div><dt>Site</dt><dd>${escapeHtml(wo.property_addr)}</dd></div>` : ''}
-        <div><dt>Date</dt><dd>${escapeHtml(gwDateFormat(wo.scheduled_date, { weekday:'short', month:'short', day:'numeric' }))}${wo.scheduled_time ? ' &middot; ' + escapeHtml(_sbDisplayTime(wo.scheduled_time)) : ''}</dd></div>
-        <div><dt>Crew</dt><dd>${crew ? `<span class="sb-rail-crewdot" style="background:${crew.color}"></span>${escapeHtml(crew.name)}` : 'Not assigned'}</dd></div>
-      </dl>
-    </div>
-
+    <!-- The title scrolls WITH the sections rather than being pinned above
+         them. Pinned, it was 121px of a rail that can be 183px tall once the
+         warnings band is showing on a 720px screen — head 49 + title 121 +
+         actions 97 = 267px of fixed furniture in 183px, which starved
+         .sb-rail-body to ZERO and made every section header unreachable: no
+         scroll position exists that clears both the block above and the action
+         bar below. It is reference text, not chrome, so it gives way first. -->
     <div class="sb-rail-body">
+      <div class="sb-rail-title">
+        <div class="sb-rail-wo">
+          <span class="sb-rail-wonum">${escapeHtml(wo.wo_number || '')}</span>
+          <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span>
+        </div>
+        <h3>${escapeHtml(wo.title || wo.client_name || 'Job')}</h3>
+        <dl class="sb-rail-facts">
+          ${wo.property_addr ? `<div><dt>Site</dt><dd>${escapeHtml(wo.property_addr)}</dd></div>` : ''}
+          <div><dt>Date</dt><dd>${escapeHtml(gwDateFormat(wo.scheduled_date, { weekday:'short', month:'short', day:'numeric' }))}${wo.scheduled_time ? ' &middot; ' + escapeHtml(_sbDisplayTime(wo.scheduled_time)) : ''}</dd></div>
+          <div><dt>Crew</dt><dd>${crew ? `<span class="sb-rail-crewdot" style="background:${crew.color}"></span>${escapeHtml(crew.name)}` : 'Not assigned'}</dd></div>
+        </dl>
+      </div>
+
       ${_sbRailSection('Labor', null, `
         <div class="sb-rail-hours" id="sbm-hours">
           <div class="sb-rail-skel" style="height:44px"></div>
@@ -19472,9 +19479,13 @@ function _sbRender() {
                   : 'No crew members'}</em>
               </span>
             </span>
-            <span class="sb-lane-cap" title="Planned people-hours against this crew's productive capacity. Booked is calendar time on the grid — a different number.">
+            <span class="sb-lane-cap" title="${capMeta && capMeta.capacity_source === 'profile'
+              ? 'Capacity is the sum of these people\u2019s own billable hours from their employee profiles.'
+              : capMeta && capMeta.capacity_source === 'mixed'
+                ? 'Part estimate: ' + (capMeta.capacity_fallback_rep_ids || []).length + ' of these people have no hours on their employee profile yet, so they are counted at the company default.'
+                : 'Estimated from the company default working day \u2014 nobody on this crew has hours set on their employee profile yet.'}">
               <span class="sb-lane-cap-nums">${capMeta ? (capMeta.week_planned_minutes/60).toFixed(1) + 'h / ' + (capMeta.week_capacity_minutes/60).toFixed(0) + 'h' : scheduledHours.toFixed(1) + 'h booked'}</span>
-              ${utilization !== null ? `<span class="sb-lane-cap-pct${utilization > 100 ? ' is-over' : ''}">${utilization}%</span>` : ''}
+              ${utilization !== null ? `<span class="sb-lane-cap-pct${utilization > 100 ? ' is-over' : ''}" title="Planned people-hours against this crew's capacity for the WEEK. The warnings band above reports the same crew per DAY, so the two percentages differ on purpose.">${utilization}% wk</span>` : ''}
             </span>
             <i class="sb-lane-bar"><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i>
           </div>

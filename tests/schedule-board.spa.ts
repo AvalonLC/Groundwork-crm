@@ -488,4 +488,116 @@ test.describe('schedule board', () => {
       else if (width > 1100) expect(m.poolWidth, `${width}px: expected the pool collapsed`).toBeLessThan(100);
     }
   });
+
+  test('RSP-02 the day rail stays usable on a short screen, with the warnings band up', async ({ page }) => {
+    // The regression guard for a bug four EQB specs were already failing on,
+    // which read as flakiness because the symptom was a click timing out.
+    //
+    // The rail gets whatever height .sb-workspace has left. On a 720px screen
+    // with the warnings band showing that measured 183px, against fixed
+    // furniture of head 49 + title 121 + actions 97 = 267 — so .sb-rail-body
+    // computed to ZERO and no section could be opened at all. A 43px section
+    // header has no scroll position that clears both the block above it and the
+    // action bar below it, so Playwright's click landed alternately on
+    // .sb-rail-title and .sb-rail-actions until it timed out.
+    //
+    // Height, not width, is the axis at risk here, and RSP-01 varies only width.
+    // Six 8h jobs on one crew on one day is what raises the warnings band, and
+    // is also just a normal Monday.
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      ids.push(await makeJob(page.request, { client_name: `Squeeze ${i}`, crew_id: ctx.crewA, scheduled_date: MONDAY }));
+    }
+
+    for (const height of [720, 800, 900]) {
+      await page.setViewportSize({ width: 1280, height });
+      await openBoard(page);
+      // The warnings band renders inside the KPI band, so it is only on screen
+      // when metrics are. openBoard leaves that at its stored default.
+      await page.evaluate(() => {
+        (globalThis as any)._sbState.showMetrics = true;
+        (globalThis as any)._sbRender();
+      });
+      await page.waitForTimeout(600);
+      // Opened through the card's own handler rather than by clicking the card.
+      // Six jobs in one cell is what raises the warnings band this test needs,
+      // and it also overflows the cell — .sb-workstation .sb-lane-cell is
+      // overflow:visible so the hover panel can escape, which lets the CARDS
+      // escape too, and later lane cells then paint over them. Clicking one is
+      // a coin toss that has nothing to do with what is under test here. The
+      // board-side bug is real and logged separately; DND-01 covers the card
+      // being wired to the DOM.
+      await page.evaluate((id) => (globalThis as any)._sbOpenDayRail(id, 1), ids[0]);
+      await page.waitForSelector('.sb-rail-sec', { timeout: 10_000 });
+      await page.waitForTimeout(800);
+
+      const m = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        const body = doc.querySelector('.sb-rail-body');
+        const secHead = doc.querySelector('.sb-rail-sec-head');
+        return {
+          warningsUp: !!doc.querySelector('.sb-warnings'),
+          bodyH: body ? Math.round(body.getBoundingClientRect().height) : 0,
+          secHeadH: secHead ? Math.round(secHead.getBoundingClientRect().height) : 0,
+        };
+      });
+
+      expect(m.warningsUp, `${height}px: expected the warnings band, which is what does the squeezing`).toBe(true);
+      // The invariant, not the pixel count: the scroll area can hold the thing
+      // you are trying to click.
+      expect(m.bodyH, `${height}px: the rail's scroll area was starved to ${m.bodyH}px`)
+        .toBeGreaterThanOrEqual(m.secHeadH);
+
+      // And prove it by actually clicking one, which is what the EQB specs do.
+      const head = page.locator('.sb-rail-sec').filter({ hasText: 'Materials' }).locator('.sb-rail-sec-head').first();
+      await head.click({ timeout: 8_000 });
+      await page.waitForTimeout(400);
+      expect(await readEquipment(page)).toHaveProperty('open', true);
+    }
+  });
+
+  test('RSP-03 a busy day stays inside its own lane, and every card stays clickable', async ({ page }) => {
+    // .sb-workstation .sb-lane-cell was overflow:visible so .sb-card-hover could
+    // escape the cell. The cards escaped with it: six jobs on one crew on one
+    // day — a normal Monday — put 919px of cards in a 124px cell, spilling 563px
+    // into the rows beneath. Lane cells are siblings, so the later ones paint on
+    // top, and four of the six cards could not be clicked at all. A card you
+    // cannot click is a job you cannot open, so this is correctness, not polish.
+    //
+    // Asserted by REACHABILITY, not by measuring boxes or sampling for strays.
+    // Both of those were tried and neither says anything:
+    //   - getBoundingClientRect does not know about clipping, so a properly
+    //     contained card still reports a rect far outside its cell.
+    //   - hit-testing the lane below finds nothing either way, because lane
+    //     cells are siblings and the later one paints ON TOP of the card that
+    //     spilled into it. The spilled card is behind, not in front.
+    // Which is the whole point: the card was not visibly misplaced, it was
+    // buried. "Can every card take a click" is the one question that separates
+    // the broken state from the fixed one, and it is also the thing a scheduler
+    // actually needs.
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      ids.push(await makeJob(page.request, { client_name: `Busy ${i}`, crew_id: ctx.crewA, scheduled_date: MONDAY }));
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openBoard(page);
+
+    const rendered = await page.evaluate(
+      (list) => list.filter((id) => (globalThis as any).document.querySelector(`.sb-job-card[onclick*="${id}"]`)).length,
+      ids,
+    );
+    expect(rendered, 'all six jobs should be on the board').toBe(ids.length);
+
+    // Scroll each one up inside its own lane and confirm it can take a click.
+    // Pre-fix this fails on the cards that spilled out of the cell, because
+    // scrolling the lane cannot reach a card the lane no longer contains.
+    // A trial click runs Playwright's full actionability check — including the
+    // hit test that a buried card fails — and then does not fire the handler,
+    // so the rail stays shut and every card is measured against the same board.
+    for (const id of ids) {
+      const card = page.locator(`.sb-job-card[onclick*="${id}"]`).first();
+      await card.scrollIntoViewIfNeeded({ timeout: 5_000 });
+      await card.click({ timeout: 5_000, trial: true });
+    }
+  });
 });

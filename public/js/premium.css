@@ -17986,10 +17986,42 @@ h1.pl-title,
   gap: 10px;
   padding: 14px 18px 20px;
   /* Fill the viewport so the board scrolls inside itself rather than pushing
-     the command bar and KPIs off the top of a long week. */
-  height: calc(100vh - var(--gw-topbar-h, 56px));
+     the command bar and KPIs off the top of a long week.
+
+     Measured against the CONTAINER, not the viewport. `100vh - 56px` assumed
+     the topbar was the only chrome above .view; there is also a breadcrumb bar
+     and .view's own 28px padding, so the shell asked for 1144px in a 1200px
+     window with 148px already spent — 92px of overflow, and the whole page
+     scrolled instead of the board, which is the exact thing this rule exists to
+     prevent.
+
+     Taken out of flow instead of given a height, because every in-flow answer
+     here is circular: .app-shell is min-height:100vh with no cap, so main sizes
+     to its content, .view is flex:1 of main, and a shell measured against
+     either one feeds its own height back into the number it is measuring. That
+     loop settled at 1106px in a 900px window. An absolutely positioned shell
+     contributes nothing to main's content height, so the 100vh minimum is what
+     main actually gets, and inset:0 fills it exactly — with no constant to keep
+     in sync when the topbar or the breadcrumb bar changes height. */
+  position: absolute;
+  inset: 0;
   min-height: 0;
   box-sizing: border-box;
+}
+/* The workstation paints its own padding and manages its own scrolling; .view's
+   28px would be double-counted and is what pushed the board past the fold.
+
+   !important only because groundwork-design.css:665 declares
+   `.view { padding: 28px 32px !important }`, and an important declaration can
+   only be answered by another one. Specificity still decides between them, so
+   this stays scoped to the one view that paints its own. */
+.view:has(> .sb-workstation) {
+  padding: 0 !important;
+  min-height: 0;
+  /* The containing block for the shell above, and the clip that keeps a long
+     crew list scrolling inside the board rather than off the page. */
+  position: relative;
+  overflow: hidden;
 }
 
 /* ── Command bar ────────────────────────────────────────────────────────── */
@@ -18468,3 +18500,195 @@ h1.pl-title,
 }
 .sb-rail-eqsel:hover { border-style: solid; color: var(--gwp-text, #0f172a); }
 .sb-rail-eqhint { margin: 8px 0 0; font-size: 11px; color: var(--gwp-text-dim, #94a3b8); font-style: italic; }
+
+/* ── Crew-lane board: structure and fill ──────────────────────────────────────
+   Three separate problems, all of which read as "the board is blending
+   together", and all of which are fixed here rather than at their original
+   sites so the workstation's board treatment lives in one place.
+
+   1. THE GRID DID NOT FILL THE BOARD.
+      .sb-board is a full-height flex column and .sb-lane-grid sized to its
+      content, so a three-crew week left ~450px of empty white between the last
+      lane and the legend that .sb-workstation .sb-legend pins to the bottom —
+      measured at 1920x1200: board 990px, grid 544px. Inside a white panel, on a
+      white page, with no bottom edge to the last row, that void reads as part
+      of the grid. Rows now share the leftover space instead.
+
+   2. EVERY SURFACE WAS THE SAME WHITE.
+      The base rules tint the day headers and the crew column with
+      --gw-bg-surface-2, which is where the column and header structure came
+      from. In this token set --gw-bg-surface-2 IS #FFFFFF (design.css:67), and
+      the sticky overrides above re-declare the same three cells as
+      var(--gw-surface, #fff) to give the sticky positioning an opaque
+      backdrop. So the header row, the crew column and the cells all resolved to
+      pure white separated by #EDEAE6 hairlines. Nothing was wrong with the
+      markup — the chrome simply had no contrast against what it framed.
+
+   3. THE DENSITY SELECT DID NOTHING HERE.
+      .sb-workstation .sb-lane-cell { min-height: 76px } and
+      .sb-density-detailed .sb-lane-cell { min-height: 92px } have equal
+      specificity (0,2,0) and the workstation rule is written later, so it won
+      every time. Detailed and Compact rendered identically. Row height is now
+      one custom property, which both the cell floor and the grid track read. */
+
+.sb-workstation {
+  /* Warm greys from the same bark ramp as --gw-border (#EDEAE6), a step either
+     side of it: chrome sits above the cell white, the rule sits below the
+     border so one crew's lane is distinguishable from the next. */
+  --sb-chrome: #F5F3EF;
+  --sb-rule:   #DFDAD3;
+  --sb-lane-row-min: 84px;
+}
+.sb-workstation.sb-density-compact     { --sb-lane-row-min: 64px; }
+.sb-workstation.sb-density-comfortable { --sb-lane-row-min: 92px; }
+.sb-workstation.sb-density-detailed    { --sb-lane-row-min: 124px; }
+
+/* The workspace is a grid with one implicit `auto` row, so that row sized to
+   the TALLEST pane's content — three job cards in the pool is ~700px — and grew
+   the shell past the viewport even though .sb-workspace itself is flex:1 with
+   min-height:0. Measured at 1280x800: 346px of page overflow, and the board
+   inherited the same inflated height, which is where the void below the grid
+   came back from. An explicit minmax(0, 1fr) row is exactly the height the
+   workspace was given; both panes then scroll inside themselves as intended. */
+.sb-workstation .sb-workspace { grid-template-rows: minmax(0, 1fr); }
+.sb-workstation .sb-pool { min-height: 0; }
+
+/* Fill. The wrap becomes the flex child that absorbs the board's spare height
+   and the grid stretches inside it; `auto` pins the header row so only the crew
+   lanes share what is left. min-height:0 is what allows the board to scroll
+   when there are more crews than fit, instead of the grid forcing it taller. */
+.sb-workstation .sb-board > .sb-lane-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  border-color: var(--sb-rule);
+}
+.sb-workstation .sb-board > .sb-lane-wrap > .sb-lane-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(var(--sb-lane-row-min), 1fr);
+}
+.sb-workstation .sb-lane-cell { min-height: var(--sb-lane-row-min); }
+
+/* Chrome. The header row and the crew column are the frame; the cells are the
+   content. Keeping these opaque matters as much as the colour — both are
+   sticky, and the week scrolls underneath them. */
+.sb-workstation .sb-lane-day-head,
+.sb-workstation .sb-lane-corner,
+.sb-workstation .sb-lane-label {
+  background: var(--sb-chrome);
+}
+.sb-workstation .sb-lane-corner,
+.sb-workstation .sb-lane-day-head { border-bottom: 1px solid var(--sb-rule); }
+.sb-workstation .sb-lane-corner,
+.sb-workstation .sb-lane-label { border-right: 1px solid var(--sb-rule); }
+
+/* The line between one crew and the next, which is the row boundary the eye
+   actually follows across seven columns. */
+.sb-workstation .sb-lane-cell,
+.sb-workstation .sb-lane-label { border-bottom: 1px solid var(--sb-rule); }
+.sb-workstation .sb-lane-label:last-of-type,
+.sb-workstation .sb-lane-label:last-of-type ~ .sb-lane-cell { border-bottom: none; }
+
+/* Today, strengthened. At 4% pine over white the current column was invisible
+   under a header that announced it — the anchor said "Thursday" and the grid
+   did not agree. */
+.sb-workstation .sb-lane-cell.today { background: color-mix(in srgb, var(--gw-pine-500) 7%, #fff); }
+.sb-workstation .sb-lane-day-head.today { background: color-mix(in srgb, var(--gw-pine-500) 14%, var(--sb-chrome)); }
+
+/* The wrap keeps its rounded corners while overflow stays visible for the card
+   hover panels (see .sb-card-hover), so the chrome cells have to round
+   themselves — an opaque square corner over a 10px radius is the artefact this
+   avoids. */
+.sb-workstation .sb-lane-corner { border-top-left-radius: 10px; }
+.sb-workstation .sb-lane-day-head:last-of-type { border-top-right-radius: 10px; }
+
+/* ── Job Day rail: the scroll area can never be starved ───────────────────────
+   The rail's height is whatever .sb-workspace has left, and that is not much on
+   a short screen: at 1280x720 with the warnings band showing it measured 183px.
+   Against that, the fixed furniture was head 49 + title 121 + actions 97 = 267,
+   so .sb-rail-body computed to ZERO and no section could be opened at all — a
+   43px section header has no scroll position that clears the block above it and
+   the action bar below it, which is why a click there landed alternately on
+   .sb-rail-title and .sb-rail-actions. Four EQB specs caught this and the cause
+   was read as flakiness.
+
+   Three layers, so the panel degrades instead of breaking:
+     1. the title now scrolls with the sections (see _sbDayRailHtml)
+     2. the body keeps a floor of roughly four collapsed section headers
+     3. if even that will not fit, the RAIL scrolls rather than clipping its own
+        controls out of reach — overflow was hidden, which is what turned "too
+        short" into "unusable" instead of "scroll a bit". */
+.sb-rail { overflow-y: auto; overflow-x: hidden; }
+.sb-rail-body { min-height: 168px; }
+
+/* Deliberately NOT sticky, either end. Pinning the head or the action bar to a
+   scroll container overlays the very content being scrolled to: an element
+   scrolled to the bottom lands behind the action bar, which is the same
+   unreachable-header failure in a new place — and it showed up exactly that way
+   under a full suite run, where earlier specs leave enough jobs on the day to
+   grow the warnings band further. In the normal case flex already holds the bar
+   at the bottom, because .sb-rail-body takes the slack; in the squeezed case it
+   scrolls with everything else and stays reachable. */
+
+/* The action bar was 97px — two full-width rows — of a rail that can be 183px.
+   Below 1400px the rail is 306px wide and three buttons genuinely do not fit on
+   one line, so the wrap stays; it just stops being the tallest thing in the
+   panel. */
+.sb-workstation .sb-rail-actions { padding: 8px 10px; gap: 6px; }
+.sb-workstation .sb-rail-actions .rp-btn,
+.sb-workstation .sb-rail-danger { min-height: 30px; font-size: 12px; }
+
+/* ── Lane cells contain their own cards ───────────────────────────────────────
+   .sb-workstation .sb-lane-cell was overflow:visible so .sb-card-hover could
+   escape a 124px cell. The cards escaped with it. Measured with six jobs on one
+   crew on one day — a normal Monday, not a stress case — a 124px cell held
+   919px of cards and spilled 563px into the rows beneath it. Later lane cells
+   are later siblings, so they paint on top: FOUR OF SIX CARDS WERE UNCLICKABLE,
+   and the ones that were visible were drawn across other crews' lanes. That is
+   the "one crew's jobs appear in another's row" half of the board looking
+   wrong, and it is a correctness bug, not a cosmetic one — a card you cannot
+   click is a job you cannot open.
+
+   The cell scrolls instead. There is precedent in this file: the pre-workstation
+   compact density already did exactly this (.sb-density-compact .sb-lane-cell,
+   overflow:auto with a max-height). Lane rows now stretch to fill the board, so
+   a three-crew week gives each cell ~290px and the scroll is a rare fallback
+   rather than the normal case. */
+.sb-workstation .sb-lane-cell { overflow-y: auto; overflow-x: hidden; }
+
+/* A cell with more in it than it can show says so, rather than looking like a
+   cell that happens to end there. Fades the last few pixels of a scrollable
+   cell; costs nothing when the cell is not scrolling. */
+.sb-workstation .sb-lane-cell {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-rule) transparent;
+}
+.sb-workstation .sb-lane-cell::-webkit-scrollbar { width: 5px; }
+.sb-workstation .sb-lane-cell::-webkit-scrollbar-thumb {
+  background: var(--sb-rule); border-radius: 999px;
+}
+.sb-workstation .sb-lane-cell::-webkit-scrollbar-track { background: transparent; }
+
+/* The cost of containing the cards, stated where it is paid: a cell that clips
+   its overflow also clips .sb-card-hover, which is min-width:208px inside a
+   cell that is 85px wide at 1280 with the pool open. A tooltip cut to a third
+   of itself is worse than no tooltip, so it does not open in a lane cell.
+   Clicking the card opens the Job Day rail, which shows strictly more than the
+   panel did — crew, hours, scope, checklist, kit and photos — and the panel
+   predates that rail. It still works anywhere a cell is not the scroll
+   container. This is the one deliberate loss in this change; if the panel is
+   wanted back in the grid it needs to be positioned from JS as a popover
+   outside the cell, which is a bigger change than a clipped tooltip justifies. */
+.sb-workstation .sb-lane-cell .sb-card-hover { display: none; }
+
+/* With the cell clipping rather than spilling, anything that cannot fit is now
+   visibly cut instead of quietly drawn over the next day. .sb-card-top was
+   flex-wrap:nowrap and wanted 134px in the 56px a card gets there, so the time
+   and the day pill were the first things to disappear. They wrap now — a card
+   two lines taller costs nothing, because the lane scrolls. */
+.sb-workstation .sb-card-top,
+.sb-workstation .sb-card-meta { flex-wrap: wrap; row-gap: 2px; }
+.sb-workstation .sb-job-card > * { min-width: 0; max-width: 100%; }
+.sb-workstation .sb-card-status { overflow: hidden; text-overflow: ellipsis; }
