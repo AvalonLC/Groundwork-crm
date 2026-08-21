@@ -12780,11 +12780,50 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+/** The exact message the fix plan specifies for a blocked hard delete —
+ * kept as one constant so the pre-check and the FK-race fallback below
+ * can never drift apart. */
+const WO_HAS_FINANCIAL_ACTIVITY_MSG =
+  'This work order has posted financial activity and cannot be deleted. Archive it instead.'
+
+/**
+ * True if this work order has any financial activity that must never be
+ * allowed to go orphaned: a posted job_cost_ledger line (job_id is
+ * NOT NULL REFERENCES work_orders(id), migrations/0057_finance_merge.sql —
+ * that FK is staying exactly as strict as it is, on purpose, per the fix
+ * plan) or a posted time_entries row (posted_at IS NOT NULL — even before
+ * its ledger lines are written the entry itself is the source Job Costing
+ * already reads immutably per POSTING.md).
+ */
+async function workOrderHasPostedFinancialActivity(
+  db: D1Database, companyId: string, woId: string,
+): Promise<boolean> {
+  const row = await db.prepare(`
+    SELECT
+      EXISTS(SELECT 1 FROM job_cost_ledger WHERE company_id=? AND job_id=?) AS has_ledger,
+      EXISTS(SELECT 1 FROM time_entries WHERE company_id=? AND work_order_id=? AND posted_at IS NOT NULL) AS has_posted_time
+  `).bind(companyId, woId, companyId, woId).first<{ has_ledger: number; has_posted_time: number }>()
+  return !!(row?.has_ledger || row?.has_posted_time)
+}
+
 // DELETE /api/work-orders/:id
 app.delete('/api/work-orders/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const woId = c.req.param('id')
+
+  // Finance OS fix plan item 4: a work order with posted financial activity
+  // (job_cost_ledger and/or posted time_entries) is never hard-deleted —
+  // only archived (see PUT /:id/archive below). This is an application-level
+  // pre-check for a fast, clear 409 in the normal case; the job_cost_ledger
+  // FK (job_id NOT NULL REFERENCES work_orders(id), never loosened) is the
+  // backstop for the race where financial activity posts between this check
+  // and the delete below, caught in the try/catch so that race surfaces as
+  // the same 409, never a raw 500.
+  if (await workOrderHasPostedFinancialActivity(db, companyId, woId)) {
+    return err(c, WO_HAS_FINANCIAL_ACTIVITY_MSG, 409)
+  }
+
   // wo_days carries no foreign key to work_orders, so deleting the job used to
   // leave its scheduling rows behind forever. They were invisible — every read
   // inner-joins back to work_orders — but they accumulated, and migration 0061
@@ -12792,15 +12831,77 @@ app.delete('/api/work-orders/:id', requireAuth, async (c) => {
   // multi-day ones. wo_day_employees cascades from wo_days, but only if the
   // wo_days row is actually deleted, so it is removed explicitly first for
   // tenants where foreign keys are not enforced.
-  await db.batch([
-    db.prepare(
-      `DELETE FROM wo_day_employees
-        WHERE company_id=? AND wo_day_id IN (SELECT id FROM wo_days WHERE work_order_id=?)`
-    ).bind(companyId, woId),
-    db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=?`).bind(woId, companyId),
-    db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId),
-  ])
+  //
+  // Finance OS fix plan item 4: this same orphaning problem applied to
+  // action_item rows pointing at this work order (source_type='work_order',
+  // source_id=woId) — e.g. a 'collect' item from the unbilled-work sweep for
+  // a job that gets deleted instead of invoiced. Those are dismissed in the
+  // same batch: nothing else ever inner-joins the deleted work_orders row
+  // back in, so a stale open item would sit in the Work Queue forever
+  // pointing at nothing. (This is safe to combine with a hard delete because
+  // the pre-check above already guarantees no *financial* activity exists —
+  // an action_item for a draft/unbilled work order carries no ledger data of
+  // its own to lose.)
+  try {
+    await db.batch([
+      db.prepare(
+        `DELETE FROM wo_day_employees
+          WHERE company_id=? AND wo_day_id IN (SELECT id FROM wo_days WHERE work_order_id=?)`
+      ).bind(companyId, woId),
+      db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=?`).bind(woId, companyId),
+      db.prepare(
+        `UPDATE action_item SET status='dismissed', resolved_at=datetime('now')
+          WHERE company_id=? AND source_type='work_order' AND source_id=? AND status='open'`
+      ).bind(companyId, woId),
+      db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId),
+    ])
+  } catch (e: any) {
+    // Race: financial activity posted after the pre-check above but before
+    // this batch committed. job_cost_ledger's FK is the backstop that
+    // catches it — surface the same clear 409, never D1's raw constraint
+    // error as a 500.
+    if (/FOREIGN KEY constraint failed/i.test(String(e?.message || e))) {
+      return err(c, WO_HAS_FINANCIAL_ACTIVITY_MSG, 409)
+    }
+    throw e
+  }
   return c.json({ ok: true })
+})
+
+// PUT /api/work-orders/:id/archive — soft-delete: removes a work order from
+// active views (schedule board, open work-order lists) without touching its
+// financial history. This is the path for completed or unwanted jobs that
+// already have posted job_cost_ledger/time_entries — see the hard-delete
+// 409 above and Finance OS fix plan item 4.
+app.put('/api/work-orders/:id/archive', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  const existing = await db.prepare(`SELECT id FROM work_orders WHERE id=? AND company_id=?`)
+    .bind(woId, companyId).first<{ id: string }>()
+  if (!existing) return err(c, 'Work order not found', 404)
+  const now = new Date().toISOString()
+  await db.prepare(
+    `UPDATE work_orders SET archived_at=?, archived_by=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
+  ).bind(now, repId, woId, companyId).run()
+  return json(c, { id: woId, archived_at: now })
+})
+
+// PUT /api/work-orders/:id/unarchive — restore an archived work order back
+// into active views. Symmetric with the archive route above; does not
+// resurrect anything that was actually deleted (archiving never deletes).
+app.put('/api/work-orders/:id/unarchive', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  const existing = await db.prepare(`SELECT id FROM work_orders WHERE id=? AND company_id=?`)
+    .bind(woId, companyId).first<{ id: string }>()
+  if (!existing) return err(c, 'Work order not found', 404)
+  await db.prepare(
+    `UPDATE work_orders SET archived_at=NULL, archived_by=NULL, updated_at=datetime('now') WHERE id=? AND company_id=?`
+  ).bind(woId, companyId).run()
+  return json(c, { id: woId, archived_at: null })
 })
 
 // POST /api/work-orders/:id/duplicate — clone a work order to a new date
