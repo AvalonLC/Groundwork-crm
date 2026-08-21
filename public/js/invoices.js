@@ -78,6 +78,17 @@ function _invBadge(status) {
 let _invCurrentStatus = '';
 let _invAllData = [];
 
+/**
+ * Which invoices are ticked, by id.
+ *
+ * A Set of ids rather than a flag on the row objects: the list is re-fetched on
+ * every filter change and every action, so a flag would be wiped by the next
+ * render and the selection would silently empty itself between picking rows and
+ * acting on them. Ids survive the refetch; anything no longer in the list is
+ * dropped when the bar recounts.
+ */
+const _invSelected = new Set();
+
 /* ══════════════════════════════════════════════════════════════════════════════
    MAIN ENTRY POINT
 ══════════════════════════════════════════════════════════════════════════════ */
@@ -133,6 +144,9 @@ function _invShell() {
       <button class="gwp-chip" data-s="overdue" onclick="_invSetChip(this,'overdue')">Overdue</button>
     </div>
   </div>
+
+  <!-- ── Bulk action bar — hidden until something is ticked ── -->
+  <div id="invBulkBar" class="inv-bulk-bar" hidden></div>
 
   <!-- ── List body ── -->
   <div id="invListBody">
@@ -243,6 +257,10 @@ function _invUpdateKpis(invoices) {
 function _invRenderList(invoices) {
   const body = document.getElementById('invListBody');
   if (!body) return;
+  // The list is re-rendered after every filter change and every bulk action, so
+  // the bar has to be recounted here or it keeps claiming a selection that the
+  // new rows no longer contain.
+  setTimeout(_invRenderBulkBar, 0);
 
   if (!invoices.length) {
     body.innerHTML = `
@@ -264,6 +282,9 @@ function _invRenderList(invoices) {
       <table class="inv-table">
         <thead>
           <tr>
+            <th class="inv-check-col"><input type="checkbox" class="inv-check" id="invCheckAll"
+              onclick="event.stopPropagation();_invToggleAll(this.checked)"
+              title="Select every invoice in this view"></th>
             <th>Invoice #</th>
             <th>Client</th>
             <th>Title</th>
@@ -279,7 +300,11 @@ function _invRenderList(invoices) {
           ${invoices.map(inv => {
             const overdue = _invIsOverdue(inv);
             return `
-            <tr class="inv-row${overdue ? ' inv-row--overdue' : ''}" onclick="_invOpenDetail('${inv.id}')">
+            <tr class="inv-row${overdue ? ' inv-row--overdue' : ''}${_invSelected.has(inv.id) ? ' inv-row--picked' : ''}" data-inv-row="${inv.id}" onclick="_invOpenDetail('${inv.id}')">
+              <td class="inv-check-col" onclick="event.stopPropagation()">
+                <input type="checkbox" class="inv-check" data-inv-check="${inv.id}"
+                  ${_invSelected.has(inv.id) ? 'checked' : ''}
+                  onclick="_invToggleOne('${inv.id}', this.checked)"></td>
               <td class="inv-num">${_invEsc(inv.invoice_number)}</td>
               <td class="inv-client-cell">
                 <div class="inv-client-name">${_invEsc(inv.client_name || '—')}</div>
@@ -1446,3 +1471,298 @@ function _invInjectCSS() {
 
 // Initialize CSS immediately on script load
 _invInjectCSS();
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BULK ACTIONS
+   ─────────────────────────────────────────────────────────────────────────────
+   Every action below drives the SAME per-invoice endpoints the single-invoice UI
+   uses, one at a time, rather than new bulk routes on the server.
+
+   That is deliberate. A bulk endpoint would need its own copies of every guard
+   the single routes already carry — company scoping, the Stripe account check,
+   the autopay cap, the void/paid rules — and the moment those two sets of guards
+   drift, the bulk path becomes the one that lets something through. Looping the
+   existing routes also means every invoice gets its own attributable result,
+   which is what makes partial failure reportable instead of averaged into
+   "12 of 15 succeeded".
+
+   Sequential, not Promise.all: fifteen simultaneous card charges is a way to get
+   rate-limited by Stripe halfway through and left unsure which ones went out.
+══════════════════════════════════════════════════════════════════════════════ */
+
+window._invToggleOne = function(id, on) {
+  if (on) _invSelected.add(id); else _invSelected.delete(id);
+  document.querySelector(`[data-inv-row="${id}"]`)?.classList.toggle('inv-row--picked', !!on);
+  _invRenderBulkBar();
+};
+
+window._invToggleAll = function(on) {
+  // Only what is on screen. "Select all" that silently reaches past the active
+  // filter is how someone charges the paid invoices too.
+  document.querySelectorAll('[data-inv-check]').forEach(cb => {
+    cb.checked = on;
+    const id = cb.getAttribute('data-inv-check');
+    if (on) _invSelected.add(id); else _invSelected.delete(id);
+    document.querySelector(`[data-inv-row="${id}"]`)?.classList.toggle('inv-row--picked', !!on);
+  });
+  _invRenderBulkBar();
+};
+
+window._invClearSelection = function() {
+  _invSelected.clear();
+  document.querySelectorAll('[data-inv-check]').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('[data-inv-row]').forEach(r => r.classList.remove('inv-row--picked'));
+  const all = document.getElementById('invCheckAll'); if (all) all.checked = false;
+  _invRenderBulkBar();
+};
+
+/** The ticked invoices that are still in the list. */
+function _invPicked() {
+  return _invAllData.filter(inv => _invSelected.has(inv.id));
+}
+
+function _invRenderBulkBar() {
+  const bar = document.getElementById('invBulkBar');
+  if (!bar) return;
+  const picked = _invPicked();
+  // Drop ids that have left the list (deleted, or filtered out) so the count
+  // never claims more than the buttons would actually act on.
+  for (const id of [..._invSelected]) if (!_invAllData.some(i => i.id === id)) _invSelected.delete(id);
+
+  if (!picked.length) { bar.hidden = true; bar.innerHTML = ''; return; }
+
+  const total = picked.reduce((n, i) => n + Number(i.balance_due || 0), 0);
+  const chargeable = picked.filter(i => Number(i.balance_due || 0) > 0 && i.status !== 'void');
+  bar.hidden = false;
+  bar.innerHTML = `
+    <div class="inv-bulk-count">
+      <strong>${picked.length}</strong> selected
+      <span class="inv-bulk-sum">${_invFmt(total)} outstanding</span>
+    </div>
+    <div class="inv-bulk-actions">
+      <button class="inv-bulk-btn" onclick="_invBulkEdit()">Edit…</button>
+      <button class="inv-bulk-btn" onclick="_invBulkSend()">Send</button>
+      <button class="inv-bulk-btn inv-bulk-btn--pay" onclick="_invBulkCharge()"
+        ${chargeable.length ? '' : 'disabled title="Nothing selected has a balance to charge"'}>
+        Charge cards on file${chargeable.length !== picked.length ? ` (${chargeable.length})` : ''}
+      </button>
+      <button class="inv-bulk-btn inv-bulk-btn--danger" onclick="_invBulkDelete()">Delete</button>
+      <button class="inv-bulk-btn inv-bulk-btn--ghost" onclick="_invClearSelection()">Clear</button>
+    </div>`;
+}
+
+/**
+ * Run one operation across the picked invoices and report each outcome.
+ *
+ * Partial failure is the NORMAL case here, not the exception — a card declines,
+ * an invoice was voided while the page was open, a client has no email. A run
+ * that finishes with a single "Done" toast hides exactly the rows somebody needs
+ * to go and deal with, so every result is kept and shown.
+ */
+async function _invBulkRun(label, items, fn) {
+  const overlay = _invCreateOverlay('inv-bulk-overlay');
+  const rows = () => results.map(r =>
+    `<div class="inv-bulk-line inv-bulk-line--${r.ok ? 'ok' : 'bad'}">
+       <span class="inv-bulk-tick">${r.ok ? '✓' : '✗'}</span>
+       <span class="inv-bulk-inv">${_invEsc(r.number)}</span>
+       <span class="inv-bulk-msg">${_invEsc(r.msg)}</span>
+     </div>`).join('');
+  const results = [];
+  const paint = (done) => {
+    overlay.innerHTML = `<div class="inv-modal" style="width:min(560px,100%)">
+      <div class="inv-modal-header"><div class="inv-modal-title">${label}</div></div>
+      <div class="inv-modal-body">
+        <div class="inv-bulk-progress">${done ? 'Finished' : `Working… ${results.length} of ${items.length}`}</div>
+        <div class="inv-bulk-results">${rows()}</div>
+        ${done ? `<div class="inv-bulk-foot">
+          <strong>${results.filter(r => r.ok).length}</strong> succeeded ·
+          <strong>${results.filter(r => !r.ok).length}</strong> did not
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px">
+          <button class="inv-btn-primary" onclick="document.getElementById('inv-bulk-overlay').remove()">Close</button>
+        </div>` : ''}
+      </div>
+    </div>`;
+  };
+  document.body.appendChild(overlay);
+  paint(false);
+
+  for (const inv of items) {
+    let r;
+    try { r = await fn(inv); }
+    catch (e) { r = { ok: false, msg: e && e.message ? e.message : 'failed' }; }
+    results.push({ number: inv.invoice_number || inv.id, ok: !!r.ok, msg: r.msg || (r.ok ? 'done' : 'failed') });
+    paint(false);
+  }
+  paint(true);
+  _invSelected.clear();
+  await _invLoadList();
+  return results;
+}
+
+/** Read an error body without assuming it is JSON — a 500 often is not. */
+async function _invErr(res, fallback) {
+  try { const j = await res.json(); return j.error || fallback; }
+  catch (_) { return `${fallback} (${res.status})`; }
+}
+
+window._invBulkSend = async function() {
+  const picked = _invPicked().filter(i => i.status !== 'void');
+  if (!picked.length) return showToast('Nothing selected that can be sent', 'error');
+  const noEmail = picked.filter(i => !String(i.client_email || '').trim()).length;
+  if (!confirm(`Email ${picked.length} invoice${picked.length === 1 ? '' : 's'} to their clients?`
+    + (noEmail ? `\n\n${noEmail} of them ${noEmail === 1 ? 'has' : 'have'} no email address on file and will be skipped.` : ''))) return;
+
+  await _invBulkRun('Sending invoices', picked, async (inv) => {
+    if (!String(inv.client_email || '').trim()) return { ok: false, msg: 'no email address on file' };
+    const res = await fetch(`/api/invoices/${inv.id}/send`, { method: 'POST', credentials: 'include' });
+    return res.ok ? { ok: true, msg: `sent to ${inv.client_email}` }
+                  : { ok: false, msg: await _invErr(res, 'send failed') };
+  });
+};
+
+window._invBulkDelete = async function() {
+  const picked = _invPicked();
+  if (!picked.length) return;
+  const paid = picked.filter(i => Number(i.amount_paid || 0) > 0);
+  if (!confirm(`Delete ${picked.length} invoice${picked.length === 1 ? '' : 's'}?`
+    + (paid.length ? `\n\n${paid.length} of them ${paid.length === 1 ? 'has' : 'have'} payments recorded against ${paid.length === 1 ? 'it' : 'them'}. Deleting does not refund anything.` : '')
+    + `\n\nThis cannot be undone.`)) return;
+
+  await _invBulkRun('Deleting invoices', picked, async (inv) => {
+    const res = await fetch(`/api/invoices/${inv.id}`, { method: 'DELETE', credentials: 'include' });
+    return res.ok ? { ok: true, msg: 'deleted' } : { ok: false, msg: await _invErr(res, 'delete failed') };
+  });
+};
+
+window._invBulkCharge = async function() {
+  // Only rows with something left to collect. Charging a paid invoice is not a
+  // no-op, it is a second payment.
+  const picked = _invPicked().filter(i => Number(i.balance_due || 0) > 0 && i.status !== 'void');
+  if (!picked.length) return showToast('Nothing selected has a balance to charge', 'error');
+  const total = picked.reduce((n, i) => n + Number(i.balance_due || 0), 0);
+
+  if (!confirm(
+    `Charge ${picked.length} card${picked.length === 1 ? '' : 's'} on file?\n\n`
+    + `${picked.length} invoice${picked.length === 1 ? '' : 's'} · ${_invFmt(total)} total\n`
+    + `Each client is charged separately, for their own balance.\n\n`
+    + `This cannot be undone from here — refunds go through Stripe.`
+  )) return;
+
+  await _invBulkRun('Charging cards on file', picked, async (inv) => {
+    const cents = Math.round(Number(inv.balance_due || 0) * 100);
+    if (cents < 50) return { ok: false, msg: 'balance is under the $0.50 minimum' };
+    // No stripe_pm_id: the server resolves the client's card on file and
+    // enforces the consent, cap and Stripe-account checks. The browser is not
+    // trusted to name which card to charge.
+    const res = await fetch(`/api/invoices/${inv.id}/charge`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: cents }),
+    });
+    return res.ok ? { ok: true, msg: `charged ${_invFmt(cents / 100)}` }
+                  : { ok: false, msg: await _invErr(res, 'charge failed') };
+  });
+};
+
+/**
+ * Bulk edit — only fields that mean the same thing across several invoices.
+ *
+ * Line items are deliberately absent: "set the line items on these nine
+ * invoices" is not a coherent request. What is coherent is pushing a due date
+ * out, moving a batch to Net 60, correcting a client's email across everything
+ * you sent them, or marking a stack of cheques paid.
+ *
+ * Blank means leave alone. Every field is opt-in, so nothing is overwritten
+ * because a form defaulted to something.
+ */
+window._invBulkEdit = function() {
+  const picked = _invPicked();
+  if (!picked.length) return;
+  const overlay = _invCreateOverlay('inv-bulkedit-overlay');
+  overlay.innerHTML = `<div class="inv-modal" style="width:min(520px,100%)">
+    <div class="inv-modal-header">
+      <div class="inv-modal-title">Edit ${picked.length} invoice${picked.length === 1 ? '' : 's'}</div>
+      <button class="inv-modal-close" onclick="document.getElementById('inv-bulkedit-overlay').remove()">&times;</button>
+    </div>
+    <div class="inv-modal-body">
+      <p class="inv-bulk-hint">Anything left blank stays as it is.</p>
+
+      <div class="inv-field-group">
+        <label class="inv-label">Due date</label>
+        <input class="inv-input" type="date" id="invBeDue">
+      </div>
+      <div class="inv-field-group">
+        <label class="inv-label">Terms</label>
+        <select class="inv-select" id="invBeTerms">
+          <option value="">— leave as is —</option>
+          <option>Due on receipt</option><option>Net 15</option>
+          <option>Net 30</option><option>Net 45</option><option>Net 60</option>
+        </select>
+      </div>
+      <div class="inv-field-group">
+        <label class="inv-label">Status</label>
+        <select class="inv-select" id="invBeStatus">
+          <option value="">— leave as is —</option>
+          <option value="draft">Draft</option>
+          <option value="sent">Sent</option>
+          <option value="paid">Mark paid</option>
+          <option value="void">Void</option>
+        </select>
+        <span class="inv-bulk-hint" id="invBeStatusWarn"></span>
+      </div>
+      <div class="inv-field-group">
+        <label class="inv-label">Client email</label>
+        <input class="inv-input" type="email" id="invBeEmail" placeholder="Leave blank to keep each invoice's own">
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="inv-btn-ghost" onclick="document.getElementById('inv-bulkedit-overlay').remove()">Cancel</button>
+        <button class="inv-btn-primary" onclick="_invBulkEditApply()">Apply to ${picked.length}</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('invBeStatus').onchange = function() {
+    // "Mark paid" writes a payment that never went through Stripe. Legitimate
+    // for cheques and cash, and a real mistake if it was a mis-click, so it says
+    // so before you apply rather than after.
+    document.getElementById('invBeStatusWarn').textContent = this.value === 'paid'
+      ? 'Marks them settled without taking any money — use this for cheques and cash already received.'
+      : this.value === 'void'
+        ? 'Voided invoices stay on the books but stop being collectable.'
+        : '';
+  };
+};
+
+window._invBulkEditApply = async function() {
+  const picked = _invPicked();
+  const due    = document.getElementById('invBeDue')?.value || '';
+  const terms  = document.getElementById('invBeTerms')?.value || '';
+  const status = document.getElementById('invBeStatus')?.value || '';
+  const email  = (document.getElementById('invBeEmail')?.value || '').trim();
+
+  const patch = {};
+  if (due) patch.due_date = due;
+  if (terms) patch.terms = terms;
+  if (status) patch.status = status;
+  if (email) patch.client_email = email;
+  if (!Object.keys(patch).length) return showToast('Nothing to change — every field was left blank', 'error');
+
+  if (status === 'paid' && !confirm(
+    `Mark ${picked.length} invoice${picked.length === 1 ? '' : 's'} paid?\n\n`
+    + `No money is taken. This records them as settled, which is right for cheques and cash `
+    + `already in hand and wrong for anything you still need to collect.`)) return;
+
+  document.getElementById('inv-bulkedit-overlay')?.remove();
+  const changed = Object.keys(patch).join(', ');
+  await _invBulkRun('Updating invoices', picked, async (inv) => {
+    const res = await fetch(`/api/invoices/${inv.id}`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    return res.ok ? { ok: true, msg: `updated ${changed}` }
+                  : { ok: false, msg: await _invErr(res, 'update failed') };
+  });
+};

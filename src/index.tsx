@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
 import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
-import { decideFailureActions, clientFailureEmail } from './api/dunning'
+import { decideFailureActions, clientFailureEmail, needsCardReCollection } from './api/dunning'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { serveStatic } from 'hono/cloudflare-workers'
@@ -9475,9 +9475,9 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
 
   const invoiceId = c.req.param('id')
   const body = await c.req.json() as any
-  const { stripe_pm_id, amount } = body  // amount in cents
+  const { amount } = body  // amount in cents
+  let stripe_pm_id: string = String(body.stripe_pm_id || '')
 
-  if (!stripe_pm_id) return c.json({ error: 'Payment method required' }, 400)
   if (!amount || amount < 50) return c.json({ error: 'Minimum charge is $0.50' }, 400)
 
   // Load invoice + company
@@ -9486,9 +9486,49 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
   ).bind(invoiceId, companyId).first()
   if (!inv) return c.json({ error: 'Invoice not found' }, 404)
 
+  // Loaded before the card resolution below, which needs to know which Stripe
+  // account this charge will run on in order to tell whether the stored card
+  // can be used at all.
   const company: any = await db.prepare(
-    `SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`
+    `SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled, stripe_platform_fee_pct, stripe_platform_fee_bps FROM companies WHERE id=? LIMIT 1`
   ).bind(companyId).first()
+
+  // The single-invoice UI picks a card from a dropdown. Bulk has no dropdown, so
+  // when no payment method is supplied the client's card on file is resolved
+  // here — where the data is, rather than making the caller fetch it per row and
+  // then trusting whatever it sends back.
+  //
+  // Every guard the stored card carries is enforced. In particular the card must
+  // belong to the Stripe account this charge will execute on: a card saved
+  // before migration 0080 lives on the platform while charges now run on the
+  // connected account, and Stripe refuses it. Refusing here says why, instead of
+  // surfacing "No such payment method" from an API call that should not have
+  // been made.
+  if (!stripe_pm_id) {
+    if (!inv.client_id) return c.json({ error: 'No client on this invoice, so there is no card on file' }, 400)
+    const autopay: any = await db.prepare(
+      `SELECT enabled, stripe_pm_id, stripe_account_id, pm_label, max_amount
+         FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`
+    ).bind(inv.client_id, companyId).first().catch(() => null)
+
+    if (!autopay || !String(autopay.stripe_pm_id || '').trim()) {
+      return c.json({ error: 'No card on file for this client' }, 400)
+    }
+    if (Number(autopay.enabled ?? 0) !== 1) {
+      return c.json({ error: 'This client has not authorised charges to their saved card' }, 400)
+    }
+    // max_amount is a per-charge ceiling the CLIENT agreed to (0 = no cap).
+    // Exceeding it silently would charge more than they consented to.
+    const cap = Number(autopay.max_amount || 0)
+    if (cap > 0 && amount > Math.round(cap * 100)) {
+      return c.json({ error: `Charge exceeds the $${cap.toFixed(2)} per-payment limit this client set` }, 400)
+    }
+    const target = targetAccountFor(company)
+    if (needsCardReCollection(autopay, target)) {
+      return c.json({ error: 'The saved card is attached to a different Stripe account and must be re-entered by the client' }, 400)
+    }
+    stripe_pm_id = String(autopay.stripe_pm_id).trim()
+  }
 
   // Get client's Stripe customer ID
   // Resolve a customer valid for the account this charge will execute on. A
@@ -9528,6 +9568,25 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
       form.set('application_fee_amount', String(applicationFeeAmount))
       headers['Stripe-Account'] = targetAccount
     }
+
+    // Idempotency-Key, so a retry cannot take the money twice.
+    //
+    // There was none. A flaky response, a double-click, or a bulk run repeated
+    // after a timeout would create a SECOND PaymentIntent and charge the
+    // customer again — the request that "failed" may well have succeeded at
+    // Stripe before the connection dropped. That was already a real risk for a
+    // single charge; running it across a selection multiplies it by N.
+    //
+    // The key includes amount_paid_cents as it stands right now, which is what
+    // makes it correct rather than merely safe:
+    //   - a retry of a FAILED charge sees unchanged amount_paid, so it reuses
+    //     the key and Stripe returns the original result instead of charging
+    //   - a legitimate SECOND payment (a partial, then the rest) happens after
+    //     amount_paid moved, so it gets a new key and is allowed through
+    // Keying on invoice+amount alone would have blocked the second case for 24
+    // hours, which is how idempotency turns into a bug of its own.
+    headers['Idempotency-Key'] =
+      `chg_${invoiceId}_${Math.round(amount)}_${Number(inv.amount_paid_cents || 0)}`
 
     const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
       method: 'POST', headers, body: form.toString()
