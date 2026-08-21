@@ -8,6 +8,12 @@ export interface PageArgs {
   tenant_id: string;
   role: Role;
   vocab: VocabularyMode;
+  /** True CRM super-admin status (c.var.isSuperAdmin on the real-auth path),
+   * NOT the Finance-OS "owner" role — a real business owner has the owner
+   * Finance role but isSuperAdmin=false. Distinct from `role` because
+   * some surfaces (Setup & Config's raw JSON editors) are meant only for
+   * platform staff, not every tenant's owner. See config-admin.tsx. */
+  isSuperAdmin: boolean;
 }
 
 /** Set by the CRM's own requireAuth middleware (src/index.tsx) when a page
@@ -23,9 +29,13 @@ export interface FinanceAuthVars {
 /**
  * Real auth first: if requireAuth populated c.var.companyId (the live-app
  * mount path), use the real session — companyId as tenant_id, the CRM role
- * string mapped through config/finance/role-map.json. Otherwise falls back
- * to query params (the standalone dev-server.ts path, used only for
- * Playwright e2e tests that don't need a real login).
+ * string mapped through config/finance/role-map.json, and the real
+ * c.var.isSuperAdmin flag. Otherwise falls back to query params (the
+ * standalone dev-server.ts path, used only for Playwright e2e tests that
+ * don't need a real login) — isSuperAdmin defaults to false there unless
+ * a test explicitly opts in via ?is_super_admin=1, so every existing
+ * role=owner e2e test keeps behaving like a normal tenant owner, not
+ * platform staff.
  */
 export function readPageArgs(c: {
   req: { query: (k: string) => string | undefined };
@@ -38,6 +48,7 @@ export function readPageArgs(c: {
       tenant_id: c.var.companyId,
       role: resolveFinanceRole(c.var.role, !!c.var.isSuperAdmin),
       vocab,
+      isSuperAdmin: !!c.var.isSuperAdmin,
     };
   }
 
@@ -45,6 +56,7 @@ export function readPageArgs(c: {
     tenant_id: c.req.query("tenant_id") ?? "",
     role: (c.req.query("role") as Role) ?? "crew",
     vocab,
+    isSuperAdmin: c.req.query("is_super_admin") === "1",
   };
 }
 
