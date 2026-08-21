@@ -72,7 +72,12 @@ export function compiledVendorPatternRules(): { rule: VendorPatternRule; regex: 
 export interface IngestSourceDef {
   id: string;
   label: string;
-  format: "csv";
+  format: "csv" | "xlsx";
+  // Only meaningful when format === "xlsx" — which binary-shape parser to
+  // apply (src/ai/xlsx.ts). CSV sources never set this; detectSource()
+  // routes on file type + this field, not on required_headers, since an
+  // xlsx file's "header row" (the division names) isn't row 1 like a CSV's.
+  shape?: "wide_class_pnl";
   target: string;
   detect: { required_headers: string[] };
   column_map: Record<string, string>;

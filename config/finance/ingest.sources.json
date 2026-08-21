@@ -42,6 +42,15 @@
       "target": "payroll_line",
       "detect": { "required_headers": ["Employee", "Pay Date", "Gross Pay"] },
       "column_map": { "employee": "Employee", "date": "Pay Date", "amount": "Gross Pay" }
+    },
+    {
+      "id": "qbo_class_pnl_wide_xlsx",
+      "label": "QuickBooks Class/Division P&L Export (Excel, wide per-division columns)",
+      "format": "xlsx",
+      "shape": "wide_class_pnl",
+      "target": "pnl_line_by_division",
+      "detect": { "required_headers": [] },
+      "column_map": {}
     }
   ],
 
