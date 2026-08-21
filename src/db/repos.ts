@@ -474,6 +474,19 @@ export async function resolveActionItem(
   `).bind(companyId, id).run();
 }
 
+/** Counterpart to resolveActionItem — closes an item as "not actionable"
+ * rather than "done" (e.g. stale test data, or a finding the reviewer
+ * judged doesn't need a change). Schema already allows this status
+ * (migrations/finance/0003_action.sql's CHECK); this just exposes it. */
+export async function dismissActionItem(
+  db: D1Database, companyId: string, id: string,
+): Promise<void> {
+  await db.prepare(`
+    UPDATE action_item SET status = 'dismissed', resolved_at = datetime('now')
+    WHERE company_id = ? AND id = ?
+  `).bind(companyId, id).run();
+}
+
 // ---- classification_finding ----
 
 export async function insertClassificationFinding(
