@@ -13,16 +13,21 @@ import test from 'node:test';
  * silently did nothing. That is the entire failure mode: it does not break, it
  * wastes an afternoon.
  *
- * mockups/ is genuinely only in static, and style.css belongs to a route that
- * does not exist any more. Both are allowed; a second copy of a live asset is
- * not.
+ * style.css belongs to a route that does not exist any more, and is allowed on
+ * that basis. A second copy of a live asset is not.
+ *
+ * mockups/ used to be listed here too, as "genuinely only in static". That is
+ * no longer true and the exception is gone: the design mockups now live in
+ * docs/mockups/, because public/js/ is SERVED — _routes.json excludes /js/*
+ * from the Worker, so Pages was handing every mockup out unauthenticated on the
+ * production domain. See docs/mockups/README.md.
  */
 
 // fileURLToPath, not URL.pathname: this repo lives under "Groundwork CRM" and
 // pathname percent-encodes the space, so every fs call below would ENOENT — and
 // the first test would swallow it and PASS, which is how a guard becomes a lie.
 const root = fileURLToPath(new URL('../', import.meta.url));
-const ALLOWED = new Set(['mockups', 'style.css']);
+const ALLOWED = new Set(['style.css']);
 
 test('public/static does not shadow public/js', () => {
   const staticDir = join(root, 'public/static');
