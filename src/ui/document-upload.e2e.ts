@@ -1,7 +1,14 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "fs";
 import { resetFinanceDb } from "./test-seed";
 
 const TENANT = "t-e2e-upload";
+
+/** Real uploaded Avalon QBO Class P&L export (see src/ai/xlsx.test.ts /
+ * src/ai/ingest.test.ts for the same fixture, unit-tested there). Playwright
+ * runs under plain Node, so unlike those two (vitest-pool-workers, no `fs`)
+ * this can just read the binary fixture directly. */
+const avalonXlsxBuffer = readFileSync("fixtures/ingest/qbo-class-pnl-wide-avalon.xlsx");
 
 test.beforeEach(async ({ request }) => {
   await resetFinanceDb(request, TENANT);
@@ -61,6 +68,29 @@ test("UD-06 an unmapped division on a class P&L is flagged for review, not resol
 
   await expect(page.getByTestId("ingest-review-0")).toContainText("needs review");
   await expect(page.getByTestId("ingest-review-count")).toContainText("1");
+});
+
+test("UD-11 a real Avalon .xlsx class/division P&L export is detected, parsed, and partially flagged for review", async ({ page }) => {
+  await page.goto(`/upload?tenant_id=${TENANT}&role=owner`);
+  await page.getByTestId("ingest-file-input").setInputFiles({
+    name: "January-June, 2026 CLASS P&L.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: avalonXlsxBuffer,
+  });
+  await page.getByTestId("ingest-submit").click();
+
+  await expect(page.getByTestId("ingest-source-label")).toContainText("QuickBooks Class/Division P&L Export");
+  await expect(page.getByTestId("ingest-source-label")).toContainText("96");
+  // "Maintenance" and "Snow Removal" resolve against the platform default
+  // division map (case-insensitive canonical match / configured alias);
+  // "Landscaping" and "G&A" do not, and must show as needs-review, never
+  // silently dropped or guessed at.
+  const servicesMaintenance = page.locator('[data-testid^="ingest-line-"]', { hasText: "Maintenance" }).first();
+  await expect(servicesMaintenance).toContainText("resolved");
+  const servicesLandscaping = page.locator('[data-testid^="ingest-line-"]', { hasText: "Landscaping" }).first();
+  await expect(servicesLandscaping).toContainText("needs review");
+  // 38 (Landscaping) + 3 (G&A) unmapped lines sent to review.
+  await expect(page.getByTestId("ingest-review-count")).toContainText("41");
 });
 
 test("UD-07 a receipt with every field filled in is stored with high confidence and no review", async ({ page }) => {
