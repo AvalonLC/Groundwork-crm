@@ -90,7 +90,10 @@ app.post("/test/reset", async (c) => {
 app.post("/test/exec", async (c) => {
   const { sql, params } = await c.req.json<{ sql: string; params?: unknown[] }>();
   const result = await c.env.DB.prepare(sql).bind(...(params ?? [])).run();
-  return c.json({ ok: true, meta: result.meta });
+  // `results` is included (in addition to the original `ok`/`meta`) so seed
+  // callers that only INSERT are unaffected, while SELECT-based verification
+  // callers (e.g. queue.e2e.ts's Resolve/Dismiss tests) can read rows back.
+  return c.json({ ok: true, meta: result.meta, results: result.results });
 });
 
 // ── Same two endpoints, but against the CRM's own `DB` — only collections.tsx
