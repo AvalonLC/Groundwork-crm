@@ -14,8 +14,17 @@ export type ConfigAdminBindings = { DB: D1Database };
  * edits become a finance_config_override row (migrations/finance/0004)
  * and take effect immediately for anything reading through
  * getEffectiveConfig() — no deploy needed. "Reset" removes the override,
- * reverting to the version-controlled static default. Owner-only, same
- * gate as the Budget & Rates page (docs/spec/ROLES.md).
+ * reverting to the version-controlled static default.
+ *
+ * Gating: the page itself (Company Policy / Upload Documents / Financial
+ * Setup links) is owner-only, same gate as the Budget & Rates page
+ * (docs/spec/ROLES.md). The raw JSON config editors below those links are
+ * a SEPARATE, stricter gate: platform-staff-only (isSuperAdmin), not just
+ * the tenant's Finance-OS owner role. A real business owner should only
+ * need Upload — per owner feedback (docs/FINANCE-OS-FIX-PLAN.md item 2)
+ * these editors were reaching every owner-role user, not just platform
+ * staff, and needed to be hidden entirely (not greyed out/teased) rather
+ * than exposed with a lock icon.
  */
 export const configAdminRouter = new Hono<{ Bindings: ConfigAdminBindings; Variables: FinanceAuthVars }>();
 
@@ -31,9 +40,12 @@ export const configAdminRouter = new Hono<{ Bindings: ConfigAdminBindings; Varia
  */
 async function renderConfigAdminPage(
   c: { env: { DB: D1Database } },
-  tenant_id: string, role: string, basePath: string, notice: string | null, partial: boolean,
+  tenant_id: string, role: string, isSuperAdmin: boolean, basePath: string, notice: string | null, partial: boolean,
 ) {
-  const configs = await listEffectiveConfigs(c.env.DB, tenant_id);
+  // The raw-JSON editors read/list effective configs from the DB — skip the
+  // query entirely for a non-super-admin, not just the render, since
+  // there's nothing for them to do with the result either way.
+  const configs = isSuperAdmin ? await listEffectiveConfigs(c.env.DB, tenant_id) : [];
   return (
     <Page
       title="Setup & Config"
@@ -107,7 +119,7 @@ async function renderConfigAdminPage(
         </a>
       </section>
 
-      {configs.map((cfg) => (
+      {isSuperAdmin && configs.map((cfg) => (
         <section class="fin-card" data-testid={`config-${cfg.name}`}>
           <div class="fin-card-h">
             <h2 class="fin-card-t">{cfg.name}</h2>
@@ -120,7 +132,7 @@ async function renderConfigAdminPage(
               ? `Overridden (${cfg.override_scope === "__global__" ? "global" : "this tenant"}, by ${cfg.updated_by ?? "unknown"} at ${cfg.updated_at})`
               : "Using static default (not overridden)"}
           </p>
-          <form method="post" action={`${basePath}/${cfg.name}?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`}>
+          <form method="post" action={`${basePath}/${cfg.name}?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}${isSuperAdmin ? "&is_super_admin=1" : ""}`}>
             <textarea
               name="config_json"
               rows={12}
@@ -146,7 +158,7 @@ async function renderConfigAdminPage(
             </button>
           </form>
           {cfg.is_override && (
-            <form method="post" action={`${basePath}/${cfg.name}/reset?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`} style="margin-top:8px">
+            <form method="post" action={`${basePath}/${cfg.name}/reset?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}${isSuperAdmin ? "&is_super_admin=1" : ""}`} style="margin-top:8px">
               <button
                 type="submit"
                 data-testid={`reset-${cfg.name}`}
@@ -163,7 +175,7 @@ async function renderConfigAdminPage(
 }
 
 configAdminRouter.get("/", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   const partial = isPartialRequest(c);
   if (!canSee(role, "can_see_budget_rates")) {
     return c.html(
@@ -185,11 +197,11 @@ configAdminRouter.get("/", async (c) => {
   // (dev-server.ts) or /finance/config (the live app), no path assumptions.
   const basePath = c.req.path;
 
-  return c.html(await renderConfigAdminPage(c, tenant_id, role, basePath, notice, partial));
+  return c.html(await renderConfigAdminPage(c, tenant_id, role, isSuperAdmin, basePath, notice, partial));
 });
 
 configAdminRouter.post("/:name", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   const name = c.req.param("name");
   const basePath = c.req.path.replace(new RegExp(`/${name}$`), "");
   if (!canSee(role, "can_see_budget_rates")) return c.text("owner role required", 403);
@@ -206,15 +218,15 @@ configAdminRouter.post("/:name", async (c) => {
   // Full-page requests keep the exact pre-existing redirect behavior.
   if (isPartialRequest(c)) {
     const notice = result.ok ? "Saved." : `Error: ${result.error}`;
-    return c.html(await renderConfigAdminPage(c, tenant_id, role, basePath, notice, true));
+    return c.html(await renderConfigAdminPage(c, tenant_id, role, isSuperAdmin, basePath, notice, true));
   }
-  const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
+  const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}${isSuperAdmin ? "&is_super_admin=1" : ""}`;
   if (!result.ok) return c.redirect(`${basePath}?${qs}&error=${encodeURIComponent(result.error)}`);
   return c.redirect(`${basePath}?${qs}&saved=1`);
 });
 
 configAdminRouter.post("/:name/reset", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   const name = c.req.param("name");
   const basePath = c.req.path.replace(new RegExp(`/${name}/reset$`), "");
   if (!canSee(role, "can_see_budget_rates")) return c.text("owner role required", 403);
@@ -223,9 +235,9 @@ configAdminRouter.post("/:name/reset", async (c) => {
   await resetConfigOverride(c.env.DB, tenant_id, name);
 
   if (isPartialRequest(c)) {
-    return c.html(await renderConfigAdminPage(c, tenant_id, role, basePath, "Saved.", true));
+    return c.html(await renderConfigAdminPage(c, tenant_id, role, isSuperAdmin, basePath, "Saved.", true));
   }
-  const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
+  const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}${isSuperAdmin ? "&is_super_admin=1" : ""}`;
   return c.redirect(`${basePath}?${qs}&saved=1`);
 });
 
@@ -233,23 +245,33 @@ configAdminRouter.post("/:name/reset", async (c) => {
 // future tooling (CLI, external scripts) rather than the browser form above.
 export const configAdminApiRouter = new Hono<{ Bindings: ConfigAdminBindings; Variables: FinanceAuthVars }>();
 
+// Every endpoint below is gated twice: canSee(...) keeps non-owner roles out
+// (unchanged, pre-existing), and the isSuperAdmin check keeps ordinary
+// tenant owners out of the raw-JSON config surface even though they pass
+// the owner check — this is the API-level half of the same fix that hides
+// the editors in the UI (renderConfigAdminPage above); a non-super-admin
+// must get a 403 hitting these routes directly, not just have the buttons
+// hidden from them. See docs/FINANCE-OS-FIX-PLAN.md item 2.
 configAdminApiRouter.get("/", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
+  if (!isSuperAdmin) return c.json({ error: "super admin required" }, 403);
   return c.json({ configs: await listEffectiveConfigs(c.env.DB, tenant_id) });
 });
 
 configAdminApiRouter.get("/:name", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
+  if (!isSuperAdmin) return c.json({ error: "super admin required" }, 403);
   const name = c.req.param("name");
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}`, valid_names: CONFIG_NAMES }, 404);
   return c.json(await getEffectiveConfig(c.env.DB, tenant_id, name));
 });
 
 configAdminApiRouter.put("/:name", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
+  if (!isSuperAdmin) return c.json({ error: "super admin required" }, 403);
   const name = c.req.param("name");
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}` }, 404);
   const rawJson = await c.req.text();
@@ -260,14 +282,20 @@ configAdminApiRouter.put("/:name", async (c) => {
 });
 
 configAdminApiRouter.post("/:name/reset", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, isSuperAdmin } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
+  if (!isSuperAdmin) return c.json({ error: "super admin required" }, 403);
   const name = c.req.param("name");
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}` }, 404);
   await resetConfigOverride(c.env.DB, tenant_id, name);
   return c.json({ ok: true });
 });
 
+// GET /:name/default intentionally has NO isSuperAdmin gate (and no auth
+// gate at all): it returns the static, version-controlled default value
+// for a config name — not tenant data, not an override, nothing sensitive.
+// Any caller who can read this repo can already see the same JSON in
+// config/finance/*.json.
 configAdminApiRouter.get("/:name/default", (c) => {
   const name = c.req.param("name");
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}` }, 404);
