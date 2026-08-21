@@ -142,6 +142,86 @@ describe("Stage 2 dual-write: work_orders", () => {
   });
 });
 
+/**
+ * Finance OS fix plan item 4: DELETE /api/work-orders/:id used to leave
+ * behind any open action_item that pointed at the deleted work order
+ * (source_type='work_order', source_id=woId) — e.g. a 'collect' item the
+ * unbilled-work sweep (src/cron/unbilled-sweep.ts) created for a job that
+ * then gets deleted instead of invoiced. It never touched job_cost_ledger
+ * rows either; that part is intentional (see the code comment in
+ * src/index.tsx) — job_cost_ledger is real posted cost history, not
+ * scheduling scaffolding, so it survives the work order it was incurred
+ * against.
+ */
+describe("DELETE /api/work-orders/:id cleans up orphaned Finance data", () => {
+  it("MC-11 dismisses open action_items sourced from the deleted work order, but keeps job_cost_ledger rows", async () => {
+    const companyId = "mc-co-wo-delete";
+    const repId = "mc-rep-wo-delete";
+    const { cookie } = await seedSession(companyId, repId);
+
+    const created = await req("/api/work-orders", cookie, {
+      method: "POST", body: JSON.stringify({ title: "Job to delete" }),
+    });
+    const { id: woId } = await created.json() as { id: string };
+
+    // An open action_item pointing at this work order, as the unbilled-work
+    // sweep would create (verb='collect', source_type='work_order').
+    await db().prepare(`
+      INSERT INTO action_item
+        (id, company_id, verb, owner_id, sla_due, amount_cents, confidence,
+         stale_components, status, source_type, source_id)
+      VALUES (?,?,?,?,?,?,?,?, 'open', ?,?)
+    `).bind(
+      "ai-mc-11", companyId, "collect", repId, "2026-08-25", 50000, "high",
+      null, "work_order", woId,
+    ).run();
+
+    // A resolved action_item for the same source should be left exactly as
+    // it is (already not-open; the fix only targets status='open').
+    await db().prepare(`
+      INSERT INTO action_item
+        (id, company_id, verb, owner_id, sla_due, amount_cents, confidence,
+         stale_components, status, source_type, source_id, resolved_at)
+      VALUES (?,?,?,?,?,?,?,?, 'resolved', ?,?, datetime('now'))
+    `).bind(
+      "ai-mc-11-resolved", companyId, "collect", repId, "2026-08-20", 10000, "high",
+      null, "work_order", woId,
+    ).run();
+
+    // A real posted job_cost_ledger row for this job — must survive the delete.
+    const timeEntry = await db().prepare(`
+      INSERT INTO time_entries (id, company_id, rep_id, work_order_id, clock_in, clock_out, posted_at)
+      VALUES (?,?,?,?,?,?,datetime('now')) RETURNING id
+    `).bind("te-mc-11", companyId, repId, woId, "2026-08-18T08:00:00Z", "2026-08-18T12:00:00Z").first<{ id: string }>();
+    await db().prepare(`
+      INSERT INTO job_cost_ledger (company_id, time_entry_id, job_id, line_type, amount_cents)
+      VALUES (?,?,?,?,?)
+    `).bind(companyId, timeEntry!.id, woId, "labor", 12000).run();
+
+    const del = await req(`/api/work-orders/${woId}`, cookie, { method: "DELETE" });
+    expect(del.status).toBe(200);
+
+    const openItem: any = await db().prepare(
+      `SELECT status, resolved_at FROM action_item WHERE id=?`,
+    ).bind("ai-mc-11").first();
+    expect(openItem.status).toBe("dismissed");
+    expect(openItem.resolved_at).toBeTruthy();
+
+    const resolvedItem: any = await db().prepare(
+      `SELECT status FROM action_item WHERE id=?`,
+    ).bind("ai-mc-11-resolved").first();
+    expect(resolvedItem.status).toBe("resolved"); // untouched, not flipped to dismissed
+
+    const ledgerRows: any = await db().prepare(
+      `SELECT COUNT(*) AS n FROM job_cost_ledger WHERE job_id=?`,
+    ).bind(woId).first();
+    expect(ledgerRows.n).toBe(1); // job_cost_ledger is cost history, kept on purpose
+
+    const wo: any = await db().prepare(`SELECT id FROM work_orders WHERE id=?`).bind(woId).first();
+    expect(wo).toBeNull();
+  });
+});
+
 describe("Stage 2 dual-write: recurring_plans", () => {
   it("MC-09 POST /api/recurring-plans dual-writes price_cents", async () => {
     const { cookie } = await seedSession("mc-co-rp", "mc-rep-rp");

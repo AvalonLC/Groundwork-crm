@@ -12792,12 +12792,35 @@ app.delete('/api/work-orders/:id', requireAuth, async (c) => {
   // multi-day ones. wo_day_employees cascades from wo_days, but only if the
   // wo_days row is actually deleted, so it is removed explicitly first for
   // tenants where foreign keys are not enforced.
+  //
+  // Finance OS fix plan item 4: this same orphaning problem applied to
+  // action_item rows pointing at this work order (source_type='work_order',
+  // source_id=woId) — e.g. a 'collect' item from the unbilled-work sweep for
+  // a job that gets deleted instead of invoiced. Those are now dismissed in
+  // the same batch, same reasoning as the scheduling rows above: nothing else
+  // ever inner-joins the deleted work_orders row back in, so a stale open
+  // item would sit in the Work Queue forever pointing at nothing.
+  //
+  // job_cost_ledger rows for this job_id are deliberately NOT deleted here.
+  // Unlike wo_days/wo_day_employees (pure scheduling scaffolding) or
+  // action_item (a pending task, meaningless once its subject is gone),
+  // job_cost_ledger is real posted cost history (labor + overhead actually
+  // incurred) — deleting the work order the costs were incurred against
+  // doesn't make the costs not have happened. Erasing it would silently
+  // corrupt any historical job-costing/recovery numbers that already
+  // aggregated over it. job_id's REFERENCES work_orders(id) FK
+  // (migrations/0057_finance_merge.sql) is not declared ON DELETE CASCADE
+  // for the same reason — this is intentional, not an oversight.
   await db.batch([
     db.prepare(
       `DELETE FROM wo_day_employees
         WHERE company_id=? AND wo_day_id IN (SELECT id FROM wo_days WHERE work_order_id=?)`
     ).bind(companyId, woId),
     db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=?`).bind(woId, companyId),
+    db.prepare(
+      `UPDATE action_item SET status='dismissed', resolved_at=datetime('now')
+        WHERE company_id=? AND source_type='work_order' AND source_id=? AND status='open'`
+    ).bind(companyId, woId),
     db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId),
   ])
   return c.json({ ok: true })
