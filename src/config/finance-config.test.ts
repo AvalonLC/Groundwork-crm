@@ -34,9 +34,20 @@ describe("finance config loader", () => {
     expect(resolveDivision("totally-unknown-division")).toBeNull();
   });
 
-  it("CFG-05 every ingest source has at least one required header", () => {
+  it("CFG-05 every csv ingest source has at least one required header; every xlsx source declares a shape", () => {
+    // csv sources are detected by header-row match, so an empty
+    // required_headers would match everything — never allowed. xlsx
+    // sources have no plain-text header row to match against at all (see
+    // detectXlsxSource in src/ai/ingest.ts); they're detected by grid
+    // shape instead, so required_headers is intentionally empty and a
+    // non-empty "shape" is required instead. Mirrors the same rule
+    // enforced by scripts/validate-finance-config.js.
     for (const source of ingestSources.sources) {
-      expect(source.detect.required_headers.length).toBeGreaterThan(0);
+      if (source.format === "csv") {
+        expect(source.detect.required_headers.length).toBeGreaterThan(0);
+      } else {
+        expect(source.shape).toBeTruthy();
+      }
     }
   });
 });
