@@ -14,12 +14,22 @@ function _invDate(d) {
 }
 function _invAgo(d) {
   if (!d) return '';
-  const ms = Date.now() - new Date(d).getTime();
-  const days = Math.floor(ms / 86400000);
+  // A bare YYYY-MM-DD parses as UTC midnight, while Date.now() is local. West of
+  // UTC that makes today's invoice look like it was issued in the future: at
+  // 3pm EDT on the 21st, "2026-08-21" is 8pm on the 20th local, ms is negative,
+  // and Math.floor(-0.04) is -1 — hence "-1d ago" on a brand new invoice.
+  // _invDate directly above already normalises this; this did not.
+  const t = new Date(d + (String(d).includes('T') ? '' : 'T00:00:00')).getTime();
+  if (!Number.isFinite(t)) return '';
+  const days = Math.floor((Date.now() - t) / 86400000);
+  // Clamp rather than render a negative age. A future-dated invoice is a real
+  // thing (post-dating one is legitimate) and "in 3d" is the honest way to say
+  // so; "-3d ago" is just arithmetic leaking through.
+  if (days < 0) return days === -1 ? 'Tomorrow' : `in ${Math.abs(days)}d`;
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 30) return `${days}d ago`;
-  return _invDate(d.split('T')[0]);
+  return _invDate(String(d).split('T')[0]);
 }
 function _invEsc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -771,7 +781,13 @@ async function _invOpenBuilder(invId, fromDetail) {
       fetch('/api/clients?limit=500', { credentials:'include' }),
       invId ? fetch(`/api/invoices/${invId}`, { credentials:'include' }) : Promise.resolve(null)
     ]);
-    clients = clRes.ok ? await clRes.json() : [];
+    // /api/clients answers {ok:true,data:[...]}, not a bare array. Reading it as
+    // one made clients.map() throw inside _invRenderBuilder — which runs OUTSIDE
+    // the try below, so the throw was never caught and the modal sat on
+    // "Loading…" forever. Both New Invoice and Edit Invoice go through here, so
+    // the invoice builder could not be opened at all.
+    const clJson = clRes.ok ? await clRes.json() : null;
+    clients = Array.isArray(clJson) ? clJson : (clJson?.data || []);
     if (invRes) {
       inv = invRes.ok ? await invRes.json() : null;
       if (inv && typeof inv.line_items === 'string') try { inv.line_items = JSON.parse(inv.line_items); } catch(_) { inv.line_items = []; }

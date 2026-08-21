@@ -23,7 +23,7 @@
     },
     invoice: {
       subject: 'Invoice #{{number}} from {{company_name}} — Due {{due_date}}',
-      body: `Hi {{client_name}},\n\nPlease find your invoice (#{{number}}) for {{project}} ready for payment.\n\nAmount Due: {{amount}}\nDue Date: {{due_date}}\n\nPay securely online:\n{{link}}\n\nIf you have any questions about this invoice, please don't hesitate to reach out.\n\nThank you for your business!\n\n{{company_name}}`,
+      body: `Hi {{client_name}},\n\nPlease find your invoice (#{{number}}) for {{project}} ready for payment.\n\nAmount Due: {{amount}}\nDue Date: {{due_date}}\n{{deposit}}\nPay securely online:\n{{link}}\n\nIf you have any questions about this invoice, please don't hesitate to reach out.\n\nThank you for your business!\n\n{{company_name}}`,
     },
     custom: {
       subject: '',
@@ -57,9 +57,30 @@
    *   onSent,                  // callback after successful send
    * }
    */
+  /**
+   * The composer's on-sent callback.
+   *
+   * Held here rather than passed through the Send button's onclick, which is
+   * what it used to do:
+   *
+   *     onclick="_emSend('id','type',${JSON.stringify(opts.onSent||null)...})"
+   *
+   * JSON.stringify of a FUNCTION returns undefined, so .replace() on it threw —
+   * every single time a caller supplied onSent, which all of them do. The
+   * callers wrapped the composer in try/catch, so the throw was swallowed and
+   * the catch re-opened the composer with no variables at all. That is where
+   * "Invoice #inv_1787326690151_y55vjn ... Hi , Amount Due: Due Date:" came
+   * from: not a missing invoice, a serialisation error two layers away.
+   *
+   * _emSend already checked `typeof onSentStr === 'function'`, which could never
+   * be true for a value that arrived through an HTML attribute.
+   */
+  let _emOnSent = null;
+
   window.gwEmailComposer = function (opts = {}) {
     _emInjectCSS();
     _emCloseOverlay();
+    _emOnSent = typeof opts.onSent === 'function' ? opts.onSent : null;
 
     const type = opts.type || 'custom';
     const tmpl = _TEMPLATES[type] || _TEMPLATES.custom;
@@ -68,10 +89,18 @@
     const vars = {
       client_name:  opts.toName    || '',
       company_name: _emGetCompany(),
-      number:       opts.entityNumber || opts.entityId || '',
+      // Deliberately NOT falling back to opts.entityId. A row id
+      // (inv_1787326690151_y55vjn) is not an invoice number, and putting one in
+      // a customer's subject line is how "Invoice #inv_1787326690151_y55vjn"
+      // reached a send button. Callers that cannot supply a real number should
+      // refuse to compose — see gwSendInvoiceEmail.
+      number:       opts.entityNumber || '',
       amount:       opts.amount    || '',
       due_date:     opts.dueDate   || '',
       project:      opts.project   || 'your project',
+      // Empty for most invoices, so the template's line collapses to nothing
+      // rather than leaving a stray blank where a sentence should be.
+      deposit:      opts.deposit ? opts.deposit + '\n' : '',
       link:         opts.portalLink || '',   // never fall back to the bare domain
     };
 
@@ -137,7 +166,7 @@
     <button class="gw-btn gw-btn-ghost" onclick="_emOpenMailto()">
       ${gwIcon('external-link','13','#374151')} Open in Mail
     </button>
-    <button class="gw-btn gw-btn-primary" id="em-send-btn" onclick="window._emSend('${_esc(opts.entityId||'')}','${type}',${JSON.stringify(opts.onSent||null).replace(/"/g,'&quot;')})">
+    <button class="gw-btn gw-btn-primary" id="em-send-btn" onclick="window._emSend('${_esc(opts.entityId||'')}','${type}')">
       ${gwIcon('send','14','#fff')} Send Email
     </button>
   </div>
@@ -172,7 +201,7 @@
     if (bodyEl)    bodyEl.value    = _emFill(tmpl.body,    vars);
   };
 
-  window._emSend = async function (entityId, type, onSentStr) {
+  window._emSend = async function (entityId, type) {
     if (_emSending) return;
     const toEmail = document.getElementById('em-to-email')?.value.trim();
     const subject = document.getElementById('em-subject')?.value.trim();
@@ -207,7 +236,7 @@
       } else {
         if (typeof showToast === 'function') showToast('Email sent!', 'success');
         _emCloseOverlay();
-        if (typeof onSentStr === 'function') onSentStr();
+        if (typeof _emOnSent === 'function') _emOnSent();
       }
     } catch (e) {
       if (errEl) { errEl.textContent = e.message; errEl.style.display = 'flex'; }
@@ -252,28 +281,86 @@
   };
 
   window.gwSendInvoiceEmail = async function (invoiceId) {
+    // This used to fall back to gwEmailComposer({type:'invoice', entityId}) on
+    // ANY failure, and that is where the broken email came from. With no other
+    // vars, {{number}} fell through to the raw row id and every other
+    // placeholder resolved to '', producing a composer pre-filled with
+    //
+    //     Invoice #inv_1787326690151_y55vjn from Avalon Landscape ... - Due
+    //     Hi ,        Amount Due:        Due Date:        Pay securely online:
+    //
+    // and a live Send button. A degraded email is worse than no email: nothing
+    // about it looks broken enough to stop somebody sending it to a customer.
+    let res;
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}`, { credentials: 'include' });
-      const inv = await res.json();
-      const client   = inv.client_name || '';
-      const email    = inv.client_email || '';
-      const num      = inv.invoice_number || invoiceId;
-      const amount   = (inv.total != null ? '$' + Number(inv.total).toLocaleString() : (inv.amount_total != null ? '$' + Number(inv.amount_total).toLocaleString() : ''));
-      const dueDate  = inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '';
-      const project  = inv.description || inv.line_items?.[0]?.name || '';
-      const portalLink = inv.portal_token
-        ? `${window.location.origin}/invoices/portal/${inv.portal_token}`
-        : '';
-      window.gwEmailComposer({
-        type: 'invoice', toEmail: email, toName: client,
-        entityId: invoiceId, entityNumber: num,
-        amount, dueDate, project, portalLink,
-        onSent: () => { if (typeof _invLoadList === 'function') _invLoadList(); },
-      });
+      res = await fetch(`/api/invoices/${invoiceId}`, { credentials: 'include' });
     } catch (e) {
-      window.gwEmailComposer({ type: 'invoice', entityId: invoiceId });
+      return _emFail('Could not reach the server to load this invoice.');
     }
+    // res.ok was never checked, and a 404 body still parses as JSON — so a
+    // deleted invoice, or one belonging to another company, produced the blank
+    // template above rather than an error.
+    if (!res.ok) {
+      return _emFail(res.status === 404
+        ? 'That invoice no longer exists. Refresh the list and try again.'
+        : 'Could not load the invoice (' + res.status + ').');
+    }
+    let inv;
+    try { inv = await res.json(); }
+    catch (e) { return _emFail('The server sent back something unreadable for this invoice.'); }
+
+    const client = inv.client_name || '';
+    const email  = inv.client_email || '';
+    const num    = inv.invoice_number || '';
+    // Balance, not total: on a partially paid invoice the total is not what is
+    // owed, and "Amount Due" has to mean the amount due.
+    const amount = inv.balance_due != null ? _emMoney(inv.balance_due)
+                 : inv.total != null ? _emMoney(inv.total)
+                 : inv.amount_total != null ? _emMoney(inv.amount_total) : '';
+    // Date-only strings parse as UTC. The same off-by-one that made the list
+    // read "-1d ago" would print the wrong due date to the customer.
+    const dueDate = inv.due_date
+      ? new Date(inv.due_date + (String(inv.due_date).includes('T') ? '' : 'T00:00:00')).toLocaleDateString()
+      : '';
+    const project = inv.title || inv.description || inv.line_items?.[0]?.description || '';
+    const portalLink = inv.portal_token
+      ? window.location.origin + '/invoices/portal/' + inv.portal_token
+      : '';
+
+    // The number is what the customer quotes back at you; the link is the only
+    // reason the email exists. Missing either means it is not sendable — refuse,
+    // rather than papering over it with a row id and an empty line.
+    if (!num) return _emFail('This invoice has no invoice number yet, so it cannot be emailed.');
+    if (!portalLink) return _emFail('This invoice has no payment link yet, so there would be nothing for the client to pay.');
+
+    // A deposit is requested on the ESTIMATE (estimates.deposit_amt_cents, 0058);
+    // an invoice raised from one inherits it. Somebody who was asked for a
+    // deposit needs telling the deposit figure, not just the full balance.
+    const depositDue = Number(inv.deposit_due);
+    const deposit = Number.isFinite(depositDue) && depositDue > 0
+      ? 'A deposit of ' + _emMoney(depositDue) + ' is due before work begins.'
+      : '';
+
+    window.gwEmailComposer({
+      type: 'invoice', toEmail: email, toName: client,
+      entityId: invoiceId, entityNumber: num,
+      amount, dueDate, project, portalLink, deposit,
+      onSent: function () { if (typeof _invLoadList === 'function') _invLoadList(); },
+    });
   };
+
+  /** Say what went wrong rather than opening a composer full of blanks. */
+  function _emFail(msg) {
+    if (typeof showToast === 'function') showToast(msg, 'error');
+    else alert(msg);
+    return null;
+  }
+
+  function _emMoney(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '';
+    return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  }
 
   window.gwSendCustomEmail = function (clientId, clientName, clientEmail) {
     window.gwEmailComposer({
