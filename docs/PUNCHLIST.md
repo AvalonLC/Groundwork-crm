@@ -152,11 +152,15 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    (`?dry_run=true`) for verifying without writing. Full setup steps:
    `docs/RUNBOOK-finance-cron.md`. The rejected companion-Worker option is
    kept as a documented, unused alternative in `workers/finance-cron/`.
-3. **Cross-database joins are stubbed at the boundary, not built.**
-   `E2-unbilled` and job-costing's "hours vs estimate" both need data that
-   lives in the CRM's own `DB` (invoices/receivables, job estimates) —
-   Finance OS never got visibility into that schema, so both take
-   pre-joined data as a plain input.
+3. ~~**Cross-database joins are stubbed at the boundary, not built.**~~
+   **RESOLVED for `E2-unbilled` (2026-08-21):** since Finance OS and CRM tables now
+   share one D1 database (`migrations/0057_finance_merge.sql`), the unbilled-work
+   detector's invoice join is implemented in `src/db/repos.ts`'s
+   `listBilledWorkOrderIds()` and wired into the nightly rollup via
+   `src/cron/unbilled-sweep.ts` — see `docs/spec/UNBILLED.md` for the full join
+   description and `src/cron/unbilled-sweep.test.ts` for coverage.
+   Job-costing's "hours vs estimate" half of this item remains **unresolved** —
+   still a separate, not-yet-scoped gap.
 4. **Live QuickBooks API integration** (vs. file upload) remains out of
    scope — would need OAuth, a new binding/secret, rate-limit handling.
 5. **`gather-inputs.ts`'s rollup-input derivations are inferred proxies**

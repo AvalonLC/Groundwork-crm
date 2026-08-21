@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { runNightlyRollup, buildTenantRollup } from "../cron/rollup";
 import { gatherTenantRollupInputs, listTenantIdsWithPolicy } from "../cron/gather-inputs";
+import { runUnbilledWorkDetection } from "../cron/unbilled-sweep";
 
 export type CronTriggerBindings = { DB: D1Database; CRON_SECRET?: string };
 
@@ -58,11 +59,22 @@ cronTriggerRouter.post("/rollup", async (c) => {
 
   const results = dryRun ? inputs.map(buildTenantRollup) : await runNightlyRollup(db, inputs);
 
+  // Unbilled-work sweep runs alongside the rollup, once per tenant with a
+  // policy row (same tenant set the rollup itself uses) — see
+  // docs/FINANCE-OS-FIX-PLAN.md item 3 and src/cron/unbilled-sweep.ts.
+  // Same dry_run contract as the rollup above: computes/reports, writes
+  // nothing when true.
+  const unbilledResults = [];
+  for (const tenantId of tenantIds) {
+    unbilledResults.push(await runUnbilledWorkDetection(db, tenantId, dryRun));
+  }
+
   return c.json({
     as_of: asOf,
     dry_run: dryRun,
     tenants_processed: results.length,
     tenants_skipped: skipped,
     results,
+    unbilled_sweep: unbilledResults,
   });
 });
