@@ -229,6 +229,62 @@ export async function listCompletedUnbilledWorkItems(
 }
 
 /**
+ * Set of work_orders.id already traced to ANY invoice (any status — draft
+ * counts too; the question is "has someone started billing this," not
+ * "has it been paid"), via the same estimate/opportunity chain
+ * syncWorkOrderFinanceColumns (src/index.tsx) already walks:
+ *   work_orders.estimate_id -> estimates.id -> invoices.estimate_id
+ *   work_orders.id -> estimates.work_order_id -> invoices.estimate_id
+ *   work_orders.opp_id -> estimates.opp_id -> invoices.estimate_id
+ * A work order can be reached by more than one branch; the query
+ * de-duplicates via UNION (not UNION ALL) and returns each id at most once.
+ * See docs/FINANCE-OS-FIX-PLAN.md item 3 and docs/spec/UNBILLED.md (this
+ * resolves the "Needs Tyler" cross-database-join gap noted there — the
+ * join no longer crosses databases since migrations/0057_finance_merge.sql).
+ */
+export async function listBilledWorkOrderIds(
+  db: D1Database, companyId: string,
+): Promise<Set<string>> {
+  const { results } = await db.prepare(`
+    SELECT wo.id AS id FROM work_orders wo
+    JOIN estimates es ON es.id = wo.estimate_id AND es.company_id = wo.company_id
+    JOIN invoices inv ON inv.estimate_id = es.id AND inv.company_id = wo.company_id
+    WHERE wo.company_id = ?
+    UNION
+    SELECT wo.id AS id FROM work_orders wo
+    JOIN estimates es ON es.work_order_id = wo.id AND es.company_id = wo.company_id
+    JOIN invoices inv ON inv.estimate_id = es.id AND inv.company_id = wo.company_id
+    WHERE wo.company_id = ?
+    UNION
+    SELECT wo.id AS id FROM work_orders wo
+    JOIN estimates es ON es.opp_id = wo.opp_id AND es.company_id = wo.company_id AND wo.opp_id IS NOT NULL
+    JOIN invoices inv ON inv.estimate_id = es.id AND inv.company_id = wo.company_id
+    WHERE wo.company_id = ?
+  `).bind(companyId, companyId, companyId).all<{ id: string }>();
+  return new Set(results.map((r) => r.id));
+}
+
+/**
+ * The rep an automated (cron-generated) action_item gets assigned to when
+ * nothing more specific applies — every action_item requires a non-null
+ * owner_id (docs/spec/ACTIONS.md, CLAUDE.md hard rule), and a cron job has
+ * no logged-in user to attribute it to. Same role preference order already
+ * used for impersonation's "find a rep to act as" (src/index.tsx's
+ * POST /api/admin/impersonate): admin before office_manager, active only.
+ * Returns null if the tenant genuinely has no active admin/office_manager
+ * rep — callers must decide how to handle that (currently: skip creating
+ * the item rather than write a bad owner_id).
+ */
+export async function getDefaultActionOwner(
+  db: D1Database, companyId: string,
+): Promise<string | null> {
+  const row = await db.prepare(
+    `SELECT id FROM reps WHERE company_id = ? AND role IN ('admin','office_manager') AND active = 1 ORDER BY role ASC LIMIT 1`,
+  ).bind(companyId).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+/**
  * Writes the Finance-side columns on an existing work order — called from
  * the CRM's own work-order create/update handlers (src/index.tsx), same
  * request, same database. Replaces the old cross-database
@@ -463,6 +519,41 @@ export async function getOpenActionItems(
   const stmt = verb ? db.prepare(sql).bind(companyId, verb) : db.prepare(sql).bind(companyId);
   const { results } = await stmt.all<ActionItem>();
   return results;
+}
+
+/**
+ * Ids of open action_item rows for a given source_type, keyed by
+ * source_id — used by producers (like the unbilled-work sweep) that run
+ * repeatedly against the same source and must not create a second open
+ * item for something that already has one (docs/FINANCE-OS-FIX-PLAN.md
+ * item 3's "no duplicate/stale item" requirement).
+ */
+export async function getOpenActionItemSourceIds(
+  db: D1Database, companyId: string, sourceType: NonNullable<ActionItem["source_type"]>,
+): Promise<Set<string>> {
+  const { results } = await db.prepare(
+    `SELECT source_id FROM action_item WHERE company_id = ? AND status = 'open' AND source_type = ? AND source_id IS NOT NULL`,
+  ).bind(companyId, sourceType).all<{ source_id: string }>();
+  return new Set(results.map((r) => r.source_id));
+}
+
+/**
+ * Auto-resolves any open action_item for a given source once its
+ * underlying source is no longer actionable (e.g. a 'collect' item for a
+ * work order that has since been invoiced, or one whose source work order
+ * was deleted — see docs/FINANCE-OS-FIX-PLAN.md items 3 and 4). Distinct
+ * from resolveActionItem/dismissActionItem (which act on a known
+ * action_item id): this looks the row up by its source instead, since
+ * callers here only know the source, not which action_item (if any) it
+ * produced. A no-op if no open item exists for that source.
+ */
+export async function resolveActionItemsBySource(
+  db: D1Database, companyId: string, sourceType: NonNullable<ActionItem["source_type"]>, sourceId: string,
+): Promise<void> {
+  await db.prepare(`
+    UPDATE action_item SET status = 'resolved', resolved_at = datetime('now')
+    WHERE company_id = ? AND status = 'open' AND source_type = ? AND source_id = ?
+  `).bind(companyId, sourceType, sourceId).run();
 }
 
 export async function resolveActionItem(

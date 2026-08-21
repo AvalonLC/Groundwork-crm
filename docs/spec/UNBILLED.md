@@ -27,8 +27,36 @@ no receivable is a stronger signal than one where completion itself is uncertain
 action_item, never auto-invoiced) follows directly from the task title plus CLAUDE.md's
 propose-don't-write rule.
 
-**Needs Tyler:** how "no receivable" is actually determined against the existing CRM
-schema — this task is the one place Finance OS must read the CRM's `DB` binding, and
-I don't have visibility into which existing CRM tables represent invoices/receivables
-to join against. This is a real gap, not a stylistic one — worth resolving with a
-quick look at the CRM's schema before E2-unbilled starts.
+**RESOLVED (2026-08-21):** the "no receivable" join is implemented. Since
+`migrations/0057_finance_merge.sql` merged Finance OS and CRM tables into one D1
+database, `src/db/repos.ts`'s `listBilledWorkOrderIds()` determines "has a receivable"
+by checking whether a `work_orders` row is reachable from any `invoices` row through
+any of three paths (the same three `syncWorkOrderFinanceColumns` already walks in
+`src/index.tsx`, since `work_orders.estimate_id` is rarely set directly):
+
+1. `work_orders.estimate_id -> estimates.id -> invoices.estimate_id`
+2. `work_orders.id -> estimates.work_order_id -> invoices.estimate_id` (reverse FK)
+3. `work_orders.opp_id -> estimates.opp_id -> invoices.estimate_id` (shared opportunity)
+
+A work order counts as "billed" if any invoice (any status, including draft) is
+reachable by any of the three paths — this intentionally does not require the invoice
+to be paid or sent, only that billing has been initiated, matching the detector's
+purpose of surfacing forgotten billing, not collections.
+
+`src/cron/unbilled-sweep.ts`'s `runUnbilledWorkDetection()` wires this into the
+existing nightly rollup (`src/api/cron-trigger.ts`'s `POST /rollup`): it pairs
+`listCompletedUnbilledWorkItems()` (completed work orders) against
+`listBilledWorkOrderIds()` (billed work orders), runs the existing pure
+`detectUnbilledWork()` from `src/engines/unbilled.ts` against the difference, and for
+each finding creates an `action_item(verb='collect', source_type='work_order',
+source_id=work_item_id, ...)` — skipping any work order that already has an open item
+for it (dedup via `getOpenActionItemSourceIds`), and auto-resolving any previously
+open item whose work order has since been billed (`resolveActionItemsBySource`).
+`dry_run` computes findings but performs no writes. Default action owner is the first
+active `admin`/`office_manager` rep for the tenant (`getDefaultActionOwner`, same
+selection query as `POST /api/admin/impersonate`); if none exists the findings are
+still returned but no action_item is written (`skipped_no_owner`).
+
+Tests: `src/cron/unbilled-sweep.test.ts` (US-01 through US-06) cover creation,
+already-invoiced exclusion, dedup on repeat runs, auto-resolve when billed after the
+fact, `dry_run` no-write behavior, and exclusion of not-yet-completed work orders.
