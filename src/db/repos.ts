@@ -3,7 +3,7 @@ import type {
   FinanceConfigOverride, FinanceTimeEntry, FinanceWorkOrder, JobCostLedger,
   LaborRateProfile, OverheadAllocation, OverheadPool,
   RateConfidence, Receipt, RecoverySnapshot, TenantFinancePolicy,
-  UploadBatch, UploadDomain,
+  TimeEntryAdjustment, UploadBatch, UploadDomain,
 } from "./schema";
 
 export const GLOBAL_CONFIG_SCOPE = "__global__";
@@ -364,6 +364,88 @@ export async function getJobCostLedgerForJob(
   const { results } = await db.prepare(
     `SELECT * FROM job_cost_ledger WHERE company_id = ? AND job_id = ?`,
   ).bind(companyId, jobId).all<JobCostLedger>();
+  return results;
+}
+
+/** The job_cost_ledger lines posted for one specific time_entry — always
+ * exactly two once posted (labor + overhead, POSTING.md). Used to compute a
+ * reversal's negated amounts without recomputing a rate. */
+export async function getJobCostLedgerLinesForTimeEntry(
+  db: D1Database, companyId: string, timeEntryId: string,
+): Promise<JobCostLedger[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM job_cost_ledger WHERE company_id = ? AND time_entry_id = ?`,
+  ).bind(companyId, timeEntryId).all<JobCostLedger>();
+  return results;
+}
+
+// ---- time_entry_adjustments (Finance OS fix plan item 5) ----
+//
+// Posted time_entries rows and their job_cost_ledger lines are never
+// UPDATEd or DELETEd directly (POSTING.md's immutability rule; the same
+// insert-new-row-never-update precedent as CLAUDE.md hard rule 2's rate
+// rows). A correction instead posts a brand-new reversal time_entries row
+// whose job_cost_ledger lines are the exact negation of what's already
+// posted for the original entry -- not a recomputed rate -- so Job Costing's
+// net total is correct without the original ever being touched.
+
+/**
+ * Inserts the reversal time_entries row (itself posted immediately, so it
+ * can't be edited/deleted directly either) plus its negated job_cost_ledger
+ * lines, one negated line per line already posted for `originalEntryId`.
+ * Returns the new reversal entry's id.
+ */
+export async function insertReversalTimeEntry(
+  db: D1Database, companyId: string,
+  original: FinanceTimeEntry,
+  originalLines: JobCostLedger[],
+  reversalId: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const negatedOverhead = original.applied_overhead_cents != null ? -original.applied_overhead_cents : null;
+
+  await db.batch([
+    db.prepare(`
+      INSERT INTO time_entries
+        (id, rep_id, company_id, clock_in, clock_out, duration_min, job_type, notes,
+         approved, work_order_id, resolved_rate, resolved_rate_confidence,
+         applied_overhead_cents, posted_at)
+      VALUES (?,?,?,?,NULL,NULL,?,?, 1, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      reversalId, original.employee_id, companyId, now,
+      'Adjustment: Reversal', `Reversal of time entry ${original.id}`,
+      original.work_order_id, original.resolved_rate, original.resolved_rate_confidence,
+      negatedOverhead,
+    ),
+    ...originalLines.map(line => db.prepare(`
+      INSERT INTO job_cost_ledger (company_id, time_entry_id, job_id, line_type, amount_cents, division)
+      VALUES (?,?,?,?,?,?)
+    `).bind(companyId, reversalId, line.job_id, line.line_type, -line.amount_cents, line.division)),
+  ]);
+}
+
+/** The audit-trail row linking an original posted entry to its reversal
+ * (and, for a correction rather than a pure "logged in error" reversal, the
+ * replacement entry carrying the corrected values). */
+export async function insertTimeEntryAdjustment(
+  db: D1Database, row: Omit<TimeEntryAdjustment, "created_at">,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO time_entry_adjustments
+      (id, company_id, original_entry_id, reversal_entry_id, replacement_entry_id, reason, created_by)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(
+    row.id, row.company_id, row.original_entry_id, row.reversal_entry_id,
+    row.replacement_entry_id, row.reason, row.created_by,
+  ).run();
+}
+
+export async function getTimeEntryAdjustmentsForEntry(
+  db: D1Database, companyId: string, originalEntryId: string,
+): Promise<TimeEntryAdjustment[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM time_entry_adjustments WHERE company_id = ? AND original_entry_id = ? ORDER BY created_at`,
+  ).bind(companyId, originalEntryId).all<TimeEntryAdjustment>();
   return results;
 }
 

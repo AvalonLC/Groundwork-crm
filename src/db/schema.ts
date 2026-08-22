@@ -84,6 +84,27 @@ export interface JobCostLedger {
   posted_at: string;
 }
 
+/**
+ * Finance OS fix plan item 5: audit trail for a correction to an
+ * already-posted time_entries row. Posted entries and their job_cost_ledger
+ * lines are never UPDATEd or DELETEd directly (see POSTING.md's
+ * immutability rule and CLAUDE.md hard rule 2's rate-row precedent) — a
+ * correction instead posts a reversal time_entries row that negates the
+ * original's ledger impact, optionally paired with a replacement entry
+ * carrying the corrected values, and this row links the three together for
+ * audit trail. migrations/0083_work_order_archive_and_time_adjustments.sql.
+ */
+export interface TimeEntryAdjustment {
+  id: string;
+  company_id: string;
+  original_entry_id: string; // references time_entries(id) — the posted entry being corrected
+  reversal_entry_id: string; // references time_entries(id) — negates the original's posted ledger lines
+  replacement_entry_id: string | null; // references time_entries(id) — null if this was a pure reversal (entry logged in error), not a correction
+  reason: string;
+  created_by: string;
+  created_at: string;
+}
+
 // ---- rate profiles, overhead allocation, recovery snapshots ----
 
 export type RateScope = "employee" | "crew" | "role" | "tenant";

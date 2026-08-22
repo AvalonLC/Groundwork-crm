@@ -41,7 +41,10 @@ import { ratesRouter } from './api/rates'
 import { actionsRouter } from './api/actions'
 import { financeUiRouter } from './ui/mount'
 import { cronTriggerRouter } from './api/cron-trigger'
-import { updateWorkOrderFinanceColumns } from './db/repos'
+import {
+  updateWorkOrderFinanceColumns, getTimeEntry, getJobCostLedgerLinesForTimeEntry,
+  insertReversalTimeEntry, insertTimeEntryAdjustment,
+} from './db/repos'
 import { postTimeEntryToLedger } from './api/posting'
 // ── Marketing OS — mounted sub-routers (see src/marketing/) ──────────────────
 import { marketingRouter } from './marketing/api'
@@ -4355,6 +4358,11 @@ app.get('/api/time/team-summary', requireAuth, async (c) => {
   return json(c, data)
 })
 
+/** The exact message for a blocked edit/delete of a posted time entry —
+ * kept as one constant so both handlers below can never drift apart. */
+const TE_POSTED_CANNOT_MUTATE_MSG =
+  'This time entry has been posted to the job cost ledger and cannot be edited or deleted directly. Use an adjustment to correct it.'
+
 // PUT /api/time/entries/:id   — edit notes/jobType (own entry) or approve (admin)
 app.put('/api/time/entries/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -4370,6 +4378,17 @@ app.put('/api/time/entries/:id', requireAuth, async (c) => {
   // Non-admins can only edit their own entries
   if (role !== 'admin' && role !== 'office_manager' && entry.rep_id !== repId)
     return err(c, 'Forbidden', 403)
+
+  // Finance OS fix plan item 5: once an entry is posted to job_cost_ledger
+  // (posted_at IS NOT NULL — src/api/posting.ts, at clock-out), it and its
+  // ledger lines are immutable per POSTING.md. Direct edits here used to
+  // silently corrupt job costing with no record a correction ever happened —
+  // any field, not just clockIn/clockOut/duration, since even a jobType/notes
+  // change after posting bypasses the audit trail this route exists to
+  // preserve. Corrections go through POST /api/time/entries/:id/adjust
+  // instead, which posts a reversal (+ optional replacement) rather than
+  // mutating this row.
+  if (entry.posted_at) return err(c, TE_POSTED_CANNOT_MUTATE_MSG, 409)
 
   const updates: string[] = []
   const vals: any[] = []
@@ -4406,14 +4425,92 @@ app.delete('/api/time/entries/:id', requireAuth, async (c) => {
   const repId     = c.var.repId as string
   const id        = c.req.param('id')
   const entry = await c.env.DB.prepare(
-    `SELECT rep_id, approved FROM time_entries WHERE id=? AND company_id=? LIMIT 1`
-  ).bind(id, companyId).first<{ rep_id: string; approved: number }>()
+    `SELECT rep_id, approved, posted_at FROM time_entries WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(id, companyId).first<{ rep_id: string; approved: number; posted_at: string | null }>()
   if (!entry) return err(c, 'Not found', 404)
   if (role !== 'admin' && role !== 'office_manager' && entry.rep_id !== repId)
     return err(c, 'Forbidden', 403)
+  // Finance OS fix plan item 5: a posted entry is never deleted, regardless
+  // of role — deleting it would silently remove the source Job Costing
+  // already booked ledger lines against, with no trace. This check comes
+  // before the pre-existing approved-entry check below (a separate,
+  // unrelated approval-workflow guard, not a Finance OS one) since a posted
+  // entry is blocked for everyone, admins included, where an approved-but-
+  // unposted entry is only blocked for non-admins.
+  if (entry.posted_at) return err(c, TE_POSTED_CANNOT_MUTATE_MSG, 409)
   if (entry.approved === 1 && role !== 'admin') return err(c, 'Cannot delete approved entry', 403)
   await c.env.DB.prepare(`DELETE FROM time_entries WHERE id=? AND company_id=?`).bind(id, companyId).run()
   return json(c, { deleted: id })
+})
+
+// POST /api/time/entries/:id/adjust   { reason, replacement?: { clockIn, clockOut, jobType?, notes? } }
+//
+// Finance OS fix plan item 5: the only way to correct a posted time entry.
+// Posts a reversal time_entries row whose job_cost_ledger lines exactly
+// negate what's already posted for the original (not a recomputed rate —
+// see insertReversalTimeEntry), optionally paired with a replacement entry
+// carrying the corrected clock-in/out that gets posted through the normal
+// postTimeEntryToLedger path. The original entry and its ledger lines are
+// never touched. A time_entry_adjustments row links original/reversal/
+// replacement together for audit trail.
+app.post('/api/time/entries/:id/adjust', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  const repId     = c.var.repId as string
+  const id        = c.req.param('id')
+  const b = await c.req.json().catch(() => ({})) as any
+
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  if (!b.reason || !String(b.reason).trim()) return err(c, 'reason is required', 400)
+
+  const original = await getTimeEntry(c.env.DB, companyId, id)
+  if (!original) return err(c, 'Entry not found', 404)
+  if (!original.posted_at) return err(c, 'Entry is not posted — edit it directly instead of adjusting it', 409)
+
+  const originalLines = await getJobCostLedgerLinesForTimeEntry(c.env.DB, companyId, id)
+  if (!originalLines.length) {
+    // Should not happen once posted_at is set (POSTING.md posts both
+    // atomically), but guard rather than post a reversal with nothing to
+    // reverse.
+    return err(c, 'Posted entry has no job_cost_ledger lines to reverse', 500)
+  }
+
+  const reversalId = 'te_' + uid()
+  await insertReversalTimeEntry(c.env.DB, companyId, original, originalLines, reversalId)
+
+  // Optional replacement entry — a genuine correction (wrong hours, wrong
+  // job) rather than a pure "this was logged in error" reversal. Created as
+  // a fresh, unposted time_entries row and posted through the same
+  // postWorkOrderTimeEntry -> postTimeEntryToLedger path clock-out uses, so
+  // it gets its own independently-resolved rate/overhead, never copied from
+  // the original.
+  let replacementId: string | null = null
+  if (b.replacement) {
+    const r = b.replacement
+    if (!r.clockIn || !r.clockOut) return err(c, 'replacement requires clockIn and clockOut', 400)
+    replacementId = 'te_' + uid()
+    const durMin = Math.max(0, Math.round((new Date(r.clockOut).getTime() - new Date(r.clockIn).getTime()) / 60000))
+    await c.env.DB.prepare(`
+      INSERT INTO time_entries (id, rep_id, company_id, clock_in, clock_out, duration_min, job_type, notes, approved, work_order_id)
+      VALUES (?,?,?,?,?,?,?,?,1,?)
+    `).bind(
+      replacementId, original.employee_id, companyId, r.clockIn, r.clockOut, durMin,
+      r.jobType || 'General Work', r.notes || `Correction of time entry ${id}`, original.work_order_id,
+    ).run()
+    await postWorkOrderTimeEntry(c.env.DB, companyId, { id: replacementId, work_order_id: original.work_order_id })
+  }
+
+  await insertTimeEntryAdjustment(c.env.DB, {
+    id: 'tea_' + uid(),
+    company_id: companyId,
+    original_entry_id: id,
+    reversal_entry_id: reversalId,
+    replacement_entry_id: replacementId,
+    reason: String(b.reason),
+    created_by: repId,
+  })
+
+  return json(c, { original_entry_id: id, reversal_entry_id: reversalId, replacement_entry_id: replacementId }, 201)
 })
 
 // POST /api/time/approve-batch   { ids: string[], approved: 0|1|2 }  — admin bulk approve
@@ -12466,6 +12563,17 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   // So the fan-out becomes opt-in rather than the default. "A list of work
   // orders" now means what it says; the board asks for the expansion explicitly.
   const expandDays = c.req.query('expand') === 'days'
+  // Finance OS fix plan item 4: archived work orders (PUT /:id/archive) are
+  // meant to leave active views — schedule board, open work-order lists —
+  // without losing their financial history, so this default-list endpoint
+  // excludes them unless the caller explicitly asks for them via
+  // ?include_archived=1. Deliberately NOT folded into the existing `status`
+  // filter above: wo.status is the free-text scheduling status column
+  // ('scheduled'/'completed'/etc, migrations/0016_crews.sql) and has nothing
+  // to do with archived_at — overloading status='archived' onto it would
+  // silently break every existing caller that filters by a real status value.
+  // Backward compatible: archived_at is NULL for every pre-existing row.
+  const includeArchived = c.req.query('include_archived') === '1'
   let sql = `SELECT wo.*, COALESCE(md.day_date, wo.scheduled_date) as scheduled_date, COALESCE(md.start_time, wo.scheduled_time) as scheduled_time,
              COALESCE(md.end_time, wo.scheduled_end_time) as scheduled_end_time,
              COALESCE(md.scheduled_duration_minutes, wo.scheduled_duration_minutes) as scheduled_duration_minutes,
@@ -12481,6 +12589,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
              LEFT JOIN crews cr ON cr.id = COALESCE(NULLIF(md.crew_id,''), wo.crew_id) AND cr.company_id = wo.company_id
              WHERE wo.company_id = ?`
   const params: any[] = [companyId]
+  if (!includeArchived) { sql += ` AND wo.archived_at IS NULL` }
   if (status)   { sql += ` AND wo.status = ?`;          params.push(status) }
   if (crewId)   { sql += ` AND COALESCE(NULLIF(md.crew_id,''), wo.crew_id) = ?`; params.push(crewId) }
   if (clientId) { sql += ` AND wo.client_id = ?`;       params.push(clientId) }
@@ -13612,7 +13721,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b026">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260822b001">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -13635,8 +13744,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260820b026"></script>
-  <script src="/js/client_portal.js?v=20260820b026"></script>  <script>
+  <script src="/js/platform_core.js?v=20260822b001"></script>
+  <script src="/js/client_portal.js?v=20260822b001"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -14270,10 +14379,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260820b026">
-  <link rel="stylesheet" href="/js/styles.css?v=20260820b026">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260820b026">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260820b026">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260822b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260822b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260822b001">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260822b001">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14950,46 +15059,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260820b026"></script>
-<script src="/js/gw-icons.js?v=20260820b026"></script>
-<script src="/js/sales-process.js?v=20260820b026"></script>
-<script src="/js/richtext.js?v=20260820b026"></script>
-<script src="/js/db.js?v=20260820b026"></script>
-<script src="/js/data.js?v=20260820b026"></script>
-<script src="/js/reps.js?v=20260820b026"></script>
-<script src="/js/record-page.js?v=20260820b026"></script>
-<script src="/js/academy.js?v=20260820b026"></script>
-<script src="/js/task_engine.js?v=20260820b026"></script>
-<script src="/js/gw_i18n.js?v=20260820b026"></script>
-<script src="/js/app_premium.js?v=20260820b026"></script>
-<script src="/js/estimates.js?v=20260820b026"></script>
-<script src="/js/multiday.js?v=20260820b026"></script>
-<script src="/js/proposals.js?v=20260820b026"></script>
-<script src="/js/pricing.js?v=20260820b026"></script>
-<script src="/js/invoices.js?v=20260820b026"></script>
-<script src="/js/csv_import.js?v=20260820b026"></script>
-<script src="/js/onboarding.js?v=20260820b026"></script>
-<script src="/js/gw_copilot.js?v=20260820b026"></script>
-<script src="/js/groundwork_ai.js?v=20260820b026"></script>
-<script src="/js/recurring_plans.js?v=20260820b026"></script>
-<script src="/js/reviews.js?v=20260820b026"></script>
-<script src="/js/stripe.js?v=20260820b026"></script>
-<script src="/js/email.js?v=20260820b026"></script>
-<script src="/js/notifications.js?v=20260820b026"></script>
-<script src="/js/integrations.js?v=20260820b026"></script>
-<script src="/js/sms.js?v=20260820b026"></script>
-<script src="/js/calendar_sync.js?v=20260820b026"></script>
-<script src="/js/ai_followup.js?v=20260820b026"></script>
-<script src="/js/user_management.js?v=20260820b026"></script>
-<script src="/js/platform_admin.js?v=20260820b026"></script>
-<script src="/js/time_tracker.js?v=20260820b026"></script>
-<script src="/js/field_workday.js?v=20260820b026"></script>
-<script src="/js/platform_core.js?v=20260820b026"></script>
-<script src="/js/approval_engine.js?v=20260820b026"></script>
-<script src="/js/automation_engine.js?v=20260820b026"></script>
-<script src="/js/client_portal.js?v=20260820b026"></script>
-<script src="/js/field_mode.js?v=20260820b026"></script>
-<script src="/js/assets_hub.js?v=20260820b026"></script><script src="/js/marketing.js?v=20260820b026"></script><script>
+<script src="/js/gw_date.js?v=20260822b001"></script>
+<script src="/js/gw-icons.js?v=20260822b001"></script>
+<script src="/js/sales-process.js?v=20260822b001"></script>
+<script src="/js/richtext.js?v=20260822b001"></script>
+<script src="/js/db.js?v=20260822b001"></script>
+<script src="/js/data.js?v=20260822b001"></script>
+<script src="/js/reps.js?v=20260822b001"></script>
+<script src="/js/record-page.js?v=20260822b001"></script>
+<script src="/js/academy.js?v=20260822b001"></script>
+<script src="/js/task_engine.js?v=20260822b001"></script>
+<script src="/js/gw_i18n.js?v=20260822b001"></script>
+<script src="/js/app_premium.js?v=20260822b001"></script>
+<script src="/js/estimates.js?v=20260822b001"></script>
+<script src="/js/multiday.js?v=20260822b001"></script>
+<script src="/js/proposals.js?v=20260822b001"></script>
+<script src="/js/pricing.js?v=20260822b001"></script>
+<script src="/js/invoices.js?v=20260822b001"></script>
+<script src="/js/csv_import.js?v=20260822b001"></script>
+<script src="/js/onboarding.js?v=20260822b001"></script>
+<script src="/js/gw_copilot.js?v=20260822b001"></script>
+<script src="/js/groundwork_ai.js?v=20260822b001"></script>
+<script src="/js/recurring_plans.js?v=20260822b001"></script>
+<script src="/js/reviews.js?v=20260822b001"></script>
+<script src="/js/stripe.js?v=20260822b001"></script>
+<script src="/js/email.js?v=20260822b001"></script>
+<script src="/js/notifications.js?v=20260822b001"></script>
+<script src="/js/integrations.js?v=20260822b001"></script>
+<script src="/js/sms.js?v=20260822b001"></script>
+<script src="/js/calendar_sync.js?v=20260822b001"></script>
+<script src="/js/ai_followup.js?v=20260822b001"></script>
+<script src="/js/user_management.js?v=20260822b001"></script>
+<script src="/js/platform_admin.js?v=20260822b001"></script>
+<script src="/js/time_tracker.js?v=20260822b001"></script>
+<script src="/js/field_workday.js?v=20260822b001"></script>
+<script src="/js/platform_core.js?v=20260822b001"></script>
+<script src="/js/approval_engine.js?v=20260822b001"></script>
+<script src="/js/automation_engine.js?v=20260822b001"></script>
+<script src="/js/client_portal.js?v=20260822b001"></script>
+<script src="/js/field_mode.js?v=20260822b001"></script>
+<script src="/js/assets_hub.js?v=20260822b001"></script><script src="/js/marketing.js?v=20260822b001"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
