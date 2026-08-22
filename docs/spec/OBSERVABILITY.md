@@ -102,10 +102,21 @@ would be picking that decision for Tyler instead of surfacing it.
 
 ## Status
 
-**Open — awaiting Tyler's choice between (a) Cloudflare Workers
-Logs/Logpush and (b) a third-party tracker (e.g. Sentry)**, or a decision
-to defer this further. Once decided, the follow-up work is: wire up the
-chosen tool (secret + minimal integration in the three helpers' catch
-blocks, or a platform-level toggle for option (a)), and separately, decide
-whether to build the Setup & Config no-op surfacing from point 2 above.
-Neither has an estimate yet since neither has been scoped past this note.
+**RESOLVED (2026-08-22) — Tyler chose option (a), Cloudflare Workers
+Logs/Logpush.** Implemented in `wrangler.jsonc` via the platform-native
+`observability: { enabled: true }` block (PR #95) — no new secret, no new
+vendor, exactly as scoped above. This automatically retains and makes
+searchable both the per-request invocation log and every existing
+`console.error`/`console.warn` call in the three helpers listed above, with
+no code changes to the helpers themselves. Takes effect on the next deploy
+to `main`, which the existing `.github/workflows/deploy.yml` pipeline
+triggers automatically once this change is merged. Visible afterward in
+the Cloudflare dashboard under Workers & Pages → groundwork-crm →
+Observability.
+
+Point 2 above (surfacing `postWorkOrderTimeEntry`'s silent "crew has no
+division set" no-op somewhere user-facing, not just a log line) is a
+separate, still-unbuilt idea — not part of this decision and not built by
+this change. Noted here so it isn't independently rediscovered later; a
+natural home if it's picked up is `src/ui/config-admin.tsx`'s Setup &
+Config page (see point 2's original text above).

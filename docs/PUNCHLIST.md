@@ -407,9 +407,12 @@ section. Highest-risk guesses, ranked:
    helpers** (`syncWorkOrderFinanceColumns`, `postWorkOrderTimeEntry`,
    `markOpportunityCollectedFromInvoice`, all `src/index.tsx`) — on
    failure they only `console.error`/`console.warn`, and nothing retains
-   or alerts on that output today. Deliberately **not** built — the fix
-   plan's own item 7 calls this "a standing risk to document and decide
-   on," not a PR, and the recommended fix adds a new secret/dependency
-   (Cloudflare Workers Logs/Logpush vs. a third-party tracker like
-   Sentry) that needs Tyler's call, not an automatic pick. Full writeup,
-   what was checked, and the open decision: `docs/spec/OBSERVABILITY.md`.
+   or alerts on that output today. Deliberately **not** built at first —
+   the fix plan's own item 7 called this "a standing risk to document and
+   decide on," not a PR, and the recommended fix added a new
+   secret/dependency (Cloudflare Workers Logs/Logpush vs. a third-party
+   tracker like Sentry) that needed Tyler's call, not an automatic pick.
+   **RESOLVED (2026-08-22)** — Tyler chose Cloudflare Workers Logs/Logpush;
+   enabled via `wrangler.jsonc`'s `observability: { enabled: true }` block
+   (PR #95), no new secret or vendor. Full writeup and the decision
+   record: `docs/spec/OBSERVABILITY.md`.
