@@ -21,6 +21,25 @@ const VERB_COPY: Record<ActionVerb, string> = {
 
 const sum = (items: ActionItem[]) => items.reduce((t, i) => t + (i.amount_cents ?? 0), 0);
 
+/** Whole days between an `as_of` date string (YYYY-MM-DD, UTC) and now.
+ * Used only to flag a stale nightly rollup — see the "last updated"
+ * freshness note below. Never negative in practice (as_of is always
+ * <= today), but Math.max guards against clock skew producing a
+ * confusing negative day count. */
+function daysSince(asOf: string): number {
+  const then = new Date(`${asOf}T00:00:00Z`).getTime();
+  const now = Date.now();
+  return Math.max(0, Math.round((now - then) / 86_400_000));
+}
+
+/** Fix plan item 6 ("Prevent silent CRON_SECRET drift from recurring"),
+ * hardening step 3: a human, in-app signal that the nightly rollup is
+ * current, independent of whether anyone is watching GitHub Actions or
+ * email. The rollup runs once a day, so >1 day since the last snapshot
+ * means at least one run was missed — worth a visible flag rather than a
+ * silently aging number nobody notices. See docs/RUNBOOK-finance-cron.md. */
+const ROLLUP_STALE_AFTER_DAYS = 1;
+
 /**
  * Money Loop (renamed from "Control Center" 2026-08-06 to match the
  * confirmed 8-item nav shape — gwFinancial() in app_premium.js uses the
@@ -99,6 +118,20 @@ moneyLoopRouter.get("/", async (c) => {
             <div class="fin-meter">
               <div class="fin-meter-f" style={`width:${Math.min(pct, 100).toFixed(1)}%`}></div>
             </div>
+            {daysSince(snapshot.as_of) > ROLLUP_STALE_AFTER_DAYS ? (
+              <p class="fin-hero-s" data-testid="rollup-stale-warning" style="color:var(--gw-amber);font-weight:700;margin-top:10px">
+                &#9888; Last updated {snapshot.as_of} ({daysSince(snapshot.as_of)} days ago) — the
+                nightly rollup should run every night. If this keeps growing, check the{" "}
+                <a href="https://github.com/AvalonLC/Groundwork-crm/actions/workflows/finance-cron.yml" style="font-weight:700">
+                  Finance OS Nightly Rollup
+                </a>{" "}
+                workflow.
+              </p>
+            ) : (
+              <p class="fin-hero-s" data-testid="rollup-last-updated" style="color:var(--gw-muted);margin-top:10px">
+                Last updated {snapshot.as_of}
+              </p>
+            )}
           </>
         ) : (
           <>

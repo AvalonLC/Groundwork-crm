@@ -40,8 +40,16 @@ jobs:
   trigger-rollup:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Fix plan item 6: needed so the failure-notification step below can
+    # open/update a GitHub issue with the default GITHUB_TOKEN — no new
+    # secret required. Read-only otherwise; only 'issues: write' is added
+    # beyond the repo's default read permissions.
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Call Finance OS rollup endpoint
+        id: rollup
         run: |
           url="https://groundwork-crm.com/internal/cron/rollup"
           sep="?"
@@ -72,3 +80,66 @@ jobs:
             echo "::error::Rollup endpoint returned $http_status (expected 200) — see response body above, and docs/RUNBOOK-finance-cron.md for triage."
             exit 1
           fi
+
+      # Fix plan item 6 ("Prevent silent CRON_SECRET drift from recurring"):
+      # a scheduled Action failing on its own only produces a red X in the
+      # Actions tab that nobody watches. This step runs ONLY on failure
+      # (of the step above) and ONLY for the real schedule trigger (never
+      # for a manual workflow_dispatch dry run, which fails loudly to
+      # whoever is already watching it run) — it opens (or reuses, via a
+      # stable title) a GitHub issue so the failure surfaces as an
+      # actionable, assignable, notifying-by-default artifact instead of
+      # something you only notice by checking the Actions tab days later.
+      # See docs/RUNBOOK-finance-cron.md "If a scheduled run fails".
+      - name: Open/update an issue on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Finance OS Nightly Rollup failed";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `The scheduled nightly rollup failed on ${new Date().toISOString().slice(0, 10)}.`,
+              '',
+              `Run: ${runUrl}`,
+              '',
+              'Most likely causes, in order — see docs/RUNBOOK-finance-cron.md "If a scheduled run fails":',
+              '- **401** — the GitHub Actions and Cloudflare Pages `CRON_SECRET` values no longer match.',
+              '- **503** — `CRON_SECRET` was never set (or was cleared) on the Cloudflare Pages side.',
+              '- Anything else — check the run log above for the response body.',
+              '',
+              'This issue is reused (not duplicated) across consecutive failing nights — closing it is safe;',
+              'the next failure reopens it rather than piling up duplicates.',
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              labels: 'finance-cron-failure',
+            });
+            const match = existing.data.find((i) => i.title === title);
+
+            if (match) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                state: 'open',
+                body,
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body: `Failed again — see run: ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['finance-cron-failure'],
+              });
+            }
