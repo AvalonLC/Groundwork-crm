@@ -20959,11 +20959,38 @@ window._sbUnscheduleDay = async function(woId) {
 window._sbDeleteVisit = async function(woId) {
   if (!confirm('Delete this work order? This cannot be undone.')) return;
   try {
-    await fetch(`/api/work-orders/${woId}`,{method:'DELETE', credentials:'include'});
+    const res = await fetch(`/api/work-orders/${woId}`,{method:'DELETE', credentials:'include'});
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      // Finance OS fix plan item 4: a work order with posted financial
+      // activity can't be hard-deleted (409) — offer Archive as the
+      // alternative right from the same error toast instead of just
+      // reporting the failure.
+      if (res.status === 409 && confirm(`${body.error || 'This work order cannot be deleted.'}\n\nArchive it instead?`)) {
+        await window._sbArchiveVisit(woId);
+      } else {
+        showToast(body.error || 'Delete failed', 'error');
+      }
+      return;
+    }
     showToast('Work order deleted','success');
     _sbCloseModal();
     await _sbRefresh();
-  } catch(e) { showToast('Delete failed','error'); }
+  } catch(e) { showToast((e && e.message) || 'Delete failed','error'); }
+};
+
+window._sbArchiveVisit = async function(woId) {
+  try {
+    const res = await fetch(`/api/work-orders/${woId}/archive`,{method:'PUT', credentials:'include'});
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      showToast(body.error || 'Archive failed', 'error');
+      return;
+    }
+    showToast('Work order archived','success');
+    _sbCloseModal();
+    await _sbRefresh();
+  } catch(e) { showToast((e && e.message) || 'Archive failed','error'); }
 };
 
 window._sbSkipVisit = function(woId) {
@@ -22451,10 +22478,25 @@ window.workOrderList = workOrderList;
 window._wlDeleteWO = async function(id) {
   if (!confirm('Delete this work order?')) return;
   try {
-    await fetch(`/api/work-orders/${id}`,{method:'DELETE'});
+    const res = await fetch(`/api/work-orders/${id}`,{method:'DELETE', credentials:'include'});
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      // Finance OS fix plan item 4: a work order with posted financial
+      // activity can't be hard-deleted (409) — offer Archive as the
+      // alternative right from the same error toast instead of just
+      // reporting the failure.
+      if (res.status === 409 && confirm(`${body.error || 'This work order cannot be deleted.'}\n\nArchive it instead?`)) {
+        const archiveRes = await fetch(`/api/work-orders/${id}/archive`,{method:'PUT', credentials:'include'});
+        if (archiveRes.ok) { showToast('Work order archived','success'); workOrderList(); }
+        else { const b = await archiveRes.json().catch(() => ({})); showToast(b.error || 'Archive failed','error'); }
+      } else {
+        showToast(body.error || 'Delete failed', 'error');
+      }
+      return;
+    }
     showToast('Work order deleted','success');
     workOrderList();
-  } catch(e) { showToast('Delete failed','error'); }
+  } catch(e) { showToast((e && e.message) || 'Delete failed','error'); }
 };
 
 window._p6DeleteWO = function(id) {
