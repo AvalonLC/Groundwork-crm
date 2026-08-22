@@ -13,6 +13,19 @@
     "nodejs_compat"
   ],
 
+  // ── Observability: Cloudflare Workers Logs ────────────────────────────────────
+  // Decided 2026-08-22 (Tyler chose this over a third-party tracker like
+  // Sentry — see docs/spec/OBSERVABILITY.md). No new secret, no new vendor:
+  // this retains and makes searchable every request's invocation log plus
+  // all existing console.error/console.warn output (including the three
+  // best-effort Finance sync helpers in src/index.tsx) in the Cloudflare
+  // dashboard under Workers & Pages → groundwork-crm → Observability.
+  // head_sampling_rate omitted -> defaults to 1 (log 100% of requests),
+  // fine for this app's traffic volume.
+  "observability": {
+    "enabled": true
+  },
+
   // ── D1 Database ─────────────────────────────────────────────────────────────
   // Lives in Tyler@avalon-lc.com's Cloudflare account.
   // Run `wrangler d1 list` to verify the UUID if you recreate the project.
