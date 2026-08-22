@@ -86,7 +86,10 @@ whoever has observability tooling and thinks to look. This overlaps with
 item 2's Setup & Config redesign (raw JSON editors now gated behind
 `isSuperAdmin`, `src/ui/config-admin.tsx`) — if that page ever grows
 anything beyond raw config for super-admins, this is a natural fit there.
-Not built now; noted so it isn't independently rediscovered later.
+**Built (2026-08-22, PR TBD)** — `getCrewsMissingDivisionWithUnpostedTime`
+(`src/db/repos.ts`) plus a banner on the owner-gated Setup & Config page
+(`src/ui/config-admin.tsx`) now shows, per crew with no division set, how
+many closed-but-unposted time entries are stuck behind it.
 
 ## Why this wasn't folded into items 4-6
 

@@ -264,6 +264,52 @@ export async function listBilledWorkOrderIds(
   return new Set(results.map((r) => r.id));
 }
 
+/** One row per crew whose missing `division` is currently blocking time
+ * entries from posting — see getCrewsMissingDivisionWithUnpostedTime below. */
+export interface UnpostableCrewDivisionGap {
+  crew_id: string;
+  crew_name: string;
+  unposted_count: number;
+}
+
+/**
+ * Surfaces docs/spec/OBSERVABILITY.md point 2: `postWorkOrderTimeEntry`
+ * (src/index.tsx) silently no-ops at clock-out when the closed time entry's
+ * work order points to a crew with no `division` set (crews.division,
+ * migrations/0017_schedule_enhancements.sql) — that crew's time then never
+ * posts to job_cost_ledger, forever, with nothing before this pointing a
+ * human at the gap. This counts, per active crew with `division IS NULL`,
+ * how many closed-but-unposted time entries are stuck behind it, so
+ * Setup & Config can show "N time entries this week couldn't post — no
+ * division set on crew X" instead of that being purely a log line.
+ *
+ * Scope is deliberately "ever unposted", not just "this week" — a gap left
+ * unfixed for a month should still show the full backlog, not just the
+ * newest slice of it. "Unposted" here means clock_out IS NOT NULL (the
+ * entry is closed, so postWorkOrderTimeEntry has already had its one shot
+ * at it) AND posted_at IS NULL (see POSTING.md's write-once posted_at
+ * guard) — an entry still clocked in isn't "stuck", it just hasn't been
+ * attempted yet. Only counts entries with a work_order_id pointing at a
+ * real work order with a real crew_id assigned — general/non-job time and
+ * work orders with no crew assigned are out of scope for this specific gap
+ * (they no-op in postWorkOrderTimeEntry for a different, expected reason).
+ */
+export async function getCrewsMissingDivisionWithUnpostedTime(
+  db: D1Database, companyId: string,
+): Promise<UnpostableCrewDivisionGap[]> {
+  const { results } = await db.prepare(`
+    SELECT c.id AS crew_id, c.name AS crew_name, COUNT(te.id) AS unposted_count
+    FROM crews c
+    JOIN work_orders wo ON wo.crew_id = c.id AND wo.company_id = c.company_id
+    JOIN time_entries te ON te.work_order_id = wo.id AND te.company_id = c.company_id
+      AND te.clock_out IS NOT NULL AND te.posted_at IS NULL
+    WHERE c.company_id = ? AND c.active = 1 AND c.division IS NULL
+    GROUP BY c.id, c.name
+    ORDER BY unposted_count DESC, c.name
+  `).bind(companyId).all<UnpostableCrewDivisionGap>();
+  return results;
+}
+
 /**
  * The rep an automated (cron-generated) action_item gets assigned to when
  * nothing more specific applies — every action_item requires a non-null
