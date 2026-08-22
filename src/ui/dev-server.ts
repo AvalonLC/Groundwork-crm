@@ -109,13 +109,19 @@ app.post("/test/reset-crm", async (c) => {
   // explicit for clarity. Callers seeding job_cost_ledger against these rows
   // (job-costing.e2e.ts) must call resetFinanceDb() BEFORE this, not after —
   // job_cost_ledger.time_entry_id/job_id are real FKs into time_entries/
-  // work_orders since migrations/0057_finance_merge.sql.
+  // work_orders since migrations/0057_finance_merge.sql. crew_members before
+  // crews (real FK, ON DELETE CASCADE, explicit for the same reason as
+  // work_order_employees); crews itself comes AFTER work_orders since
+  // work_orders.crew_id is a real FK into crews(id) (migrations/0016_crews.sql)
+  // — added for config-admin's division-gap banner e2e coverage.
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM payments WHERE company_id = ?`).bind(company_id),
     c.env.DB.prepare(`DELETE FROM invoices WHERE company_id = ?`).bind(company_id),
     c.env.DB.prepare(`DELETE FROM time_entries WHERE company_id = ?`).bind(company_id),
     c.env.DB.prepare(`DELETE FROM work_order_employees WHERE company_id = ?`).bind(company_id),
     c.env.DB.prepare(`DELETE FROM work_orders WHERE company_id = ?`).bind(company_id),
+    c.env.DB.prepare(`DELETE FROM crew_members WHERE company_id = ?`).bind(company_id),
+    c.env.DB.prepare(`DELETE FROM crews WHERE company_id = ?`).bind(company_id),
   ]);
   return c.json({ ok: true });
 });

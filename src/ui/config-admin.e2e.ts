@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { resetFinanceDb } from "./test-seed";
+import { resetFinanceDb, resetCrmDb, execCrm } from "./test-seed";
 
 const TENANT = "t-e2e-config-admin";
 
 test.beforeEach(async ({ request }) => {
   await resetFinanceDb(request, TENANT);
+  await resetCrmDb(request, TENANT);
 });
 
 test("UC-01 super-admin owner sees all seven configs, each starting as 'using static default'", async ({ page }) => {
@@ -183,4 +184,62 @@ test("UC-09 a config containing & and < survives the round trip", async ({ page 
 
   const value = await page.getByTestId("editor-automation_policy").inputValue();
   expect(JSON.parse(value)).toEqual(payload);
+});
+
+// docs/spec/OBSERVABILITY.md point 2 — a crew with no division set silently
+// blocks its own time entries from ever posting to job_cost_ledger. These
+// pin the Setup & Config surfacing of that gap (getCrewsMissingDivisionWithUnpostedTime,
+// src/db/repos.ts).
+test("UC-10 a crew with no division and closed-unposted time shows the division-gap banner with a count", async ({ page, request }) => {
+  await execCrm(request,
+    `INSERT INTO crews (id, company_id, name, division) VALUES (?,?,?,NULL)`,
+    ["crew-no-div", TENANT, "Crew Alpha"]);
+  await execCrm(request,
+    `INSERT INTO work_orders (id, company_id, wo_number, crew_id, status) VALUES (?,?,?,?,?)`,
+    ["wo-no-div", TENANT, "WO-NODIV-1", "crew-no-div", "completed"]);
+  // Two closed-but-unposted entries against that work order.
+  await execCrm(request,
+    `INSERT INTO time_entries (id, rep_id, company_id, clock_in, clock_out, duration_min, work_order_id) VALUES (?,?,?,?,?,?,?)`,
+    ["te-nodiv-1", "emp-1", TENANT, "2026-08-01T08:00:00Z", "2026-08-01T16:00:00Z", 480, "wo-no-div"]);
+  await execCrm(request,
+    `INSERT INTO time_entries (id, rep_id, company_id, clock_in, clock_out, duration_min, work_order_id) VALUES (?,?,?,?,?,?,?)`,
+    ["te-nodiv-2", "emp-1", TENANT, "2026-08-02T08:00:00Z", "2026-08-02T16:00:00Z", 480, "wo-no-div"]);
+
+  await page.goto(`/config?tenant_id=${TENANT}&role=owner`);
+  await expect(page.getByTestId("division-gap-banner")).toBeVisible();
+  await expect(page.getByTestId("division-gap-crew-no-div")).toContainText("2 time entries");
+  await expect(page.getByTestId("division-gap-crew-no-div")).toContainText("Crew Alpha");
+});
+
+test("UC-11 no banner when every crew has a division, or when unposted entries have no crew gap", async ({ page, request }) => {
+  await execCrm(request,
+    `INSERT INTO crews (id, company_id, name, division) VALUES (?,?,?,?)`,
+    ["crew-with-div", TENANT, "Crew Beta", "maintenance"]);
+  await execCrm(request,
+    `INSERT INTO work_orders (id, company_id, wo_number, crew_id, status) VALUES (?,?,?,?,?)`,
+    ["wo-with-div", TENANT, "WO-WITHDIV-1", "crew-with-div", "completed"]);
+  await execCrm(request,
+    `INSERT INTO time_entries (id, rep_id, company_id, clock_in, clock_out, duration_min, work_order_id) VALUES (?,?,?,?,?,?,?)`,
+    ["te-withdiv-1", "emp-1", TENANT, "2026-08-01T08:00:00Z", "2026-08-01T16:00:00Z", 480, "wo-with-div"]);
+
+  await page.goto(`/config?tenant_id=${TENANT}&role=owner`);
+  await expect(page.getByTestId("division-gap-banner")).toHaveCount(0);
+});
+
+test("UC-12 non-owner roles never see the division-gap banner (page denies them first)", async ({ page, request }) => {
+  await execCrm(request,
+    `INSERT INTO crews (id, company_id, name, division) VALUES (?,?,?,NULL)`,
+    ["crew-no-div-2", TENANT, "Crew Gamma"]);
+  await execCrm(request,
+    `INSERT INTO work_orders (id, company_id, wo_number, crew_id, status) VALUES (?,?,?,?,?)`,
+    ["wo-no-div-2", TENANT, "WO-NODIV-2", "crew-no-div-2", "completed"]);
+  await execCrm(request,
+    `INSERT INTO time_entries (id, rep_id, company_id, clock_in, clock_out, duration_min, work_order_id) VALUES (?,?,?,?,?,?,?)`,
+    ["te-nodiv-3", "emp-1", TENANT, "2026-08-01T08:00:00Z", "2026-08-01T16:00:00Z", 480, "wo-no-div-2"]);
+
+  for (const role of ["crew", "crew_lead", "office"]) {
+    const res = await page.goto(`/config?tenant_id=${TENANT}&role=${role}`);
+    expect(res?.status()).toBe(403);
+    await expect(page.getByTestId("division-gap-banner")).toHaveCount(0);
+  }
 });

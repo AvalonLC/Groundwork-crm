@@ -3,6 +3,7 @@ import {
   getEffectiveConfig, listEffectiveConfigs, saveConfigOverride, resetConfigOverride,
   isConfigName, getStaticDefault, CONFIG_NAMES, type ConfigName,
 } from "../config/finance-config-runtime";
+import { getCrewsMissingDivisionWithUnpostedTime } from "../db/repos";
 import { canSee } from "./roles";
 import { readPageArgs, Page, isPartialRequest, type FinanceAuthVars } from "./layout";
 
@@ -46,6 +47,10 @@ async function renderConfigAdminPage(
   // query entirely for a non-super-admin, not just the render, since
   // there's nothing for them to do with the result either way.
   const configs = isSuperAdmin ? await listEffectiveConfigs(c.env.DB, tenant_id) : [];
+  // Real business owners (not just super-admins) need to see this — it's
+  // operational fallout, not raw platform config. See
+  // docs/spec/OBSERVABILITY.md point 2 and getCrewsMissingDivisionWithUnpostedTime.
+  const divisionGaps = await getCrewsMissingDivisionWithUnpostedTime(c.env.DB, tenant_id);
   return (
     <Page
       title="Setup & Config"
@@ -59,6 +64,21 @@ async function renderConfigAdminPage(
           {notice}
         </div>
       )}
+
+      {divisionGaps.length > 0 && (
+        <div class="fin-note" data-testid="division-gap-banner" style="border-left-color:var(--gw-amber)">
+          <strong>&#9888; Time entries can't post to the ledger — no division set.</strong>
+          <ul style="margin:8px 0 0 18px;padding:0">
+            {divisionGaps.map((g) => (
+              <li data-testid={`division-gap-${g.crew_id}`}>
+                {g.unposted_count} time {g.unposted_count === 1 ? "entry" : "entries"} stuck behind{" "}
+                <strong>{g.crew_name}</strong> — set a division for this crew to release them.
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div class="fin-note">
         These files are the platform defaults every company starts from. Saving here
         writes an override for <strong>this company only</strong> — it never changes
