@@ -6,7 +6,7 @@ import {
 
 describe("finance config loader", () => {
   it("CFG-01 all six config files load with the expected top-level shape", () => {
-    expect(classifierRules.version).toBe(1);
+    expect(classifierRules.version).toBe(2); // v1 production rules, Tyler 2026-08-22
     expect(ingestSources.version).toBe(1);
     expect(automationPolicy.version).toBe(1);
     expect(approvalThresholds.version).toBe(1);
@@ -18,7 +18,7 @@ describe("finance config loader", () => {
     const compiled = compiledVendorPatternRules();
     expect(compiled.length).toBeGreaterThan(0);
     expect(compiled[0].regex).toBeInstanceOf(RegExp);
-    expect("Shell Gas Station".match(compiled.find((c) => c.rule.id === "fuel-generic")!.regex)).not.toBeNull();
+    expect("Shell Gas Station".match(compiled.find((c) => c.rule.id === "fuel-station")!.regex)).not.toBeNull();
   });
 
   it("CFG-03 confidenceAtLeast ranks low < medium < high", () => {

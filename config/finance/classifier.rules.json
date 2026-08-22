@@ -1,39 +1,54 @@
 {
-  "version": 1,
-  "note": "GROUNDWORK PLATFORM DEFAULT — applies to every tenant unless that tenant has its own override (see finance_config_override / /finance/config). Not specific to any one customer. Every rule marked \"placeholder\": true is a generic contractor/landscaping/service-business starter example, not a confirmed business rule for any real company — see BLOCKED-W5-classifier.md. Edit this file to change the platform-wide default; a tenant editing /finance/config changes only that tenant's own override, never this file. Patterns are JS regex source strings (case-insensitive, applied to vendor name for stage 1 and memo/description for stage 2). Deliberately conservative: nothing new here resolves at \"high\" confidence, so new categories still route to review until real data confirms them.",
+  "version": 2,
+  "note": "GROUNDWORK PLATFORM DEFAULT — v1 production rules (Tyler, 2026-08-22), replacing the generic placeholder set. Categories match the 9 job-cost buckets + uncategorized/manual-review Tyler specified. A tenant with different rules overrides this file entirely via /finance/config; this is the platform-wide starting point for every tenant. Patterns are JS regex source strings (case-insensitive, applied to vendor name for stage 1 and memo/description for stage 2). Confidence maps to Tyler's percent bands: high = 95%+ (auto-resolves unless forced_review_categories/stage3 catches it), medium = 80-94.99% (always review — auto_categorize_min is 'high'), low = below 80% (always review, and if the AI stage ever runs its suggestion isn't even attached below this floor — see confidence_thresholds.stage4_fallback_min). Regardless of confidence, nothing here ever posts to job_cost_ledger — classify.ts only ever writes a classification_finding, optionally paired with an action_item(verb=decide) for a human.",
+
+  "categories": [
+    { "id": "direct_labor", "label": "Direct labor" },
+    { "id": "materials", "label": "Materials" },
+    { "id": "subcontractor", "label": "Subcontractor" },
+    { "id": "equipment_rental", "label": "Equipment rental" },
+    { "id": "fuel", "label": "Fuel" },
+    { "id": "repairs_and_maintenance", "label": "Repairs and maintenance" },
+    { "id": "disposal_and_hauling", "label": "Disposal and hauling" },
+    { "id": "permits_and_fees", "label": "Permits and fees" },
+    { "id": "office_admin_overhead", "label": "Office/administrative overhead" },
+    { "id": "uncategorized_manual_review", "label": "Uncategorized/manual review" }
+  ],
 
   "stage1_vendor_patterns": [
-    { "id": "fuel-generic", "pattern": "\\b(shell|chevron|exxon|bp|speedway|fuel)\\b", "category": "fuel", "confidence": "medium", "placeholder": true },
-    { "id": "materials-generic", "pattern": "\\b(home depot|lowes|supply ?co)\\b", "category": "materials", "confidence": "medium", "placeholder": true },
-    { "id": "equipment-rental-generic", "pattern": "\\b(rental|united rentals|sunbelt)\\b", "category": "equipment_rental", "confidence": "medium", "placeholder": true },
-    { "id": "vehicle-maintenance-generic", "pattern": "\\b(autozone|napa|jiffy lube|midas|firestone|discount tire|o'?reilly)\\b", "category": "vehicle_maintenance", "confidence": "medium", "placeholder": true },
-    { "id": "office-supplies-generic", "pattern": "\\b(staples|office depot|office ?max)\\b", "category": "office_supplies", "confidence": "medium", "placeholder": true },
-    { "id": "telecom-generic", "pattern": "\\b(verizon|at&t|t-mobile|comcast|spectrum)\\b", "category": "telecom", "confidence": "low", "placeholder": true },
-    { "id": "software-subscription-generic", "pattern": "\\b(quickbooks|microsoft|google workspace|adobe)\\b", "category": "software_subscriptions", "confidence": "low", "placeholder": true }
+    { "id": "fuel-station", "pattern": "\\b(shell|chevron|exxon(mobil)?|\\bbp\\b|speedway|circle ?k|marathon|sunoco|valero|casey'?s|pilot|flying j|conoco|phillips ?66|racetrac|wawa|quiktrip|\\bqt\\b|costco gas|sam'?s club fuel)\\b", "category": "fuel", "confidence": "high" },
+    { "id": "landscape-materials-supplier", "pattern": "\\b(siteone|site ?one|ewing irrigation|john deere landscapes|landscape supply|stone yard|paver supply|sod farm)\\b", "category": "materials", "confidence": "high" },
+    { "id": "big-box-materials", "pattern": "\\b(home depot|lowe'?s|supply ?co)\\b", "category": "materials", "confidence": "medium" },
+    { "id": "equipment-rental-company", "pattern": "\\b(united rentals|sunbelt( rentals)?|herc rentals?|ahern rentals?|home depot rental)\\b", "category": "equipment_rental", "confidence": "high" },
+    { "id": "auto-parts-repair-shop", "pattern": "\\b(autozone|napa|jiffy lube|midas|firestone|discount tire|o'?reilly|valvoline|les schwab|big o tires|meineke|pep boys)\\b", "category": "repairs_and_maintenance", "confidence": "high" },
+    { "id": "disposal-hauling-company", "pattern": "\\b(waste management|republic services|\\bwm\\b|1-?800-?got-?junk)\\b", "category": "disposal_and_hauling", "confidence": "high" },
+    { "id": "office-software-subscription", "pattern": "\\b(quickbooks|microsoft|google workspace|adobe|staples|office ?depot|office ?max)\\b", "category": "office_admin_overhead", "confidence": "medium" },
+    { "id": "telecom-provider", "pattern": "\\b(verizon|at&t|t-mobile|comcast|spectrum|xfinity)\\b", "category": "office_admin_overhead", "confidence": "medium" }
   ],
 
   "stage2_keyword_rules": [
-    { "id": "payroll-keyword", "keywords": ["payroll", "adp", "gusto", "paychex"], "category": "payroll", "confidence": "medium", "placeholder": true },
-    { "id": "insurance-keyword", "keywords": ["insurance", "premium"], "category": "insurance", "confidence": "low", "placeholder": true },
-    { "id": "bank-fee-keyword", "keywords": ["monthly service fee", "overdraft fee", "wire transfer fee"], "category": "bank_fees", "confidence": "high", "placeholder": true },
-    { "id": "owner-draw-keyword", "keywords": ["owner draw", "distribution to owner", "member draw"], "category": "owner_draw", "confidence": "high", "placeholder": true },
-    { "id": "subcontractor-keyword", "keywords": ["subcontractor", "sub-contractor", "1099 contract labor"], "category": "subcontractor_labor", "confidence": "medium", "placeholder": true },
-    { "id": "utilities-keyword", "keywords": ["electric bill", "gas bill", "water bill", "utility"], "category": "utilities", "confidence": "medium", "placeholder": true },
-    { "id": "rent-keyword", "keywords": ["rent", "lease payment"], "category": "rent", "confidence": "low", "placeholder": true },
-    { "id": "professional-services-keyword", "keywords": ["legal fees", "accounting fees", "attorney"], "category": "professional_services", "confidence": "medium", "placeholder": true },
-    { "id": "marketing-keyword", "keywords": ["advertising", "marketing", "google ads", "facebook ads"], "category": "marketing", "confidence": "low", "placeholder": true },
-    { "id": "permits-licenses-keyword", "keywords": ["permit fee", "license renewal", "business license"], "category": "permits_and_licenses", "confidence": "medium", "placeholder": true },
-    { "id": "uniforms-safety-keyword", "keywords": ["uniform", "safety equipment", "ppe"], "category": "uniforms_and_safety", "confidence": "low", "placeholder": true }
+    { "id": "direct-labor-keyword", "keywords": ["day labor", "temp labor", "temporary labor", "contract labor - job", "labor only"], "category": "direct_labor", "confidence": "high", "note": "High confidence is fine here even though direct_labor is a forced_review_categories entry — it always requires review regardless of confidence (normal employee payroll must come from payroll/approved time entries, never auto-classified here)." },
+    { "id": "subcontractor-keyword", "keywords": ["subcontractor", "sub-contractor", "sub contractor", "1099 contract labor", "labor and materials"], "category": "subcontractor", "confidence": "medium" },
+    { "id": "materials-keyword", "keywords": ["mulch", "sod", "topsoil", "compost", "fertilizer", "irrigation parts", "paver", "retaining wall block", "drainage pipe", "grass seed"], "category": "materials", "confidence": "medium" },
+    { "id": "equipment-rental-keyword", "keywords": ["equipment rental", "machine rental", "skid steer rental", "excavator rental", "rental protection plan"], "category": "equipment_rental", "confidence": "medium" },
+    { "id": "fuel-keyword", "keywords": ["diesel", "def fluid", "propane refill", "gasoline"], "category": "fuel", "confidence": "medium" },
+    { "id": "repairs-maintenance-keyword", "keywords": ["equipment repair", "mower repair", "truck repair", "oil change", "tire replacement", "mechanic service"], "category": "repairs_and_maintenance", "confidence": "medium" },
+    { "id": "disposal-hauling-keyword", "keywords": ["dump fee", "tipping fee", "debris disposal", "hauling fee", "roll off container", "roll-off"], "category": "disposal_and_hauling", "confidence": "medium" },
+    { "id": "permits-fees-keyword", "keywords": ["permit fee", "building permit", "inspection fee", "utility locate", "call before you dig", "municipal fee"], "category": "permits_and_fees", "confidence": "medium" },
+    { "id": "bank-fee-keyword", "keywords": ["monthly service fee", "overdraft fee", "wire transfer fee"], "category": "office_admin_overhead", "confidence": "high" },
+    { "id": "office-admin-keyword", "keywords": ["subscription", "software license", "office supplies", "insurance premium", "professional services", "legal fees", "accounting fees", "rent", "lease payment", "utility bill", "electric bill", "marketing", "advertising"], "category": "office_admin_overhead", "confidence": "low" },
+    { "id": "payroll-keyword", "keywords": ["payroll", "adp", "gusto", "paychex"], "category": "uncategorized_manual_review", "confidence": "low", "note": "Normal employee payroll must come from payroll/approved time entries, never auto-classified into a job-cost category here — flagged for review, not silently bucketed as overhead." },
+    { "id": "owner-draw-keyword", "keywords": ["owner draw", "distribution to owner", "member draw"], "category": "uncategorized_manual_review", "confidence": "high", "note": "An equity distribution, not a business expense in any of the 9 job-cost/overhead buckets — always manual review regardless of confidence." }
   ],
 
   "stage3_amount_review_rules": [
-    { "id": "large-txn-review", "min_cents": 500000, "action": "force_review", "reason": "amount exceeds $5,000 — always review regardless of match confidence", "placeholder": true }
+    { "id": "large-txn-review", "min_cents": 250000, "action": "force_review", "reason": "totals of $2,500 or more always require review regardless of match confidence" }
   ],
 
-  "forced_review_categories": ["owner_draw", "uncategorized", "unusual", "unknown"],
+  "forced_review_categories": ["direct_labor", "uncategorized_manual_review"],
 
   "confidence_thresholds": {
-    "note": "A stage 1/2 match at or above auto_categorize_min resolves deterministically (writes classification_finding, no human review needed) unless it also hits a forced_review_categories entry or a stage3 amount rule. Anything below that threshold, or with no match at all, becomes a review action_item(verb='decide') — the AI stage's suggestion (if enabled) is attached to that review item as a suggestion only, never auto-applied (CLAUDE.md: never auto-post on model self-reported confidence alone). stage4_fallback_min is the floor below which the AI's suggestion isn't even attached — too low-confidence to be useful context for the reviewer.",
+    "note": "A stage 1/2 match at or above auto_categorize_min resolves deterministically (writes classification_finding, no human review needed — but NEVER posts to job_cost_ledger; this classifier only ever proposes) unless it also hits a forced_review_categories entry or a stage3 amount rule. Anything below that threshold, or with no match at all, becomes a review action_item(verb='decide') — the AI stage's suggestion (if enabled) is attached to that review item as a suggestion only, never auto-applied (CLAUDE.md: never auto-post on model self-reported confidence alone). stage4_fallback_min is the floor below which the AI's suggestion isn't even attached — too low-confidence to be useful context for the reviewer.",
     "auto_categorize_min": "high",
     "stage4_fallback_min": "medium"
   }

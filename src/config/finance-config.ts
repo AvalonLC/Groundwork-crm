@@ -5,6 +5,7 @@ import approvalThresholdsJson from "../../config/finance/approval-thresholds.jso
 import tenantDefaultsJson from "../../config/finance/tenant-defaults.json" with { type: "json" };
 import divisionMapJson from "../../config/finance/division-map.json" with { type: "json" };
 import roleMapJson from "../../config/finance/role-map.json" with { type: "json" };
+import documentIntakeJson from "../../config/finance/document-intake.json" with { type: "json" };
 import type { RateConfidence } from "../db/schema";
 import type { Role } from "../ui/roles";
 
@@ -31,6 +32,7 @@ export interface KeywordRule {
   category: string;
   confidence: RateConfidence;
   placeholder?: boolean;
+  note?: string;
 }
 
 export interface AmountReviewRule {
@@ -41,8 +43,14 @@ export interface AmountReviewRule {
   placeholder?: boolean;
 }
 
+export interface ClassifierCategory {
+  id: string;
+  label: string;
+}
+
 export interface ClassifierRules {
   version: number;
+  categories: ClassifierCategory[];
   stage1_vendor_patterns: VendorPatternRule[];
   stage2_keyword_rules: KeywordRule[];
   stage3_amount_review_rules: AmountReviewRule[];
@@ -171,6 +179,31 @@ export interface RoleMapConfig {
 }
 
 export const roleMap = roleMapJson as RoleMapConfig;
+
+// ---- document-intake.json ----
+
+export interface DocumentIntakeChannel {
+  enabled: boolean;
+  label: string;
+  reason?: string;
+}
+
+export interface DocumentIntakeConfig {
+  version: number;
+  channels: {
+    manual_upload: DocumentIntakeChannel;
+    mobile_camera: DocumentIntakeChannel;
+    inbound_email: DocumentIntakeChannel;
+    quickbooks_sync: DocumentIntakeChannel;
+    bank_feed_sync: DocumentIntakeChannel;
+  };
+  accepted_mime_types: string[];
+  accepted_extensions: string[];
+  max_file_size_bytes: number;
+  stripe_note: string;
+}
+
+export const documentIntake = documentIntakeJson as DocumentIntakeConfig;
 
 /** Maps a CRM session's role string (+ isSuperAdmin flag) to a Finance OS
  * Role. Unrecognized CRM roles fall back to default_finance_role (the most

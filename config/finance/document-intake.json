@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "GROUNDWORK PLATFORM DEFAULT — Tyler's decisions, 2026-08-22, on which channels feed the receipt/document-upload pipeline (src/ui/document-upload.tsx, src/ai/receipts.ts). This is deliberately separate from ingest.sources.json, which is P&L/bank-export FORMAT detection for admin-uploaded files, not a live channel. quickbooks_sync/bank_feed_sync here mean a live API/OAuth connection pulling documents automatically — neither exists in this codebase; QuickBooks live integration is Item 3, a separate scoped project (Phase 1: read-only import). Enabling a channel here with enabled:false but no implementation is a config statement of intent, not a toggle for code that already exists — flipping it to true without building the connector would do nothing.",
+
+  "channels": {
+    "manual_upload": { "enabled": true, "label": "Manual file upload" },
+    "mobile_camera": { "enabled": true, "label": "Mobile camera/photo upload" },
+    "inbound_email": { "enabled": false, "label": "Approved inbound receipt email", "reason": "Not yet implemented — no inbound email-receiving route (e.g. Cloudflare Email Routing) exists in this codebase. Enable once that's built." },
+    "quickbooks_sync": { "enabled": false, "label": "QuickBooks live sync", "reason": "No QuickBooks integration exists yet — see Item 3 (separate scoped project, Phase 1 read-only import)." },
+    "bank_feed_sync": { "enabled": false, "label": "Bank feed sync", "reason": "No bank-feed/Plaid-style integration exists yet." }
+  },
+
+  "accepted_mime_types": ["application/pdf", "image/jpeg", "image/png", "image/heic", "image/heif"],
+  "accepted_extensions": [".pdf", ".jpg", ".jpeg", ".png", ".heic", ".heif"],
+  "max_file_size_bytes": 10485760,
+
+  "stripe_note": "Stripe payment/charge events are revenue and payment sources, not receipt-expense sources, and must never be routed through this receipt-intake pipeline — see docs/spec/RECOVERY.md and CLAUDE.md hard rule 3 (recovery recognition source is time_entry hours, never a payment event)."
+}

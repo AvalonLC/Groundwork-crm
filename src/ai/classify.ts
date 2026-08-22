@@ -49,17 +49,19 @@ function compileVendorPatterns(rules: ClassifierRules) {
 }
 
 /** Pure — no DB, no I/O. Stages 1 and 2 only; stage 3 here means "no
- * deterministic match, always review" (the amount-based force-review check
- * happens in classifyTransaction, which has the tenant's materiality
- * threshold from the DB, not just the static config default). */
+ * deterministic match, always review" (the tenant-materiality force-review
+ * check happens separately in classifyTransaction, which has the tenant's
+ * own DB-backed threshold — this function only applies the static,
+ * platform-wide stage3_amount_review_rules, e.g. Tyler's "totals of $2,500
+ * or more always require review regardless of match confidence"). */
 export function classifyDeterministic(input: TransactionInput, rules: ClassifierRules = classifierRules): DeterministicDecision {
   if (!automationPolicy.classifier_enabled) {
-    return decide(null, "low", 3, null, rules);
+    return decide(null, "low", 3, null, rules, input.amount_cents);
   }
 
   if (input.vendor) {
     for (const { rule, regex } of compileVendorPatterns(rules)) {
-      if (regex.test(input.vendor)) return decide(rule.category, rule.confidence, 1, rule.id, rules);
+      if (regex.test(input.vendor)) return decide(rule.category, rule.confidence, 1, rule.id, rules, input.amount_cents);
     }
   }
 
@@ -67,28 +69,36 @@ export function classifyDeterministic(input: TransactionInput, rules: Classifier
     const memoLower = input.memo.toLowerCase();
     for (const rule of rules.stage2_keyword_rules) {
       if (rule.keywords.some((k) => memoLower.includes(k.toLowerCase()))) {
-        return decide(rule.category, rule.confidence, 2, rule.id, rules);
+        return decide(rule.category, rule.confidence, 2, rule.id, rules, input.amount_cents);
       }
     }
   }
 
-  return decide(null, "low", 3, null, rules);
+  return decide(null, "low", 3, null, rules, input.amount_cents);
 }
 
 function decide(
   category: string | null, confidence: RateConfidence, stage: 1 | 2 | 3, ruleId: string | null,
-  rules: ClassifierRules,
+  rules: ClassifierRules, amountCents: number,
 ): DeterministicDecision {
   const forcedReview = category !== null && rules.forced_review_categories.includes(category);
   const belowThreshold = category === null
     || !confidenceAtLeast(confidence, rules.confidence_thresholds.auto_categorize_min);
-  const requiresReview = forcedReview || belowThreshold;
+  // Stage 3: platform-wide amount-based force-review, independent of
+  // category/confidence — e.g. Tyler's "totals of $2,500 or more always
+  // require review". Distinct from classifyTransaction's tenant-specific
+  // materiality_threshold_cents check (DB-backed, per-company); this one is
+  // the static classifier.rules.json default every tenant starts from.
+  const amountRule = rules.stage3_amount_review_rules.find((r) => amountCents >= r.min_cents);
+  const requiresReview = forcedReview || belowThreshold || amountRule !== undefined;
 
   return {
     category, confidence, stage_reached: stage, matched_rule_id: ruleId,
     requires_review: requiresReview,
     review_reason: forcedReview
       ? `category "${category}" is in forced_review_categories`
+      : amountRule
+      ? amountRule.reason
       : belowThreshold ? "confidence below classifier.rules.json's auto_categorize_min" : null,
   };
 }
