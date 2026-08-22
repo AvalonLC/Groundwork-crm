@@ -127,3 +127,45 @@ the workflow prints the HTTP status and full response body. Common causes:
 - **401** — the two secret values don't match; re-check both.
 - **200 but a tenant is unexpectedly in `tenants_skipped`** — that tenant
   has no `tenant_finance_policy` row yet, not an error condition.
+
+You should not need to go looking for this, though — see the next section.
+
+## How you find out a run failed, without watching the Actions tab
+
+Fixed 2026-08-19 (see `docs/PUNCHLIST.md` item 2): a `CRON_SECRET` mismatch
+caused four silent consecutive 401s before anyone noticed, because a
+scheduled Action failing on its own produces nothing but a red X on the
+Actions tab — nobody watches that page every night. Two independent
+signals now exist, so a future drift is caught the same night rather than
+days later:
+
+1. **A GitHub issue, opened automatically on failure.** The
+   `Open/update an issue on failure` step in
+   `.github/workflows/finance-cron.yml` runs only when the rollup step
+   fails AND only for the real nightly schedule trigger (never for a
+   manual `workflow_dispatch` run, which already fails loudly to whoever
+   triggered it). It opens an issue titled "Finance OS Nightly Rollup
+   failed", labeled `finance-cron-failure`, with the failing run's URL and
+   the same 401-vs-503 triage guidance as this doc. Repo watchers get
+   GitHub's normal issue-created notification (email/web, per each
+   person's own GitHub notification settings — nothing new to configure
+   here). Consecutive failing nights reuse the same issue (matched by
+   title) via a comment rather than opening a new one each time, so a
+   multi-night outage doesn't flood the issue tracker. Needs no new
+   secret or third-party dependency — it authenticates with the
+   workflow's own default `GITHUB_TOKEN`, scoped to `issues: write` only
+   for this job.
+2. **An in-app "last updated" note on Money Loop** (`/finance/money-loop`,
+   `src/ui/money-loop.tsx`). Directly under the recovery-percentage meter,
+   the page always shows `Last updated <as_of date>` from the latest
+   `recovery_snapshot` row. Since the rollup is meant to run every night,
+   if that date is more than one day old the note becomes a visible amber
+   warning ("Last updated ... N days ago") with a link straight to the
+   workflow's Actions page, instead of a number that just silently ages
+   without anyone noticing it stopped moving. This is a human, in-app
+   signal independent of whether anyone is watching GitHub Actions or
+   email at all — e.g. an owner who never reads repo notifications still
+   sees it the next time they open Money Loop.
+
+Neither of these replaces the triage steps above once you know something
+failed — they only solve *finding out* that it failed in the first place.

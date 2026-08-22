@@ -152,6 +152,19 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    (`?dry_run=true`) for verifying without writing. Full setup steps:
    `docs/RUNBOOK-finance-cron.md`. The rejected companion-Worker option is
    kept as a documented, unused alternative in `workers/finance-cron/`.
+
+   **RESOLVED — drift-recurrence monitoring added:** the four-night 401
+   outage above was fixed on the day (2026-08-19) but nothing at the time
+   would have caught a repeat. Two independent signals now exist: (a) a
+   `finance-cron.yml` step that opens/updates a GitHub issue automatically
+   on a scheduled (never manual) run failure, using the workflow's own
+   default `GITHUB_TOKEN` — no new secret; (b) an in-app "Last updated
+   <date>" note on Money Loop's recovery hero that turns into a visible
+   amber warning once the latest `recovery_snapshot.as_of` is more than a
+   day old. See `docs/RUNBOOK-finance-cron.md`'s "How you find out a run
+   failed, without watching the Actions tab" section for the full
+   description, and `src/ui/money-loop.e2e.ts` (`UM-08`, `UM-09`) for
+   coverage of the UI half.
 3. ~~**Cross-database joins are stubbed at the boundary, not built.**~~
    **RESOLVED for `E2-unbilled` (2026-08-21):** since Finance OS and CRM tables now
    share one D1 database (`migrations/0057_finance_merge.sql`), the unbilled-work

@@ -62,3 +62,27 @@ test("UM-07 non-owner roles never see the setup banner", async ({ page }) => {
   await page.goto(`/money-loop?tenant_id=${TENANT}&role=crew`);
   await expect(page.getByTestId("policy-setup-banner")).toHaveCount(0);
 });
+
+// Fix plan item 6, hardening step 3: an in-app "last successful run"
+// freshness signal for the nightly rollup, independent of whether anyone
+// is watching GitHub Actions or email. See docs/RUNBOOK-finance-cron.md.
+test("UM-08 a stale rollup (the beforeEach's 2026-08-03 snapshot) surfaces a visible warning", async ({ page }) => {
+  await page.goto(`/money-loop?tenant_id=${TENANT}&role=owner`);
+  const warning = page.getByTestId("rollup-stale-warning");
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("2026-08-03");
+  await expect(warning).toContainText("days ago");
+  await expect(page.getByTestId("rollup-last-updated")).toHaveCount(0);
+});
+
+test("UM-09 a fresh rollup (as_of today) shows a plain last-updated note, no warning", async ({ page, request }) => {
+  const today = new Date().toISOString().slice(0, 10);
+  await exec(request,
+    `INSERT INTO recovery_snapshot (company_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [TENANT, today, 59100000, 38190000, 38000, 274300, 1042340, 646193, "2026-12-21", 13]);
+  await page.goto(`/money-loop?tenant_id=${TENANT}&role=owner`);
+  const note = page.getByTestId("rollup-last-updated");
+  await expect(note).toBeVisible();
+  await expect(note).toContainText(today);
+  await expect(page.getByTestId("rollup-stale-warning")).toHaveCount(0);
+});
