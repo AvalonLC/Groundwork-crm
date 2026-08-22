@@ -403,3 +403,13 @@ section. Highest-risk guesses, ranked:
    the same branch's new test; not fixed there (out of scope). See that
    status doc for the repro and why the existing `config-admin.e2e.ts`
    suite never trips it.
+9. **No observability configured for the three best-effort Finance sync
+   helpers** (`syncWorkOrderFinanceColumns`, `postWorkOrderTimeEntry`,
+   `markOpportunityCollectedFromInvoice`, all `src/index.tsx`) — on
+   failure they only `console.error`/`console.warn`, and nothing retains
+   or alerts on that output today. Deliberately **not** built — the fix
+   plan's own item 7 calls this "a standing risk to document and decide
+   on," not a PR, and the recommended fix adds a new secret/dependency
+   (Cloudflare Workers Logs/Logpush vs. a third-party tracker like
+   Sentry) that needs Tyler's call, not an automatic pick. Full writeup,
+   what was checked, and the open decision: `docs/spec/OBSERVABILITY.md`.
