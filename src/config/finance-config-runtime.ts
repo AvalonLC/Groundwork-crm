@@ -1,7 +1,7 @@
 import { getConfigOverride, upsertConfigOverride, deleteConfigOverride, listConfigOverrides, GLOBAL_CONFIG_SCOPE } from "../db/repos";
 import {
   classifierRules, ingestSources, automationPolicy, approvalThresholds,
-  tenantDefaults, divisionMap, roleMap,
+  tenantDefaults, divisionMap, roleMap, documentIntake,
 } from "./finance-config";
 
 /**
@@ -17,6 +17,7 @@ import {
 export const CONFIG_NAMES = [
   "classifier_rules", "ingest_sources", "automation_policy",
   "approval_thresholds", "tenant_defaults", "division_map", "role_map",
+  "document_intake",
 ] as const;
 export type ConfigName = typeof CONFIG_NAMES[number];
 
@@ -28,6 +29,7 @@ const STATIC_DEFAULTS: Record<ConfigName, unknown> = {
   tenant_defaults: tenantDefaults,
   division_map: divisionMap,
   role_map: roleMap,
+  document_intake: documentIntake,
 };
 
 export function getStaticDefault(name: ConfigName): unknown {
@@ -91,6 +93,12 @@ export function validateConfigShape(name: ConfigName, parsed: unknown): string |
     case "role_map":
       if (typeof obj.crm_role_to_finance_role !== "object" || obj.crm_role_to_finance_role === null) return "crm_role_to_finance_role must be an object";
       if (typeof obj.default_finance_role !== "string") return "default_finance_role must be a string";
+      return null;
+    case "document_intake":
+      if (typeof obj.channels !== "object" || obj.channels === null) return "channels must be an object";
+      if (!Array.isArray(obj.accepted_mime_types)) return "accepted_mime_types must be an array";
+      if (!Array.isArray(obj.accepted_extensions)) return "accepted_extensions must be an array";
+      if (typeof obj.max_file_size_bytes !== "number") return "max_file_size_bytes must be a number";
       return null;
     case "automation_policy":
     case "approval_thresholds":

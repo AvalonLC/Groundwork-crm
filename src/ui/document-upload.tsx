@@ -4,7 +4,8 @@ import { processReceiptUpload, scoreFieldConfidence, type ExtractedReceiptFields
 import type { IngestResult } from "../ai/ingest";
 import type { ProcessReceiptResult } from "../ai/receipts";
 import { parseMoneyToCents } from "../ai/csv";
-import { documentIntake } from "../config/finance-config";
+import { documentIntake as staticDocumentIntake, type DocumentIntakeConfig } from "../config/finance-config";
+import { getEffectiveConfig } from "../config/finance-config-runtime";
 import { canSee } from "./roles";
 import type { VocabularyMode } from "./vocabulary";
 import { readPageArgs, Page, Card, Why, Confidence, money, isPartialRequest, type FinanceAuthVars } from "./layout";
@@ -136,7 +137,7 @@ function receiptResultCard(result: ProcessReceiptResult, confidence: ReturnType<
         <table class="fin-table">
           <thead><tr><th>Field</th><th>Confidence</th></tr></thead>
           <tbody>
-            {(Object.keys(confidence) as (keyof ExtractedReceiptFields)[]).map((field) => (
+            {(Object.keys(confidence) as (keyof typeof confidence)[]).map((field) => (
               <tr data-testid={`receipt-field-${field}`}>
                 <td>{field}</td>
                 <td><Confidence level={confidence[field]} /></td>
@@ -145,10 +146,15 @@ function receiptResultCard(result: ProcessReceiptResult, confidence: ReturnType<
           </tbody>
         </table>
       ) : null}
+      {result.likely_duplicate_of.length > 0 ? (
+        <div class="fin-note" data-testid="receipt-possible-duplicate" style="border-left-color:var(--gw-amber);margin-top:12px">
+          Possible duplicate — same vendor, date, and amount as {result.likely_duplicate_of.length === 1 ? "an existing receipt" : `${result.likely_duplicate_of.length} existing receipts`} ({result.likely_duplicate_of.join(", ")}). Stored anyway and sent to review — not blocked, since this could be two real purchases.
+        </div>
+      ) : null}
       {result.needs_review ? (
         <div class="fin-note" data-testid="receipt-needs-review" style="border-left-color:var(--gw-amber);margin-top:12px">
-          One or more fields is low-confidence — sent to the Work Queue for review rather than
-          accepted as-is.
+          One or more fields is low-confidence, or a possible duplicate was found — sent to the
+          Work Queue for review rather than accepted as-is.
         </div>
       ) : (
         <p class="fin-card-s" style="margin-top:12px">All fields entered — nothing sent to review.</p>
@@ -196,7 +202,13 @@ function renderPage(
       <Card title="Upload a receipt" sub="image or PDF, plus what's on it">
         <form method="post" action={`${basePath}/receipt${qs}`} enctype="multipart/form-data">
           <div style="margin-bottom:12px">
-            <input type="file" name="file" accept="image/*,.pdf" required data-testid="receipt-file-input" />
+            <input
+              type="file"
+              name="file"
+              accept={staticDocumentIntake.accepted_extensions.join(",")}
+              required
+              data-testid="receipt-file-input"
+            />
           </div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
             <label style="font-size:13px">
@@ -210,6 +222,10 @@ function renderPage(
             <label style="font-size:13px">
               Date<br />
               <input type="date" name="receipt_date" data-testid="receipt-date-input" style="padding:8px 10px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);font-size:13px" />
+            </label>
+            <label style="font-size:13px">
+              Receipt/invoice # <span style="color:var(--gw-muted);font-weight:400">(optional)</span><br />
+              <input type="text" name="receipt_number" data-testid="receipt-number-input" style="padding:8px 10px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);font-size:13px" />
             </label>
           </div>
           <p class="fin-card-s" style="margin-bottom:12px">
@@ -282,10 +298,14 @@ documentUploadRouter.post("/receipt", async (c) => {
   if (!(file instanceof File) || file.size === 0) {
     return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "no file selected", partial), 400);
   }
-  // config/finance/document-intake.json: Tyler's accepted types (PDF, JPG/
-  // JPEG, PNG, HEIC where supported) and 10MB size ceiling for the manual/
-  // mobile-camera upload channels — checked here rather than only in the
+  // config/finance/document-intake.json (Tyler's accepted types + 10MB
+  // ceiling), read through getEffectiveConfig rather than the static
+  // import directly: a tenant-specific or global admin override saved via
+  // /finance/config (now that document_intake is a recognized ConfigName)
+  // must actually change this validation, not just the raw JSON a
+  // super-admin sees on that page. Checked here rather than only in the
   // <input accept="..."> attribute, which a user can bypass.
+  const documentIntake = (await getEffectiveConfig<DocumentIntakeConfig>(c.env.DB, tenant_id, "document_intake")).value;
   if (file.size > documentIntake.max_file_size_bytes) {
     const maxMb = Math.round(documentIntake.max_file_size_bytes / 1024 / 1024);
     return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, `file too large — max ${maxMb} MB`, partial), 413);
@@ -300,6 +320,7 @@ documentUploadRouter.post("/receipt", async (c) => {
   const vendorRaw = String(form.vendor ?? "").trim();
   const amountRaw = String(form.amount ?? "").trim();
   const dateRaw = String(form.receipt_date ?? "").trim();
+  const receiptNumberRaw = String(form.receipt_number ?? "").trim();
   const amountCents = amountRaw ? parseMoneyToCents(amountRaw) : null;
   if (amountCents !== null && (!Number.isFinite(amountCents) || amountCents < 0)) {
     return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "amount must be a non-negative number", partial), 400);
@@ -309,6 +330,7 @@ documentUploadRouter.post("/receipt", async (c) => {
     vendor: vendorRaw || null,
     amount_cents: amountCents,
     receipt_date: dateRaw || null,
+    receipt_number: receiptNumberRaw || null,
   };
   const confidence = scoreFieldConfidence(fields);
   const ownerId = c.var.repId ?? "office-upload";

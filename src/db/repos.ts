@@ -741,18 +741,50 @@ export async function getReceiptByHash(
     .bind(companyId, contentHash).first<Receipt>();
 }
 
+/** status is intentionally NOT a caller-supplied field here — every new
+ * receipt enters 'pending_review' via the column DEFAULT (migration 0084)
+ * so there's exactly one place ("pending_review is the starting state")
+ * instead of every insert call site having to remember to pass it. Use
+ * setReceiptStatus() below for the explicit human approve/reject action. */
 export async function insertReceipt(
-  db: D1Database, row: Omit<Receipt, "created_at">,
+  db: D1Database, row: Omit<Receipt, "created_at" | "status">,
 ): Promise<void> {
   await db.prepare(`
     INSERT INTO receipt
       (id, company_id, job_id, r2_key, content_hash, vendor, amount_cents,
-       receipt_date, field_confidence, action_item_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+       receipt_date, field_confidence, action_item_id, receipt_number)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     row.id, row.company_id, row.job_id, row.r2_key, row.content_hash, row.vendor,
     row.amount_cents, row.receipt_date, row.field_confidence, row.action_item_id,
+    row.receipt_number,
   ).run();
+}
+
+/** Item 1's fuzzy dedupe signal (vendor+date+receipt_number+total),
+ * distinct from getReceiptByHash's exact content-hash match. Matches on
+ * vendor+date+amount alone (receipt_number NULL on either side, or a
+ * mismatch) are still returned but are a weaker signal — the caller
+ * (processReceiptUpload) treats them as "surface for review", never as
+ * "block/replace", since two genuinely different small purchases from
+ * the same vendor on the same day for the same rounded total are
+ * possible and must not be silently dropped. */
+export async function findLikelyDuplicateReceipts(
+  db: D1Database, companyId: string, vendor: string | null, receiptDate: string | null,
+  amountCents: number | null, receiptNumber: string | null,
+): Promise<Receipt[]> {
+  if (!vendor || !receiptDate || amountCents === null) return [];
+  const { results } = await db.prepare(`
+    SELECT * FROM receipt
+    WHERE company_id = ? AND vendor = ? AND receipt_date = ? AND amount_cents = ?
+  `).bind(companyId, vendor, receiptDate, amountCents).all<Receipt>();
+  // Exact receipt_number match (when both sides have one) sorts first —
+  // it's the strongest of the two signals.
+  return results.sort((a, b) => {
+    const aExact = receiptNumber && a.receipt_number === receiptNumber ? 0 : 1;
+    const bExact = receiptNumber && b.receipt_number === receiptNumber ? 0 : 1;
+    return aExact - bExact;
+  });
 }
 
 /** Newest first, for the Documents page. */
@@ -765,13 +797,28 @@ export async function listReceiptsForTenant(
   return results;
 }
 
+/** The only way a receipt leaves 'pending_review' — an explicit human
+ * action (see documents.tsx's approve/reject buttons), never automatic.
+ * This does not touch job_cost_ledger; approving a receipt here still
+ * does not post anything, per CLAUDE.md's "nothing from OCR/receipts
+ * posts to the ledger without a separate, explicit posting action". */
+export async function setReceiptStatus(
+  db: D1Database, companyId: string, id: string, status: "approved" | "rejected",
+): Promise<void> {
+  await db.prepare(
+    `UPDATE receipt SET status = ? WHERE company_id = ? AND id = ?`,
+  ).bind(status, companyId, id).run();
+}
+
 // ---- upload_batch ----
 // One row per file processed through /finance/onboarding. Durable record of
 // "was this ever uploaded" for the confidence-gap report — everything else
 // about a financial export (its action_items) is per-line, not per-file.
 
+/** status is not caller-supplied — see insertReceipt's doc comment above;
+ * same reasoning applies here (migration 0084 DEFAULT 'pending_review'). */
 export async function insertUploadBatch(
-  db: D1Database, row: Omit<UploadBatch, "created_at">,
+  db: D1Database, row: Omit<UploadBatch, "created_at" | "status">,
 ): Promise<void> {
   await db.prepare(`
     INSERT INTO upload_batch

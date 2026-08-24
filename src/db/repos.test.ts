@@ -261,6 +261,7 @@ describe("receipt — dedupe by hash", () => {
       id: "r-1", company_id: TENANT, job_id: "job-1", r2_key: "receipts/r-1.jpg",
       content_hash: "hash-abc", vendor: "Acme Supply", amount_cents: 4599,
       receipt_date: "2026-07-01", field_confidence: null, action_item_id: null,
+      receipt_number: null,
     });
     const found = await getReceiptByHash(db(), TENANT, "hash-abc");
     expect(found?.id).toBe("r-1");
