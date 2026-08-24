@@ -232,6 +232,14 @@ export interface ClassificationFinding {
   created_at: string;
 }
 
+/** Migration 0084. Literal lifecycle status — separate from the derived
+ * needs_review/field_confidence signal (which flags "the extraction was
+ * unsure about a field"), this is the human review-and-approval gate:
+ * every new receipt starts 'pending_review' and nothing about it ever
+ * posts to job_cost_ledger regardless of status. 'approved'/'rejected'
+ * are set only by an explicit human action (see documents.tsx). */
+export type DocumentStatus = "pending_review" | "approved" | "rejected";
+
 export interface Receipt {
   id: string;
   company_id: string;
@@ -244,6 +252,12 @@ export interface Receipt {
   /** JSON-encoded Record<string, RateConfidence> — one entry per extracted field. */
   field_confidence: string | null;
   action_item_id: string | null;
+  /** Migration 0084. Nullable — not every receipt has a visible receipt/
+   * invoice number. Used by findLikelyDuplicateReceipt's fuzzy dedupe. */
+  receipt_number: string | null;
+  /** Migration 0084. Defaults to 'pending_review' on insert; distinct from
+   * field_confidence-derived needs_review (see DocumentStatus doc above). */
+  status: DocumentStatus;
   created_at: string;
 }
 
@@ -259,6 +273,8 @@ export interface UploadBatch {
   detected_source_id: string | null;
   needs_review: Bool01;
   row_count: number | null;
+  /** Migration 0084. See DocumentStatus doc above Receipt. */
+  status: DocumentStatus;
   created_at: string;
 }
 

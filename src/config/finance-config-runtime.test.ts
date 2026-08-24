@@ -17,7 +17,7 @@ describe("getEffectiveConfig — falls back to static default with no override",
     expect(eff.value).toEqual(classifierRules);
   });
 
-  it("RT-02 all seven config names resolve without error", async () => {
+  it("RT-02 all config names resolve without error", async () => {
     const results = await listEffectiveConfigs(db(), "t-rt-all");
     expect(results.length).toBe(CONFIG_NAMES.length);
     expect(results.every((r) => r.value !== undefined)).toBe(true);

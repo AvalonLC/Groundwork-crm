@@ -8,20 +8,20 @@ test.beforeEach(async ({ request }) => {
   await resetCrmDb(request, TENANT);
 });
 
-test("UC-01 super-admin owner sees all seven configs, each starting as 'using static default'", async ({ page }) => {
+test("UC-01 super-admin owner sees all eight configs, each starting as 'using static default'", async ({ page }) => {
   await page.goto(`/config?tenant_id=${TENANT}&role=owner&is_super_admin=1`);
-  for (const name of ["classifier_rules", "ingest_sources", "automation_policy", "approval_thresholds", "tenant_defaults", "division_map", "role_map"]) {
+  for (const name of ["classifier_rules", "ingest_sources", "automation_policy", "approval_thresholds", "tenant_defaults", "division_map", "role_map", "document_intake"]) {
     await expect(page.getByTestId(`config-${name}`)).toBeVisible();
     await expect(page.getByTestId(`status-${name}`)).toContainText("static default");
   }
 });
 
-test("UC-01b a normal owner (isSuperAdmin=false) sees the page but none of the seven raw JSON config editors", async ({ page }) => {
+test("UC-01b a normal owner (isSuperAdmin=false) sees the page but none of the eight raw JSON config editors", async ({ page }) => {
   await page.goto(`/config?tenant_id=${TENANT}&role=owner`);
   await expect(page.getByTestId("policy-link-card")).toBeVisible();
   await expect(page.getByTestId("upload-link-card")).toBeVisible();
   await expect(page.getByTestId("onboarding-link-card")).toBeVisible();
-  for (const name of ["classifier_rules", "ingest_sources", "automation_policy", "approval_thresholds", "tenant_defaults", "division_map", "role_map"]) {
+  for (const name of ["classifier_rules", "ingest_sources", "automation_policy", "approval_thresholds", "tenant_defaults", "division_map", "role_map", "document_intake"]) {
     await expect(page.getByTestId(`config-${name}`)).toHaveCount(0);
   }
 });
@@ -90,7 +90,7 @@ test("UC-07 JSON API: GET/PUT/reset round-trip works the same as the form (super
   expect(after.value.default_materiality_threshold_cents).toBe(999999);
 
   const list = await (await request.get(base)).json();
-  expect(list.configs.length).toBe(7);
+  expect(list.configs.length).toBe(8);
 
   await request.post(`/api/config/approval_thresholds/reset?tenant_id=${TENANT}&role=owner&is_super_admin=1`);
   const reset = await (await request.get(`/api/config/approval_thresholds?tenant_id=${TENANT}&role=owner&is_super_admin=1`)).json();
