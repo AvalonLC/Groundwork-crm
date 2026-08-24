@@ -4,6 +4,7 @@ import { processReceiptUpload, scoreFieldConfidence, type ExtractedReceiptFields
 import type { IngestResult } from "../ai/ingest";
 import type { ProcessReceiptResult } from "../ai/receipts";
 import { parseMoneyToCents } from "../ai/csv";
+import { documentIntake } from "../config/finance-config";
 import { canSee } from "./roles";
 import type { VocabularyMode } from "./vocabulary";
 import { readPageArgs, Page, Card, Why, Confidence, money, isPartialRequest, type FinanceAuthVars } from "./layout";
@@ -280,6 +281,20 @@ documentUploadRouter.post("/receipt", async (c) => {
   const file = form.file;
   if (!(file instanceof File) || file.size === 0) {
     return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "no file selected", partial), 400);
+  }
+  // config/finance/document-intake.json: Tyler's accepted types (PDF, JPG/
+  // JPEG, PNG, HEIC where supported) and 10MB size ceiling for the manual/
+  // mobile-camera upload channels — checked here rather than only in the
+  // <input accept="..."> attribute, which a user can bypass.
+  if (file.size > documentIntake.max_file_size_bytes) {
+    const maxMb = Math.round(documentIntake.max_file_size_bytes / 1024 / 1024);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, `file too large — max ${maxMb} MB`, partial), 413);
+  }
+  const nameLower = file.name.toLowerCase();
+  const extOk = documentIntake.accepted_extensions.some((ext) => nameLower.endsWith(ext));
+  const mimeOk = documentIntake.accepted_mime_types.includes(file.type);
+  if (!extOk && !mimeOk) {
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "unsupported file type — accepted: PDF, JPG, PNG, HEIC", partial), 400);
   }
 
   const vendorRaw = String(form.vendor ?? "").trim();

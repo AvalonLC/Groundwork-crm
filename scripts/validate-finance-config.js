@@ -22,14 +22,23 @@ function requireString(obj, key, file) {
 
 const CHECKS = {
   "classifier.rules.json": (obj, file) => {
+    requireArray(obj, "categories", file);
     requireArray(obj, "stage1_vendor_patterns", file);
     requireArray(obj, "stage2_keyword_rules", file);
     requireArray(obj, "stage3_amount_review_rules", file);
     requireArray(obj, "forced_review_categories", file);
     requireObject(obj, "confidence_thresholds", file);
+    const categoryIds = new Set((obj.categories ?? []).map((c) => c.id));
     for (const rule of obj.stage1_vendor_patterns ?? []) {
       try { new RegExp(rule.pattern, "i"); }
       catch (e) { bad.push(`${file}: stage1 rule "${rule.id}" has an invalid regex pattern: ${e.message}`); }
+      if (!categoryIds.has(rule.category)) bad.push(`${file}: stage1 rule "${rule.id}" references unknown category "${rule.category}"`);
+    }
+    for (const rule of obj.stage2_keyword_rules ?? []) {
+      if (!categoryIds.has(rule.category)) bad.push(`${file}: stage2 rule "${rule.id}" references unknown category "${rule.category}"`);
+    }
+    for (const cat of obj.forced_review_categories ?? []) {
+      if (!categoryIds.has(cat)) bad.push(`${file}: forced_review_categories entry "${cat}" is not a defined category`);
     }
   },
   "ingest.sources.json": (obj, file) => {
@@ -66,6 +75,12 @@ const CHECKS = {
         bad.push(`${file}: "${crmRole}" maps to "${financeRole}", not one of ${VALID_ROLES.join("|")}`);
       }
     }
+  },
+  "document-intake.json": (obj, file) => {
+    requireObject(obj, "channels", file);
+    requireArray(obj, "accepted_mime_types", file);
+    requireArray(obj, "accepted_extensions", file);
+    if (typeof obj.max_file_size_bytes !== "number") bad.push(`${file}: "max_file_size_bytes" must be a number`);
   },
   // Flat config bags — no structural requirements beyond valid JSON.
   "automation-policy.json": () => {},
