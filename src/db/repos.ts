@@ -1,6 +1,7 @@
 import type {
-  ActionItem, ActionVerb, ClassificationFinding, EquipmentRateProfile,
-  FinanceConfigOverride, FinanceTimeEntry, FinanceWorkOrder, JobCostLedger,
+  ActionItem, ActionVerb, ChangeOrder, ClassificationFinding, DirectCostCategory,
+  EquipmentRateProfile, FinanceConfigOverride, FinanceTimeEntry, FinanceWorkOrder,
+  FinanceWorkOrderProgress, JobBudgetVersion, JobCostLedger, JobCostLedgerAdjustment,
   LaborRateProfile, OverheadAllocation, OverheadPool,
   RateConfidence, Receipt, RecoverySnapshot, TenantFinancePolicy,
   TimeEntryAdjustment, UploadBatch, UploadDomain,
@@ -383,11 +384,17 @@ export async function postTimeEntry(
 
 // ---- job_cost_ledger ----
 
-/** The two-line post (POSTING.md): one labor line, one overhead line, atomic. */
+/** The two-line post (POSTING.md): one labor line, one overhead line,
+ * atomic. Neither line ever sets cost_category/progress_eligible/
+ * change_order_id/source_receipt_id (migration 0085) — those are
+ * direct_cost-only columns; labor/overhead rows get the column DEFAULTs
+ * (cost_category NULL, progress_eligible 1, change_order_id/
+ * source_receipt_id NULL) by simply not naming them in the INSERT, same
+ * as this function did before migration 0085 added them. */
 export async function postJobCostLedgerLines(
   db: D1Database,
-  laborLine: Omit<JobCostLedger, "id" | "posted_at" | "line_type">,
-  overheadLine: Omit<JobCostLedger, "id" | "posted_at" | "line_type">,
+  laborLine: Pick<JobCostLedger, "company_id" | "time_entry_id" | "job_id" | "amount_cents" | "division">,
+  overheadLine: Pick<JobCostLedger, "company_id" | "time_entry_id" | "job_id" | "amount_cents" | "division">,
 ): Promise<void> {
   const labor = db.prepare(`
     INSERT INTO job_cost_ledger (company_id, time_entry_id, job_id, line_type, amount_cents, division)
@@ -745,9 +752,14 @@ export async function getReceiptByHash(
  * receipt enters 'pending_review' via the column DEFAULT (migration 0084)
  * so there's exactly one place ("pending_review is the starting state")
  * instead of every insert call site having to remember to pass it. Use
- * setReceiptStatus() below for the explicit human approve/reject action. */
+ * setReceiptStatus() below for the explicit human approve/reject action.
+ * cost_category/progress_eligible/posted_at (migration 0085) are likewise
+ * NOT caller-supplied at insert time — a freshly-uploaded receipt has no
+ * job/category decision made yet; those are set later by
+ * setReceiptCostCategory() and postApprovedReceiptToLedger() respectively,
+ * once a human has actually decided them. */
 export async function insertReceipt(
-  db: D1Database, row: Omit<Receipt, "created_at" | "status">,
+  db: D1Database, row: Omit<Receipt, "created_at" | "status" | "cost_category" | "progress_eligible" | "posted_at">,
 ): Promise<void> {
   await db.prepare(`
     INSERT INTO receipt
