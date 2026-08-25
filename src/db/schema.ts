@@ -48,6 +48,31 @@ export interface FinanceWorkOrder {
   completed_at: string | null;
 }
 
+/**
+ * Migration 0085 §4.3. The job-progress-relevant slice of a work_order —
+ * separate from FinanceWorkOrder (above) rather than added onto it, since
+ * FinanceWorkOrder's shape is deliberately frozen to match the old
+ * WorkItem for its existing consumers (unbilled.ts, job-costing.tsx).
+ * crew_id is included because division resolution is crew_id ->
+ * crews.division (ITEM4-JOBCOST.md §2), not a stored column on work_orders
+ * itself.
+ */
+export interface FinanceWorkOrderProgress {
+  id: string;
+  company_id: string;
+  crew_id: string | null;
+  /** Manual override only (completion_method='manual'). NULL means
+   * "compute it instead". */
+  completion_pct_millionths: Millionths | null;
+  /** Only meaningful when the active job_budget_versions row has
+   * completion_method='service_units'. */
+  service_units_completed: number | null;
+  /** Distinct from status='completed'/finance_completed_at (those mark the
+   * *work* done); this marks the *cost side* closed, which forces earned
+   * completion % to 1.00 regardless of completion_method. */
+  financially_closed_at: string | null;
+}
+
 export type RateConfidence = "high" | "medium" | "low";
 
 /**
@@ -73,15 +98,132 @@ export interface FinanceTimeEntry {
   posted_at: string | null;
 }
 
+/**
+ * Migration 0085 (Item 4 Stage 2, docs/spec/ITEM4-JOBCOST.md §4.4).
+ * time_entry_id is now nullable — non-labor postings (materials, subs,
+ * equipment, disposal, permits, other) have no time_entry, they post from
+ * an approved receipt instead (see source_receipt_id, and
+ * src/api/receipt-posting.ts). line_type gained 'direct_cost'; labor/
+ * overhead keep meaning exactly what they meant before this migration.
+ */
 export interface JobCostLedger {
   id: number;
   company_id: string;
-  time_entry_id: string; // was `number` referencing the old time_entry(id); now TEXT referencing time_entries(id)
+  time_entry_id: string | null;
   job_id: string; // references work_orders(id)
-  line_type: "labor" | "overhead";
+  line_type: "labor" | "overhead" | "direct_cost";
+  /** NULL for labor/overhead rows; required in practice for direct_cost
+   * rows (enforced in application code, not a NOT NULL column, since the
+   * CHECK only requires "NULL or one of the six values" — see repos.ts's
+   * postDirectCostLedgerLine). */
+  cost_category: DirectCostCategory | null;
   amount_cents: Cents;
   division: string | null;
+  /** Bool01. 0 = posted but excluded from earned-completion cost-to-cost
+   * math (deposits, prepaid vendor amounts, purchased-but-not-yet-installed
+   * materials). Defaults to 1 so labor/overhead rows are unaffected. */
+  progress_eligible: Bool01;
+  /** NULL for lines not tied to a specific approved change order. */
+  change_order_id: string | null;
+  /** NULL for labor/overhead lines; set for a direct_cost line posted from
+   * an approved receipt. */
+  source_receipt_id: string | null;
   posted_at: string;
+}
+
+/** The six non-labor direct-cost buckets a job_cost_ledger 'direct_cost'
+ * line or an approved receipt can be categorized into. Mirrors the CHECK
+ * constraints on job_cost_ledger.cost_category and receipt.cost_category
+ * (migration 0085). */
+export type DirectCostCategory =
+  | "materials" | "subcontractor" | "equipment" | "disposal" | "permits" | "other";
+
+/**
+ * Migration 0085 §4.1. Only status='approved' rows ever feed a job-progress
+ * formula — enforced in application code (every read helper filters
+ * WHERE status='approved'), matching how this codebase already gates by
+ * status everywhere else. overhead_rate_snapshot is frozen at approval so a
+ * later division-rate change never retroactively reshapes an old CO's
+ * contribution to revised budgeted overhead (ITEM4-JOBCOST.md §9 test 8).
+ */
+export interface ChangeOrder {
+  id: string;
+  company_id: string;
+  job_id: string; // references work_orders(id)
+  estimate_id: string | null; // references estimates(id)
+  customer_id: string | null; // denormalized for reporting; not authoritative
+  status: "draft" | "pending" | "approved" | "rejected" | "void";
+  revenue_adjustment_cents: Cents; // signed
+  direct_cost_adjustment_cents: Cents; // signed
+  labor_hours_adjustment_hundredths: HoursHundredths; // signed
+  overhead_rate_snapshot: TenThousandths | null; // NULL until approved
+  approved_at: string | null;
+  approved_by: string | null;
+  effective_date: string | null;
+  description: string;
+  reason: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CompletionMethod = "cost_to_cost" | "service_units" | "manual" | "completed";
+
+/**
+ * Migration 0085 §4.2. One row per approved baseline (revision_seq=0) or
+ * approved-change-order revision (1,2,3...). Never updated in place — same
+ * immutability convention as labor_rate_profile/equipment_rate_profile.
+ * Every money/hours figure here is CUMULATIVE (already includes this and
+ * all prior revisions) so "revised contract value"/"revised budgeted direct
+ * cost" are always just the latest row for a job, no runtime summation.
+ */
+export interface JobBudgetVersion {
+  id: string;
+  company_id: string;
+  job_id: string; // references work_orders(id)
+  source_type: "estimate" | "change_order";
+  source_id: string; // estimates.id or change_orders.id
+  revision_seq: number;
+  contract_value_cents: Cents;
+  labor_hours_budgeted_hundredths: HoursHundredths;
+  labor_rate_used: TenThousandths | null;
+  materials_budget_cents: Cents;
+  subcontractor_budget_cents: Cents;
+  equipment_budget_cents: Cents;
+  disposal_budget_cents: Cents;
+  permits_budget_cents: Cents;
+  other_direct_budget_cents: Cents;
+  direct_cost_budget_cents: Cents; // stored, not recomputed
+  division: string;
+  overhead_rate_used: TenThousandths; // frozen at approval
+  budgeted_overhead_cents: Cents; // stored
+  target_margin_millionths: Millionths | null;
+  completion_method: CompletionMethod;
+  service_units_planned: number | null;
+  /** Bool01. Set by the existing-record backfill script (ITEM4-JOBCOST.md
+   * §10 step 2) when a category split couldn't be attributed cleanly from
+   * source data — never invented, flagged for manual review instead. */
+  needs_review: Bool01;
+  approved_at: string;
+  approved_by: string;
+  created_at: string;
+}
+
+/**
+ * Migration 0085 §4.5, generalizing time_entry_adjustments' (migration
+ * 0083) reversal+replacement pattern to any job_cost_ledger line, not only
+ * time-entry-sourced ones — so it also covers materials/subcontractor/
+ * equipment/etc. corrections once those post via the receipt pipeline.
+ */
+export interface JobCostLedgerAdjustment {
+  id: string;
+  company_id: string;
+  original_line_id: number; // references job_cost_ledger(id)
+  reversal_line_id: number; // references job_cost_ledger(id)
+  replacement_line_id: number | null; // NULL for a pure reversal/credit
+  reason: string;
+  created_by: string;
+  created_at: string;
 }
 
 /**
@@ -258,6 +400,18 @@ export interface Receipt {
   /** Migration 0084. Defaults to 'pending_review' on insert; distinct from
    * field_confidence-derived needs_review (see DocumentStatus doc above). */
   status: DocumentStatus;
+  /** Migration 0085. Set by the human approver (not guessed from vendor
+   * name/amount) when posting an approved receipt to job_cost_ledger as a
+   * direct_cost line — see src/api/receipt-posting.ts. NULL until then. */
+  cost_category: DirectCostCategory | null;
+  /** Migration 0085. Bool01, same not-yet-earned semantics as
+   * job_cost_ledger.progress_eligible — set by the approver at posting
+   * time (deposit/prepaid/purchased-but-uninstalled -> 0). Defaults to 1. */
+  progress_eligible: Bool01;
+  /** Migration 0085. Write-once guard (same "WHERE posted_at IS NULL"
+   * pattern as time_entries.posted_at): a receipt can produce at most one
+   * job_cost_ledger line. NULL until postApprovedReceiptToLedger succeeds. */
+  posted_at: string | null;
   created_at: string;
 }
 
