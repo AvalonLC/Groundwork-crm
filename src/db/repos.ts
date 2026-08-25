@@ -1162,6 +1162,16 @@ export async function approveChangeOrderAndCreateBudgetVersion(
   newRevision: Omit<JobBudgetVersion, "created_at">,
 ): Promise<boolean> {
   const approveStmt = approveChangeOrderStatement(db, companyId, changeOrderId, approvedBy, overheadRateSnapshot);
+  // The INSERT is deliberately written as `INSERT ... SELECT ... WHERE changes() > 0`
+  // rather than a plain `INSERT ... VALUES (...)`. db.batch() runs statements
+  // sequentially inside one implicit transaction on a single connection, so
+  // SQLite's changes() scalar function here reflects exactly how many rows the
+  // immediately preceding statement (approveStmt) touched. If the CO wasn't
+  // 'pending' (approveStmt's WHERE clause matched nothing, changes() = 0), the
+  // SELECT's WHERE guard is false and NO row is inserted — closing the gap
+  // where an unconditional INSERT would otherwise land even on a no-op UPDATE,
+  // which would violate the "either both writes happen or neither does"
+  // atomicity guarantee this function exists to provide.
   const insertStmt = db.prepare(`
     INSERT INTO job_budget_versions
       (id, company_id, job_id, source_type, source_id, revision_seq,
@@ -1171,7 +1181,8 @@ export async function approveChangeOrderAndCreateBudgetVersion(
        direct_cost_budget_cents, division, overhead_rate_used, budgeted_overhead_cents,
        target_margin_millionths, completion_method, service_units_planned,
        needs_review, approved_at, approved_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+    WHERE changes() > 0
   `).bind(
     newRevision.id, newRevision.company_id, newRevision.job_id, newRevision.source_type,
     newRevision.source_id, newRevision.revision_seq, newRevision.contract_value_cents,
@@ -1186,7 +1197,9 @@ export async function approveChangeOrderAndCreateBudgetVersion(
   );
 
   const results = await db.batch([approveStmt, insertStmt]);
-  return ((results[0] as D1Result).meta.changes ?? 0) > 0;
+  const approveChanges = (results[0] as D1Result).meta.changes ?? 0;
+  const insertChanges = (results[1] as D1Result).meta.changes ?? 0;
+  return approveChanges > 0 && insertChanges > 0;
 }
 
 // ---- work_orders progress columns (migration 0085 §4.3) ----
