@@ -1432,6 +1432,34 @@ export async function setReceiptCostCategory(
   return (result.meta.changes ?? 0) > 0;
 }
 
+/**
+ * Sets (or clears, passing null) a receipt's job/work-order assignment —
+ * the review workflow's "assign or correct the work order" step (PR C).
+ * Same refuse-if-already-posted guard as setReceiptCostCategory (a posted
+ * receipt's job_id is part of its immutable ledger-line record; correcting
+ * it after the fact belongs to reverseJobCostLedgerLine, not here). Unlike
+ * setReceiptCostCategory, this ALSO verifies jobId (when not null) resolves
+ * to a real work_orders row in this exact tenant before writing anything —
+ * "no cross-tenant work-order assignment" is enforced here at the source,
+ * not only re-checked later at posting time by postApprovedReceiptToLedger.
+ * Returns false for: receipt not found/wrong tenant/already posted, OR
+ * jobId doesn't belong to this tenant.
+ */
+export async function setReceiptJobId(
+  db: D1Database, companyId: string, id: string, jobId: string | null,
+): Promise<boolean> {
+  if (jobId !== null) {
+    const job = await db.prepare(`SELECT id FROM work_orders WHERE id = ? AND company_id = ?`)
+      .bind(jobId, companyId).first<{ id: string }>();
+    if (!job) return false;
+  }
+  const result = await db.prepare(`
+    UPDATE receipt SET job_id = ?
+    WHERE company_id = ? AND id = ? AND posted_at IS NULL
+  `).bind(jobId, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
 /** Every approved-but-not-yet-posted receipt for a tenant with a job
  * assigned and a cost_category set — the "ready to post" queue. Receipts
  * missing a job_id or cost_category still show up in listReceiptsForTenant
@@ -1513,4 +1541,52 @@ export async function receiptHasPostedLedgerLine(
     `SELECT id FROM job_cost_ledger WHERE company_id = ? AND source_receipt_id = ? LIMIT 1`,
   ).bind(companyId, receiptId).first<{ id: number }>();
   return row !== null;
+}
+
+/** A tenant's assignable jobs for the receipt job/work-order selector (PR C:
+ * document-upload.tsx's receipt form, receipt-posting.tsx's review UI) — id
+ * plus enough label context (wo_number, title, client_name) to render a
+ * usable dropdown, without pulling every column work_orders has. Excludes
+ * 'cancelled' work orders (nothing should be costed against a job that
+ * never happened); 'completed' jobs are deliberately included since
+ * receipts (materials, subs) commonly land after work wraps up. */
+export interface AssignableJob {
+  id: string;
+  wo_number: string;
+  title: string;
+  client_name: string;
+  status: string;
+}
+export async function listAssignableJobsForTenant(
+  db: D1Database, companyId: string,
+): Promise<AssignableJob[]> {
+  const { results } = await db.prepare(`
+    SELECT id, wo_number, title, client_name, status FROM work_orders
+    WHERE company_id = ? AND status != 'cancelled'
+    ORDER BY COALESCE(scheduled_date, '9999-12-31') DESC, wo_number DESC
+  `).bind(companyId).all<AssignableJob>();
+  return results;
+}
+
+/**
+ * Resolves the division job_cost_ledger needs to post a job's costs —
+ * same work_orders.crew_id -> crews.division cascade already used by
+ * postWorkOrderTimeEntry (src/index.tsx) and postTimeEntryToLedger's
+ * caller for labor/overhead lines, reused here so a receipt's direct-cost
+ * line is posted with the same division a job's labor already posts
+ * under. Returns null (not throws) for any of: job not in this tenant, no
+ * crew assigned, or crew has no division set yet — all are honest "not
+ * postable yet" states the caller (the posting route) must surface, not
+ * paper over with a guessed division.
+ */
+export async function getJobDivision(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<string | null> {
+  const row = await db.prepare(`
+    SELECT c.division AS division
+    FROM work_orders wo
+    JOIN crews c ON c.id = wo.crew_id AND c.company_id = wo.company_id
+    WHERE wo.id = ? AND wo.company_id = ?
+  `).bind(jobId, companyId).first<{ division: string | null }>();
+  return row?.division ?? null;
 }

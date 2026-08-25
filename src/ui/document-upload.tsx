@@ -6,6 +6,8 @@ import type { ProcessReceiptResult } from "../ai/receipts";
 import { parseMoneyToCents } from "../ai/csv";
 import { documentIntake as staticDocumentIntake, type DocumentIntakeConfig } from "../config/finance-config";
 import { getEffectiveConfig } from "../config/finance-config-runtime";
+import { listAssignableJobsForTenant, setReceiptCostCategory, type AssignableJob } from "../db/repos";
+import { DIRECT_COST_CATEGORIES, type DirectCostCategory } from "../db/schema";
 import { canSee } from "./roles";
 import type { VocabularyMode } from "./vocabulary";
 import { readPageArgs, Page, Card, Why, Confidence, money, isPartialRequest, type FinanceAuthVars } from "./layout";
@@ -168,7 +170,7 @@ function renderPage(
   role: string, tenant: string | undefined, vocab: VocabularyMode, basePath: string,
   ingestResult: IngestResult | null, ingestError: string | null,
   receiptResult: ProcessReceiptResult | null, receiptConfidence: ReturnType<typeof scoreFieldConfidence> | null, receiptError: string | null,
-  partial: boolean,
+  partial: boolean, jobs: AssignableJob[],
 ) {
   // Carries tenant_id/role forward explicitly, same as config-admin.tsx and
   // policy-setup.tsx's own forms — c.req.path alone (used for basePath)
@@ -228,10 +230,36 @@ function renderPage(
               <input type="text" name="receipt_number" data-testid="receipt-number-input" style="padding:8px 10px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);font-size:13px" />
             </label>
           </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+            <label style="font-size:13px">
+              Job / work order <span style="color:var(--gw-muted);font-weight:400">(leave blank if unsure)</span><br />
+              <select name="job_id" data-testid="receipt-job-select" style="padding:8px 10px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);font-size:13px;min-width:220px">
+                <option value="">— Unassigned (send to manual review) —</option>
+                {jobs.map((j) => (
+                  <option value={j.id}>{j.wo_number} — {j.title || j.client_name || j.id}</option>
+                ))}
+              </select>
+            </label>
+            <label style="font-size:13px">
+              Cost category <span style="color:var(--gw-muted);font-weight:400">(leave blank if unsure)</span><br />
+              <select name="cost_category" data-testid="receipt-category-select" style="padding:8px 10px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);font-size:13px">
+                <option value="">— Not sure yet —</option>
+                {DIRECT_COST_CATEGORIES.map((cat) => (
+                  <option value={cat}>{cat}</option>
+                ))}
+              </select>
+            </label>
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px;margin-top:18px">
+              <input type="checkbox" name="progress_eligible" data-testid="receipt-progress-eligible-input" checked />
+              Counts toward job progress
+            </label>
+          </div>
           <p class="fin-card-s" style="margin-bottom:12px">
             Fields are typed in, not read off the image automatically — this build doesn't wire
             up AI extraction yet. Leave a field blank if you're not sure; it'll be flagged for
-            review instead of guessed at.
+            review instead of guessed at. Leaving job or category unassigned sends this receipt
+            to the Post Receipts manual-review queue instead of guessing — it can be assigned
+            and posted there once you know.
           </p>
           <button type="submit" data-testid="receipt-submit" style="background:var(--gw-pine);color:#fff;border:0;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">
             Upload receipt
@@ -265,7 +293,8 @@ documentUploadRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const partial = isPartialRequest(c);
   if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePathFor(c), null, null, null, null, null, partial));
+  const jobs = await listAssignableJobsForTenant(c.env.DB, tenant_id);
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePathFor(c), null, null, null, null, null, partial, jobs));
 });
 
 documentUploadRouter.post("/ingest", async (c) => {
@@ -273,18 +302,19 @@ documentUploadRouter.post("/ingest", async (c) => {
   const basePath = basePathFor(c);
   const partial = isPartialRequest(c);
   if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
+  const jobs = await listAssignableJobsForTenant(c.env.DB, tenant_id);
 
   const form = await c.req.parseBody();
   const file = form.file;
   if (!(file instanceof File) || file.size === 0) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, "no file selected", null, null, null, partial), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, "no file selected", null, null, null, partial, jobs), 400);
   }
 
   const ownerId = c.var.repId ?? "office-upload";
   const result = isXlsxLike(file)
     ? await ingestXlsxFile(c.env.DB, tenant_id, await file.arrayBuffer(), ownerId)
     : await ingestFile(c.env.DB, tenant_id, await file.text(), ownerId);
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, result, null, null, null, null, partial));
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, result, null, null, null, null, partial, jobs));
 });
 
 documentUploadRouter.post("/receipt", async (c) => {
@@ -292,11 +322,12 @@ documentUploadRouter.post("/receipt", async (c) => {
   const basePath = basePathFor(c);
   const partial = isPartialRequest(c);
   if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
+  const jobs = await listAssignableJobsForTenant(c.env.DB, tenant_id);
 
   const form = await c.req.parseBody();
   const file = form.file;
   if (!(file instanceof File) || file.size === 0) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "no file selected", partial), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "no file selected", partial, jobs), 400);
   }
   // config/finance/document-intake.json (Tyler's accepted types + 10MB
   // ceiling), read through getEffectiveConfig rather than the static
@@ -308,13 +339,13 @@ documentUploadRouter.post("/receipt", async (c) => {
   const documentIntake = (await getEffectiveConfig<DocumentIntakeConfig>(c.env.DB, tenant_id, "document_intake")).value;
   if (file.size > documentIntake.max_file_size_bytes) {
     const maxMb = Math.round(documentIntake.max_file_size_bytes / 1024 / 1024);
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, `file too large — max ${maxMb} MB`, partial), 413);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, `file too large — max ${maxMb} MB`, partial, jobs), 413);
   }
   const nameLower = file.name.toLowerCase();
   const extOk = documentIntake.accepted_extensions.some((ext) => nameLower.endsWith(ext));
   const mimeOk = documentIntake.accepted_mime_types.includes(file.type);
   if (!extOk && !mimeOk) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "unsupported file type — accepted: PDF, JPG, PNG, HEIC", partial), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "unsupported file type — accepted: PDF, JPG, PNG, HEIC", partial, jobs), 400);
   }
 
   const vendorRaw = String(form.vendor ?? "").trim();
@@ -323,8 +354,30 @@ documentUploadRouter.post("/receipt", async (c) => {
   const receiptNumberRaw = String(form.receipt_number ?? "").trim();
   const amountCents = amountRaw ? parseMoneyToCents(amountRaw) : null;
   if (amountCents !== null && (!Number.isFinite(amountCents) || amountCents < 0)) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "amount must be a non-negative number", partial), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "amount must be a non-negative number", partial, jobs), 400);
   }
+
+  // job_id: a tenant-scoped selector, not a hardcoded null. Cross-checked
+  // against this tenant's own jobs list (not just trusted from the form) —
+  // a crafted job_id from another tenant must never attach here; falling
+  // through to null (unassigned/manual-review) instead of erroring, since
+  // a stale/tampered value is functionally the same as "didn't pick one".
+  const jobIdRaw = String(form.job_id ?? "").trim();
+  const jobId = jobIdRaw && jobs.some((j) => j.id === jobIdRaw) ? jobIdRaw : null;
+
+  // cost_category: same "never invent an assignment" rule — an unrecognized
+  // value (tampered form, stale option) is treated as not-selected, not
+  // silently coerced into one of the six real buckets.
+  const costCategoryRaw = String(form.cost_category ?? "").trim();
+  const costCategory: DirectCostCategory | null =
+    (DIRECT_COST_CATEGORIES as string[]).includes(costCategoryRaw) ? (costCategoryRaw as DirectCostCategory) : null;
+
+  // Checkbox semantics: parseBody omits the key entirely when unchecked
+  // (same as policy-setup.tsx's equipment_engine_active), present (any
+  // value) when checked. Defaults to eligible (1) — same default the
+  // progress_eligible column itself carries — so leaving it untouched
+  // behaves exactly like today's implicit default, not a surprise flip.
+  const progressEligible: 0 | 1 = form.progress_eligible ? 1 : 0;
 
   const fields: ExtractedReceiptFields = {
     vendor: vendorRaw || null,
@@ -337,11 +390,24 @@ documentUploadRouter.post("/receipt", async (c) => {
   const bytes = await file.arrayBuffer();
 
   const result = await processReceiptUpload(c.env.DB, c.env.RECEIPTS, {
-    company_id: tenant_id, job_id: null, bytes, filename: file.name,
+    company_id: tenant_id, job_id: jobId, bytes, filename: file.name,
     extract: async () => fields,
     reviewOwnerId: ownerId, reviewOwnerRole: role,
   });
 
+  // cost_category/progress_eligible are NOT columns insertReceipt accepts
+  // (see that function's doc comment — they're a later, explicit human
+  // decision, never set at upload time). When the uploader already knows
+  // the category, apply it immediately via the same guarded setter the
+  // review UI uses (setReceiptCostCategory) — a freshly-inserted receipt
+  // is never posted yet, so its posted_at IS NULL guard always passes
+  // here; this is a convenience, not a bypass of the posting workflow —
+  // posting itself still requires a separate, explicit approve+post action
+  // (see receipt-posting.tsx), never automatic from upload.
+  if (result.status === "stored" && costCategory) {
+    await setReceiptCostCategory(c.env.DB, tenant_id, result.receipt_id, costCategory, progressEligible);
+  }
+
   const shownConfidence = result.status === "stored" ? confidence : null;
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, result, shownConfidence, null, partial));
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, result, shownConfidence, null, partial, jobs));
 });
