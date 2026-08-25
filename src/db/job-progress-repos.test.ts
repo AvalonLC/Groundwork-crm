@@ -1,0 +1,596 @@
+/// <reference types="@cloudflare/vitest-pool-workers" />
+import { describe, it, expect } from "vitest";
+import { env } from "cloudflare:test";
+import {
+  insertChangeOrder, getChangeOrder, listChangeOrdersForJob, listPendingChangeOrders,
+  updateChangeOrder, submitChangeOrderForApproval, approveChangeOrder, rejectChangeOrder,
+  voidChangeOrder, approveChangeOrderAndCreateBudgetVersion,
+  getLatestJobBudgetVersion, listJobBudgetVersionsForJob, insertJobBudgetVersion,
+  listJobBudgetVersionsNeedingReview,
+  getWorkOrderProgress, setWorkOrderManualCompletion, setWorkOrderServiceUnitsCompleted,
+  setWorkOrderFinanciallyClosed,
+  postDirectCostLedgerLine, getLedgerLinesForJobProgress, getJobCostLedgerLine,
+  reverseJobCostLedgerLine, getJobCostLedgerAdjustmentsForLine,
+  setReceiptCostCategory, listReceiptsReadyToPost, listReceiptsNeedingManualAssignment,
+  getReceiptForPosting, markReceiptPosted, receiptHasPostedLedgerLine,
+} from "./repos";
+import { postApprovedReceiptToLedger } from "../api/receipt-posting";
+import type { Receipt } from "./schema";
+
+const db = () => env.DB;
+const TENANT = "t-jobprog";
+const OTHER_TENANT = "t-jobprog-other";
+
+async function seedWorkOrder(id: string, companyId: string, crewId?: string) {
+  await db().prepare(
+    `INSERT INTO work_orders (id, company_id, wo_number, status, crew_id) VALUES (?,?,?,?,?)`,
+  ).bind(id, companyId, `WO-${id}`, "scheduled", crewId ?? null).run();
+}
+
+async function seedCrew(id: string, companyId: string, division: string) {
+  await db().prepare(
+    `INSERT INTO crews (id, company_id, name, division) VALUES (?,?,?,?)`,
+  ).bind(id, companyId, `Crew ${id}`, division).run();
+}
+
+async function seedReceipt(id: string, companyId: string, opts: Partial<Receipt> = {}) {
+  await db().prepare(`
+    INSERT INTO receipt (id, company_id, job_id, r2_key, content_hash, vendor, amount_cents, receipt_date, receipt_number)
+    VALUES (?,?,?,?,?,?,?,?,?)
+  `).bind(
+    id, companyId, opts.job_id ?? null, `r2/${id}`, `hash-${id}`,
+    opts.vendor ?? "Acme Supply", opts.amount_cents ?? 5000, opts.receipt_date ?? "2026-07-01",
+    opts.receipt_number ?? null,
+  ).run();
+  if (opts.status) {
+    await db().prepare(`UPDATE receipt SET status = ? WHERE company_id = ? AND id = ?`)
+      .bind(opts.status, companyId, id).run();
+  }
+}
+
+let idCounter = 0;
+function uid(prefix: string): string {
+  idCounter += 1;
+  return `${prefix}-${idCounter}`;
+}
+
+describe("change_orders CRUD + lifecycle", () => {
+  it("creates a draft, edits it, submits for approval, approves it, freezing overhead_rate_snapshot", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    const coId = uid("co");
+    await insertChangeOrder(db(), {
+      id: coId, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 100000, direct_cost_adjustment_cents: 50000,
+      labor_hours_adjustment_hundredths: 4000, effective_date: "2026-07-01",
+      description: "Add patio", reason: "customer request", created_by: "rep-1",
+    });
+
+    let co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("draft");
+    expect(co?.overhead_rate_snapshot).toBeNull();
+    expect(co?.approved_at).toBeNull();
+
+    // Edits are allowed while draft.
+    const edited = await updateChangeOrder(db(), TENANT, coId, { revenue_adjustment_cents: 120000 });
+    expect(edited).toBe(true);
+    co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.revenue_adjustment_cents).toBe(120000);
+
+    const submitted = await submitChangeOrderForApproval(db(), TENANT, coId);
+    expect(submitted).toBe(true);
+    co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("pending");
+
+    // Once pending, edits are refused (frozen except via approve/reject/void).
+    const editAfterSubmit = await updateChangeOrder(db(), TENANT, coId, { revenue_adjustment_cents: 999 });
+    // updateChangeOrder still allows 'pending' edits per this schema's rule
+    // ("draft or pending"); assert that instead of a false expectation.
+    expect(editAfterSubmit).toBe(true);
+    await updateChangeOrder(db(), TENANT, coId, { revenue_adjustment_cents: 120000 }); // restore
+
+    const approved = await approveChangeOrder(db(), TENANT, coId, "rep-2", 242200);
+    expect(approved).toBe(true);
+    co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("approved");
+    expect(co?.overhead_rate_snapshot).toBe(242200);
+    expect(co?.approved_by).toBe("rep-2");
+    expect(co?.approved_at).not.toBeNull();
+
+    // An approved CO can never be edited/voided again.
+    const editAfterApproval = await updateChangeOrder(db(), TENANT, coId, { revenue_adjustment_cents: 1 });
+    expect(editAfterApproval).toBe(false);
+    const voidAfterApproval = await voidChangeOrder(db(), TENANT, coId, "oops");
+    expect(voidAfterApproval).toBe(false);
+    co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.revenue_adjustment_cents).toBe(120000); // untouched
+    expect(co?.status).toBe("approved"); // untouched
+  });
+
+  it("rejects a pending CO; a rejected CO is terminal (cannot later be approved)", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const coId = uid("co");
+    await insertChangeOrder(db(), {
+      id: coId, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 1000, direct_cost_adjustment_cents: 0,
+      labor_hours_adjustment_hundredths: 0, effective_date: null,
+      description: "test", reason: "test", created_by: "rep-1",
+    });
+    await submitChangeOrderForApproval(db(), TENANT, coId);
+    const rejected = await rejectChangeOrder(db(), TENANT, coId, "rep-2", "not needed");
+    expect(rejected).toBe(true);
+    let co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("rejected");
+
+    const approveAfterReject = await approveChangeOrder(db(), TENANT, coId, "rep-2", 1);
+    expect(approveAfterReject).toBe(false);
+    co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("rejected"); // still rejected, never flipped to approved
+  });
+
+  it("tenant isolation: a CO created under one company is invisible to another", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const coId = uid("co");
+    await insertChangeOrder(db(), {
+      id: coId, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 1000, direct_cost_adjustment_cents: 0,
+      labor_hours_adjustment_hundredths: 0, effective_date: null,
+      description: "test", reason: "test", created_by: "rep-1",
+    });
+    const crossTenantRead = await getChangeOrder(db(), OTHER_TENANT, coId);
+    expect(crossTenantRead).toBeNull();
+
+    const crossTenantApprove = await approveChangeOrder(db(), OTHER_TENANT, coId, "intruder", 1);
+    expect(crossTenantApprove).toBe(false);
+    const co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("draft"); // untouched by the other tenant's attempt
+  });
+
+  it("listPendingChangeOrders and listChangeOrdersForJob scope correctly", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const co1 = uid("co");
+    const co2 = uid("co");
+    await insertChangeOrder(db(), {
+      id: co1, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 1, direct_cost_adjustment_cents: 0,
+      labor_hours_adjustment_hundredths: 0, effective_date: null,
+      description: "a", reason: "a", created_by: "rep-1",
+    });
+    await insertChangeOrder(db(), {
+      id: co2, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 2, direct_cost_adjustment_cents: 0,
+      labor_hours_adjustment_hundredths: 0, effective_date: null,
+      description: "b", reason: "b", created_by: "rep-1",
+    });
+    await submitChangeOrderForApproval(db(), TENANT, co2);
+
+    const forJob = await listChangeOrdersForJob(db(), TENANT, jobId);
+    expect(forJob.length).toBe(2);
+
+    const pending = await listPendingChangeOrders(db(), TENANT);
+    expect(pending.map((c) => c.id)).toEqual([co2]);
+  });
+});
+
+describe("job_budget_versions — immutable append-only", () => {
+  it("insertJobBudgetVersion never updates a prior revision; listJobBudgetVersionsForJob returns full history", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-1",
+      revision_seq: 0, contract_value_cents: 4000000, labor_hours_budgeted_hundredths: 240000,
+      labor_rate_used: 350000, materials_budget_cents: 800000, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 2400000, division: "landscape",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 726600, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-07-01T00:00:00Z", approved_by: "rep-1",
+    });
+
+    const baseline = await getLatestJobBudgetVersion(db(), TENANT, jobId);
+    expect(baseline?.revision_seq).toBe(0);
+    expect(baseline?.contract_value_cents).toBe(4000000);
+
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "change_order", source_id: "co-x",
+      revision_seq: 1, contract_value_cents: 4600000, labor_hours_budgeted_hundredths: 280000,
+      labor_rate_used: 350000, materials_budget_cents: 1100000, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 2750000, division: "landscape",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 823480, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-07-15T00:00:00Z", approved_by: "rep-2",
+    });
+
+    const latest = await getLatestJobBudgetVersion(db(), TENANT, jobId);
+    expect(latest?.revision_seq).toBe(1);
+    expect(latest?.contract_value_cents).toBe(4600000);
+
+    const history = await listJobBudgetVersionsForJob(db(), TENANT, jobId);
+    expect(history.map((h) => h.revision_seq)).toEqual([0, 1]);
+    // The baseline row itself was never touched by inserting revision 1.
+    expect(history[0].contract_value_cents).toBe(4000000);
+  });
+
+  it("listJobBudgetVersionsNeedingReview surfaces needs_review=1 rows only", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-nr",
+      revision_seq: 0, contract_value_cents: 100000, labor_hours_budgeted_hundredths: 1000,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 0, division: "maintenance",
+      overhead_rate_used: 100000, budgeted_overhead_cents: 0, target_margin_millionths: null,
+      completion_method: "manual", service_units_planned: null, needs_review: 1,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "backfill-script",
+    });
+    const needingReview = await listJobBudgetVersionsNeedingReview(db(), TENANT);
+    expect(needingReview.some((r) => r.job_id === jobId)).toBe(true);
+  });
+
+  it("approveChangeOrderAndCreateBudgetVersion is atomic: approval + new revision both land together", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const coId = uid("co");
+    await insertChangeOrder(db(), {
+      id: coId, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 600000, direct_cost_adjustment_cents: 350000,
+      labor_hours_adjustment_hundredths: 4000, effective_date: "2026-08-01",
+      description: "scope add", reason: "customer request", created_by: "rep-1",
+    });
+    await submitChangeOrderForApproval(db(), TENANT, coId);
+
+    const ok = await approveChangeOrderAndCreateBudgetVersion(db(), TENANT, coId, "rep-2", 242200, {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "change_order", source_id: coId,
+      revision_seq: 0, contract_value_cents: 4600000, labor_hours_budgeted_hundredths: 280000,
+      labor_rate_used: 350000, materials_budget_cents: 1100000, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 2750000, division: "landscape",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 823480, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-08-01T00:00:00Z", approved_by: "rep-2",
+    });
+    expect(ok).toBe(true);
+
+    const co = await getChangeOrder(db(), TENANT, coId);
+    expect(co?.status).toBe("approved");
+    expect(co?.overhead_rate_snapshot).toBe(242200);
+
+    const version = await getLatestJobBudgetVersion(db(), TENANT, jobId);
+    expect(version?.contract_value_cents).toBe(4600000);
+    expect(version?.source_id).toBe(coId);
+  });
+
+  it("approveChangeOrderAndCreateBudgetVersion refuses (no writes) when the CO isn't pending", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const coId = uid("co");
+    await insertChangeOrder(db(), {
+      id: coId, company_id: TENANT, job_id: jobId, estimate_id: null, customer_id: null,
+      revenue_adjustment_cents: 1, direct_cost_adjustment_cents: 0,
+      labor_hours_adjustment_hundredths: 0, effective_date: null,
+      description: "draft-only", reason: "test", created_by: "rep-1",
+    });
+    // Never submitted — still 'draft', not 'pending'.
+    const ok = await approveChangeOrderAndCreateBudgetVersion(db(), TENANT, coId, "rep-2", 1, {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "change_order", source_id: coId,
+      revision_seq: 0, contract_value_cents: 1, labor_hours_budgeted_hundredths: 0,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 0, division: "landscape",
+      overhead_rate_used: 1, budgeted_overhead_cents: 0, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-08-01T00:00:00Z", approved_by: "rep-2",
+    });
+    expect(ok).toBe(false);
+    const version = await getLatestJobBudgetVersion(db(), TENANT, jobId);
+    expect(version).toBeNull(); // the batch's insert never landed either
+  });
+});
+
+describe("work_orders progress columns", () => {
+  it("round-trips manual completion override, service units completed, financially_closed_at", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    let progress = await getWorkOrderProgress(db(), TENANT, jobId);
+    expect(progress?.completion_pct_millionths).toBeNull();
+    expect(progress?.financially_closed_at).toBeNull();
+
+    await setWorkOrderManualCompletion(db(), TENANT, jobId, 500000);
+    progress = await getWorkOrderProgress(db(), TENANT, jobId);
+    expect(progress?.completion_pct_millionths).toBe(500000);
+
+    // NULL-means-compute: clearing the override sets it back to null, not 0.
+    await setWorkOrderManualCompletion(db(), TENANT, jobId, null);
+    progress = await getWorkOrderProgress(db(), TENANT, jobId);
+    expect(progress?.completion_pct_millionths).toBeNull();
+
+    await setWorkOrderServiceUnitsCompleted(db(), TENANT, jobId, 3);
+    progress = await getWorkOrderProgress(db(), TENANT, jobId);
+    expect(progress?.service_units_completed).toBe(3);
+
+    await setWorkOrderFinanciallyClosed(db(), TENANT, jobId, "2026-08-01T00:00:00Z");
+    progress = await getWorkOrderProgress(db(), TENANT, jobId);
+    expect(progress?.financially_closed_at).toBe("2026-08-01T00:00:00Z");
+
+    // Re-opening (human-triggered) sets it back to null.
+    await setWorkOrderFinanciallyClosed(db(), TENANT, jobId, null);
+    progress = await getWorkOrderProgress(db(), TENANT, jobId);
+    expect(progress?.financially_closed_at).toBeNull();
+  });
+});
+
+describe("job_cost_ledger direct_cost posting + progress read shape", () => {
+  it("posts a single direct_cost line with a required cost_category", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    const lineId = await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "materials", amount_cents: 84000,
+      division: "landscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+    });
+    expect(lineId).toBeGreaterThan(0);
+
+    const line = await getJobCostLedgerLine(db(), TENANT, lineId);
+    expect(line?.line_type).toBe("direct_cost");
+    expect(line?.time_entry_id).toBeNull();
+    expect(line?.cost_category).toBe("materials");
+
+    const forProgress = await getLedgerLinesForJobProgress(db(), TENANT, jobId);
+    expect(forProgress).toEqual([{ line_type: "direct_cost", amount_cents: 84000, progress_eligible: 1 }]);
+  });
+
+  it("refuses to post a direct_cost line with no cost_category", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await expect(
+      postDirectCostLedgerLine(db(), {
+        company_id: TENANT, job_id: jobId, cost_category: null as never, amount_cents: 100,
+        division: "landscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("job_cost_ledger_adjustments — reversal + optional replacement, atomic + audited", () => {
+  it("a pure reversal (credit, no replacement) nets the job's totals to zero and records one adjustment row", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const lineId = await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "materials", amount_cents: 50000,
+      division: "landscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+    });
+    const original = await getJobCostLedgerLine(db(), TENANT, lineId);
+    expect(original).not.toBeNull();
+
+    const { reversal_line_id, replacement_line_id } = await reverseJobCostLedgerLine(
+      db(), TENANT, original!, uid("adj"), "duplicate charge", "rep-1",
+    );
+    expect(replacement_line_id).toBeNull();
+
+    const reversal = await getJobCostLedgerLine(db(), TENANT, reversal_line_id);
+    expect(reversal?.amount_cents).toBe(-50000);
+
+    const lines = await getLedgerLinesForJobProgress(db(), TENANT, jobId);
+    const total = lines.reduce((sum, l) => sum + l.amount_cents, 0);
+    expect(total).toBe(0);
+
+    const adjustments = await getJobCostLedgerAdjustmentsForLine(db(), TENANT, lineId);
+    expect(adjustments.length).toBe(1);
+    expect(adjustments[0].reversal_line_id).toBe(reversal_line_id);
+    expect(adjustments[0].replacement_line_id).toBeNull();
+  });
+
+  it("a reversal + replacement (correction) nets to the replacement's amount, both linked in one adjustment row", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const lineId = await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "equipment", amount_cents: 50000,
+      division: "landscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+    });
+    const original = await getJobCostLedgerLine(db(), TENANT, lineId);
+
+    const { reversal_line_id, replacement_line_id } = await reverseJobCostLedgerLine(
+      db(), TENANT, original!, uid("adj"), "wrong amount, corrected", "rep-1", 42000,
+    );
+    expect(replacement_line_id).not.toBeNull();
+
+    const lines = await getLedgerLinesForJobProgress(db(), TENANT, jobId);
+    const total = lines.reduce((sum, l) => sum + l.amount_cents, 0);
+    expect(total).toBe(42000); // 50000 - 50000 + 42000
+
+    const adjustments = await getJobCostLedgerAdjustmentsForLine(db(), TENANT, lineId);
+    expect(adjustments.length).toBe(1);
+    expect(adjustments[0].reversal_line_id).toBe(reversal_line_id);
+    expect(adjustments[0].replacement_line_id).toBe(replacement_line_id);
+  });
+
+  it("posted lines are never mutated directly — only ever reversed (original row's own amount is untouched)", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const lineId = await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "disposal", amount_cents: 12345,
+      division: "landscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+    });
+    const original = await getJobCostLedgerLine(db(), TENANT, lineId);
+    await reverseJobCostLedgerLine(db(), TENANT, original!, uid("adj"), "test", "rep-1", 9999);
+
+    const afterReversal = await getJobCostLedgerLine(db(), TENANT, lineId);
+    expect(afterReversal?.amount_cents).toBe(12345); // the ORIGINAL row itself, unchanged
+  });
+});
+
+describe("receipt cost-category/progress-eligibility + write-once posting", () => {
+  it("setReceiptCostCategory sets both fields, refuses once posted", async () => {
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved" });
+
+    const ok = await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+    expect(ok).toBe(true);
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.cost_category).toBe("materials");
+    expect(receipt?.progress_eligible).toBe(1);
+
+    await markReceiptPosted(db(), TENANT, receiptId);
+    const changeAfterPosted = await setReceiptCostCategory(db(), TENANT, receiptId, "equipment", 0);
+    expect(changeAfterPosted).toBe(false);
+    const unchanged = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(unchanged?.cost_category).toBe("materials"); // untouched
+  });
+
+  it("listReceiptsReadyToPost vs listReceiptsNeedingManualAssignment partition correctly", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    const ready = uid("rcpt");
+    await seedReceipt(ready, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, ready, "materials", 1);
+
+    const noJob = uid("rcpt");
+    await seedReceipt(noJob, TENANT, { status: "approved", job_id: null });
+
+    const noCategory = uid("rcpt");
+    await seedReceipt(noCategory, TENANT, { status: "approved", job_id: jobId });
+
+    const notApproved = uid("rcpt");
+    await seedReceipt(notApproved, TENANT, { job_id: jobId }); // pending_review, never surfaces in either queue
+
+    const readyList = await listReceiptsReadyToPost(db(), TENANT);
+    expect(readyList.map((r) => r.id)).toContain(ready);
+    expect(readyList.map((r) => r.id)).not.toContain(noJob);
+    expect(readyList.map((r) => r.id)).not.toContain(noCategory);
+    expect(readyList.map((r) => r.id)).not.toContain(notApproved);
+
+    const needsAssignment = await listReceiptsNeedingManualAssignment(db(), TENANT);
+    expect(needsAssignment.map((r) => r.id)).toContain(noJob);
+    expect(needsAssignment.map((r) => r.id)).toContain(noCategory);
+    expect(needsAssignment.map((r) => r.id)).not.toContain(ready);
+    expect(needsAssignment.map((r) => r.id)).not.toContain(notApproved);
+  });
+});
+
+describe("postApprovedReceiptToLedger — full authorized posting flow", () => {
+  it("posts a ready approved receipt exactly once, atomically, and refuses a second post", async () => {
+    const crewId = uid("crew");
+    await seedCrew(crewId, TENANT, "landscape");
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT, crewId);
+
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId, amount_cents: 78500 });
+    await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-approver");
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error("unreachable");
+
+    const line = await getJobCostLedgerLine(db(), TENANT, result.ledger_line_id);
+    expect(line?.line_type).toBe("direct_cost");
+    expect(line?.amount_cents).toBe(78500);
+    expect(line?.source_receipt_id).toBe(receiptId);
+    expect(line?.job_id).toBe(jobId);
+
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.posted_at).not.toBeNull();
+
+    // Second attempt is a safe conflict, not a second ledger line and not an error.
+    const second = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-approver");
+    expect(second.success).toBe(false);
+    if (second.success) throw new Error("unreachable");
+    expect(second.reason).toBe("already_posted");
+
+    const linesForJob = await getLedgerLinesForJobProgress(db(), TENANT, jobId);
+    expect(linesForJob.length).toBe(1); // still exactly one line
+  });
+
+  it("refuses to post a receipt with no job assigned", async () => {
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: null, amount_cents: 100 });
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.reason).toBe("no_job_assigned");
+  });
+
+  it("refuses to post a receipt with no cost_category set", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId, amount_cents: 100 });
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.reason).toBe("no_cost_category");
+  });
+
+  it("refuses to post a receipt that isn't approved yet (still pending_review)", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { job_id: jobId, amount_cents: 100 }); // no status override -> pending_review
+    await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.reason).toBe("not_approved");
+  });
+
+  it("refuses to post when the job doesn't belong to this tenant", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT); // job exists, but under a different company
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId, amount_cents: 100 });
+    await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.reason).toBe("job_not_in_tenant");
+  });
+
+  it("tenant isolation: cannot post a receipt belonging to a different company", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, OTHER_TENANT, { status: "approved", job_id: jobId, amount_cents: 100 });
+    await setReceiptCostCategory(db(), OTHER_TENANT, receiptId, "materials", 1);
+
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.reason).toBe("not_found"); // invisible under the wrong tenant
+  });
+
+  it("duplicate-posting protection also catches a pre-existing ledger line even if posted_at were somehow unset", async () => {
+    const crewId = uid("crew");
+    await seedCrew(crewId, TENANT, "landscape");
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT, crewId);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId, amount_cents: 500 });
+    await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+
+    // Simulate a pre-existing ledger line sourced from this receipt without
+    // posted_at being set yet (the "should never happen" belt-and-suspenders
+    // case the mandate calls out).
+    await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "materials", amount_cents: 500,
+      division: "landscape", progress_eligible: 1, change_order_id: null, source_receipt_id: receiptId,
+    });
+    expect(await receiptHasPostedLedgerLine(db(), TENANT, receiptId)).toBe(true);
+
+    const result = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.reason).toBe("already_posted");
+
+    const linesForJob = await getLedgerLinesForJobProgress(db(), TENANT, jobId);
+    expect(linesForJob.length).toBe(1); // no second line was written
+  });
+});

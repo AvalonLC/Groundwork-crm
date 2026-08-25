@@ -6,6 +6,7 @@ import type {
   RateConfidence, Receipt, RecoverySnapshot, TenantFinancePolicy,
   TimeEntryAdjustment, UploadBatch, UploadDomain,
 } from "./schema";
+import type { LedgerLineForProgress } from "../engines/job-progress";
 
 export const GLOBAL_CONFIG_SCOPE = "__global__";
 
@@ -904,4 +905,612 @@ export async function listConfigOverrides(
     `SELECT * FROM finance_config_override WHERE company_id = ? OR company_id = ? ORDER BY config_name, company_id`,
   ).bind(companyId, GLOBAL_CONFIG_SCOPE).all<FinanceConfigOverride>();
   return results;
+}
+
+// ── Item 4 Stage 2 (docs/spec/ITEM4-JOBCOST.md, migration 0085) ────────────
+// change_orders, job_budget_versions, work_orders progress columns,
+// job_cost_ledger direct-cost posting + adjustments, and the receipt ->
+// ledger posting pipeline. See src/engines/job-progress.ts for the pure
+// formula engine these repo functions feed.
+
+// ---- change_orders ----
+
+/** Every field a caller must supply to create a change order — id/status/
+ * approval fields excluded (status defaults to 'draft' via the column
+ * DEFAULT, same "one place owns the starting state" convention as
+ * insertReceipt/insertUploadBatch above; approved_at/approved_by/
+ * overhead_rate_snapshot are NULL until an explicit approveChangeOrder
+ * call, never guessed at creation time). */
+export async function insertChangeOrder(
+  db: D1Database,
+  row: Pick<ChangeOrder,
+    "id" | "company_id" | "job_id" | "estimate_id" | "customer_id" |
+    "revenue_adjustment_cents" | "direct_cost_adjustment_cents" |
+    "labor_hours_adjustment_hundredths" | "effective_date" | "description" |
+    "reason" | "created_by">,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO change_orders
+      (id, company_id, job_id, estimate_id, customer_id,
+       revenue_adjustment_cents, direct_cost_adjustment_cents,
+       labor_hours_adjustment_hundredths, effective_date, description, reason, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    row.id, row.company_id, row.job_id, row.estimate_id, row.customer_id,
+    row.revenue_adjustment_cents, row.direct_cost_adjustment_cents,
+    row.labor_hours_adjustment_hundredths, row.effective_date, row.description,
+    row.reason, row.created_by,
+  ).run();
+}
+
+export async function getChangeOrder(
+  db: D1Database, companyId: string, id: string,
+): Promise<ChangeOrder | null> {
+  return db.prepare(`SELECT * FROM change_orders WHERE company_id = ? AND id = ?`)
+    .bind(companyId, id).first<ChangeOrder>();
+}
+
+/** Newest first, for a job's change-order history/needs_review-adjacent
+ * exception views. */
+export async function listChangeOrdersForJob(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<ChangeOrder[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM change_orders WHERE company_id = ? AND job_id = ? ORDER BY created_at DESC`,
+  ).bind(companyId, jobId).all<ChangeOrder>();
+  return results;
+}
+
+/** Every change order awaiting a decision, across all jobs — the tenant's
+ * change-order approval queue. */
+export async function listPendingChangeOrders(
+  db: D1Database, companyId: string,
+): Promise<ChangeOrder[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM change_orders WHERE company_id = ? AND status = 'pending' ORDER BY created_at ASC`,
+  ).bind(companyId, ).all<ChangeOrder>();
+  return results;
+}
+
+/**
+ * Only a 'draft' or 'pending' CO may be edited (ITEM4-JOBCOST.md — once
+ * approved a CO's adjustment figures are frozen, same immutability
+ * convention as job_budget_versions; corrections require a new CO or a
+ * job_cost_ledger reversal, never a mutation of an approved one). Returns
+ * false (no rows changed) if the CO doesn't exist, belongs to another
+ * tenant, or is already approved/rejected/void — callers must treat that
+ * as "edit refused", not silently succeed.
+ */
+export async function updateChangeOrder(
+  db: D1Database, companyId: string, id: string,
+  fields: Partial<Pick<ChangeOrder,
+    "revenue_adjustment_cents" | "direct_cost_adjustment_cents" |
+    "labor_hours_adjustment_hundredths" | "effective_date" | "description" | "reason">>,
+): Promise<boolean> {
+  const cols = Object.keys(fields);
+  if (cols.length === 0) return true;
+  const setClause = cols.map((c) => `${c} = ?`).join(", ");
+  const values = cols.map((c) => (fields as Record<string, unknown>)[c]);
+  const result = await db.prepare(`
+    UPDATE change_orders SET ${setClause}, updated_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND status IN ('draft','pending')
+  `).bind(...values, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/** Moves a draft CO to 'pending' (submitted for approval) — a distinct step
+ * from creation so a CO can be edited freely while still a draft. No-op
+ * (returns false) if the CO isn't currently 'draft'. */
+export async function submitChangeOrderForApproval(
+  db: D1Database, companyId: string, id: string,
+): Promise<boolean> {
+  const result = await db.prepare(`
+    UPDATE change_orders SET status = 'pending', updated_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND status = 'draft'
+  `).bind(companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Approves a pending change order, freezing overhead_rate_snapshot at the
+ * division's CURRENT overhead rate (caller resolves this via
+ * getLatestOverheadAllocationForDivision and passes it in — this function
+ * itself has no idea what "current" means, same decoupling as the pure
+ * engine) — ITEM4-JOBCOST.md §9 test 8: once written here, this snapshot
+ * never changes again even if the division's rate changes later. Only a
+ * 'pending' CO can be approved (draft must be submitted first); returns
+ * false if the row doesn't exist, isn't pending, or belongs to another
+ * tenant. Approving a CO here does NOT by itself create a new
+ * job_budget_versions row — see createJobBudgetVersionFromChangeOrder,
+ * called by the caller as a second, explicit step (so the two-write
+ * sequence can be wrapped in one db.batch() by the route handler).
+ */
+export function approveChangeOrderStatement(
+  db: D1Database, companyId: string, id: string,
+  approvedBy: string, overheadRateSnapshot: number,
+): D1PreparedStatement {
+  return db.prepare(`
+    UPDATE change_orders
+    SET status = 'approved', approved_at = datetime('now'), approved_by = ?,
+        overhead_rate_snapshot = ?, updated_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND status = 'pending'
+  `).bind(approvedBy, overheadRateSnapshot, companyId, id);
+}
+
+export async function approveChangeOrder(
+  db: D1Database, companyId: string, id: string,
+  approvedBy: string, overheadRateSnapshot: number,
+): Promise<boolean> {
+  const result = await approveChangeOrderStatement(db, companyId, id, approvedBy, overheadRateSnapshot).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/** Only a 'pending' CO can be rejected. Rejected COs are terminal — a
+ * rejected CO is never later approved; a new CO must be created instead
+ * (same "never mutate a terminal-status row's meaning" rule as approval). */
+export async function rejectChangeOrder(
+  db: D1Database, companyId: string, id: string, rejectedBy: string, reason: string,
+): Promise<boolean> {
+  const result = await db.prepare(`
+    UPDATE change_orders
+    SET status = 'rejected', approved_by = ?, reason = ?, updated_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND status = 'pending'
+  `).bind(rejectedBy, reason, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/** Voids a draft/pending CO that should never be acted on again (withdrawn
+ * by the person who created it, superseded by a different CO, etc.) —
+ * distinct from 'rejected' (a reviewer's explicit no) so the two audit
+ * trails read differently. An already-approved CO can never be voided
+ * (financial history is immutable once approved) — only draft/pending. */
+export async function voidChangeOrder(
+  db: D1Database, companyId: string, id: string, reason: string,
+): Promise<boolean> {
+  const result = await db.prepare(`
+    UPDATE change_orders SET status = 'void', reason = ?, updated_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND status IN ('draft','pending')
+  `).bind(reason, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+// ---- job_budget_versions (IMMUTABLE — see schema.ts's doc comment) ----
+
+/** The latest (highest revision_seq) job_budget_versions row for a job —
+ * the "current revised budget" every formula reads from. Null if the job
+ * has no approved budget version at all (ITEM4-JOBCOST.md §9 test 4). */
+export async function getLatestJobBudgetVersion(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<JobBudgetVersion | null> {
+  return db.prepare(`
+    SELECT * FROM job_budget_versions
+    WHERE company_id = ? AND job_id = ?
+    ORDER BY revision_seq DESC LIMIT 1
+  `).bind(companyId, jobId).first<JobBudgetVersion>();
+}
+
+/** Full revision history for a job, oldest first — the "approved budget
+ * version history" view (PR D). */
+export async function listJobBudgetVersionsForJob(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<JobBudgetVersion[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM job_budget_versions WHERE company_id = ? AND job_id = ? ORDER BY revision_seq ASC`,
+  ).bind(companyId, jobId).all<JobBudgetVersion>();
+  return results;
+}
+
+/**
+ * Inserts a brand-new immutable revision — either the original baseline
+ * (revision_seq=0, source_type='estimate') or the next approved-CO
+ * revision (revision_seq = prior max + 1, source_type='change_order').
+ * NEVER an UPDATE to an existing row (schema.ts's JobBudgetVersion doc
+ * comment: "Never updated in place"). Every money/hours figure on `row`
+ * must already be the CUMULATIVE total (the caller computes this via
+ * src/engines/job-progress.ts's computeRevisedBudgetFromChangeOrders
+ * before calling this) — this function does no summation itself, it only
+ * persists what it's given as one new row.
+ */
+export async function insertJobBudgetVersion(
+  db: D1Database, row: Omit<JobBudgetVersion, "created_at">,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO job_budget_versions
+      (id, company_id, job_id, source_type, source_id, revision_seq,
+       contract_value_cents, labor_hours_budgeted_hundredths, labor_rate_used,
+       materials_budget_cents, subcontractor_budget_cents, equipment_budget_cents,
+       disposal_budget_cents, permits_budget_cents, other_direct_budget_cents,
+       direct_cost_budget_cents, division, overhead_rate_used, budgeted_overhead_cents,
+       target_margin_millionths, completion_method, service_units_planned,
+       needs_review, approved_at, approved_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    row.id, row.company_id, row.job_id, row.source_type, row.source_id, row.revision_seq,
+    row.contract_value_cents, row.labor_hours_budgeted_hundredths, row.labor_rate_used,
+    row.materials_budget_cents, row.subcontractor_budget_cents, row.equipment_budget_cents,
+    row.disposal_budget_cents, row.permits_budget_cents, row.other_direct_budget_cents,
+    row.direct_cost_budget_cents, row.division, row.overhead_rate_used, row.budgeted_overhead_cents,
+    row.target_margin_millionths, row.completion_method, row.service_units_planned,
+    row.needs_review, row.approved_at, row.approved_by,
+  ).run();
+}
+
+/** All job_budget_versions rows flagged needs_review=1 for a tenant — the
+ * §10 backfill's "needs manual review" queue surfaced in the UI (PR D). */
+export async function listJobBudgetVersionsNeedingReview(
+  db: D1Database, companyId: string,
+): Promise<JobBudgetVersion[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM job_budget_versions WHERE company_id = ? AND needs_review = 1 ORDER BY job_id, revision_seq`,
+  ).bind(companyId).all<JobBudgetVersion>();
+  return results;
+}
+
+/**
+ * Approves a pending change order AND creates the next job_budget_versions
+ * revision from it in one atomic batch — either both happen or neither
+ * does, since a CO that's "approved" but hasn't produced a new budget
+ * revision (or vice versa) would leave formulas reading stale/inconsistent
+ * data. `newRevision` must already carry the correct CUMULATIVE totals
+ * (computed by the caller via computeRevisedBudgetFromChangeOrders) and
+ * revision_seq (prior max + 1) — this function only writes what it's
+ * given, it does not compute anything.
+ */
+export async function approveChangeOrderAndCreateBudgetVersion(
+  db: D1Database, companyId: string, changeOrderId: string,
+  approvedBy: string, overheadRateSnapshot: number,
+  newRevision: Omit<JobBudgetVersion, "created_at">,
+): Promise<boolean> {
+  const approveStmt = approveChangeOrderStatement(db, companyId, changeOrderId, approvedBy, overheadRateSnapshot);
+  // The INSERT is deliberately written as `INSERT ... SELECT ... WHERE changes() > 0`
+  // rather than a plain `INSERT ... VALUES (...)`. db.batch() runs statements
+  // sequentially inside one implicit transaction on a single connection, so
+  // SQLite's changes() scalar function here reflects exactly how many rows the
+  // immediately preceding statement (approveStmt) touched. If the CO wasn't
+  // 'pending' (approveStmt's WHERE clause matched nothing, changes() = 0), the
+  // SELECT's WHERE guard is false and NO row is inserted — closing the gap
+  // where an unconditional INSERT would otherwise land even on a no-op UPDATE,
+  // which would violate the "either both writes happen or neither does"
+  // atomicity guarantee this function exists to provide.
+  const insertStmt = db.prepare(`
+    INSERT INTO job_budget_versions
+      (id, company_id, job_id, source_type, source_id, revision_seq,
+       contract_value_cents, labor_hours_budgeted_hundredths, labor_rate_used,
+       materials_budget_cents, subcontractor_budget_cents, equipment_budget_cents,
+       disposal_budget_cents, permits_budget_cents, other_direct_budget_cents,
+       direct_cost_budget_cents, division, overhead_rate_used, budgeted_overhead_cents,
+       target_margin_millionths, completion_method, service_units_planned,
+       needs_review, approved_at, approved_by)
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+    WHERE changes() > 0
+  `).bind(
+    newRevision.id, newRevision.company_id, newRevision.job_id, newRevision.source_type,
+    newRevision.source_id, newRevision.revision_seq, newRevision.contract_value_cents,
+    newRevision.labor_hours_budgeted_hundredths, newRevision.labor_rate_used,
+    newRevision.materials_budget_cents, newRevision.subcontractor_budget_cents,
+    newRevision.equipment_budget_cents, newRevision.disposal_budget_cents,
+    newRevision.permits_budget_cents, newRevision.other_direct_budget_cents,
+    newRevision.direct_cost_budget_cents, newRevision.division, newRevision.overhead_rate_used,
+    newRevision.budgeted_overhead_cents, newRevision.target_margin_millionths,
+    newRevision.completion_method, newRevision.service_units_planned,
+    newRevision.needs_review, newRevision.approved_at, newRevision.approved_by,
+  );
+
+  const results = await db.batch([approveStmt, insertStmt]);
+  const approveChanges = (results[0] as D1Result).meta.changes ?? 0;
+  const insertChanges = (results[1] as D1Result).meta.changes ?? 0;
+  return approveChanges > 0 && insertChanges > 0;
+}
+
+// ---- work_orders progress columns (migration 0085 §4.3) ----
+
+export async function getWorkOrderProgress(
+  db: D1Database, companyId: string, id: string,
+): Promise<FinanceWorkOrderProgress | null> {
+  return db.prepare(`
+    SELECT id, company_id, crew_id, completion_pct_millionths,
+      service_units_completed, financially_closed_at
+    FROM work_orders WHERE company_id = ? AND id = ?
+  `).bind(companyId, id).first<FinanceWorkOrderProgress>();
+}
+
+/** Manual completion-% override (completion_method='manual' only) — set
+ * explicitly by a human, never computed. Passing null clears the override
+ * back to "compute it" (NULL-means-compute convention). */
+export async function setWorkOrderManualCompletion(
+  db: D1Database, companyId: string, id: string, completionPctMillionths: number | null,
+): Promise<boolean> {
+  const result = await db.prepare(
+    `UPDATE work_orders SET completion_pct_millionths = ? WHERE company_id = ? AND id = ?`,
+  ).bind(completionPctMillionths, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/** service_units_completed — updated continuously as service_units-method
+ * work happens (each completed visit/unit increments this on the work
+ * order; planned units live on the budget version instead, since they
+ * don't change as work happens). */
+export async function setWorkOrderServiceUnitsCompleted(
+  db: D1Database, companyId: string, id: string, serviceUnitsCompleted: number | null,
+): Promise<boolean> {
+  const result = await db.prepare(
+    `UPDATE work_orders SET service_units_completed = ? WHERE company_id = ? AND id = ?`,
+  ).bind(serviceUnitsCompleted, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Sets financially_closed_at — forces earned completion to exactly 1.00
+ * regardless of completion_method (src/engines/job-progress.ts's
+ * computeEarnedCompletion, checked first before any method branch).
+ * Passing null re-opens the job (e.g. a late vendor bill turns up after an
+ * accidental early close) — this is a deliberate, human-triggered action
+ * in both directions, never automatic.
+ */
+export async function setWorkOrderFinanciallyClosed(
+  db: D1Database, companyId: string, id: string, financiallyClosedAt: string | null,
+): Promise<boolean> {
+  const result = await db.prepare(
+    `UPDATE work_orders SET financially_closed_at = ? WHERE company_id = ? AND id = ?`,
+  ).bind(financiallyClosedAt, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+// ---- job_cost_ledger: direct_cost posting + progress read helpers ----
+
+/**
+ * The single-line direct_cost post — parallel to postJobCostLedgerLines'
+ * two-line labor+overhead post, but for exactly one non-labor cost line
+ * (materials/subcontractor/equipment/disposal/permits/other). Always sets
+ * time_entry_id NULL (a direct_cost line is never tied to a time entry) and
+ * always requires a cost_category (enforced here in application code, since
+ * the column CHECK only requires "NULL or one of six" — migration 0085's
+ * comment on schema.ts's JobCostLedger.cost_category). Returns the new
+ * job_cost_ledger row's id for the caller to link into
+ * job_cost_ledger_adjustments/receipt.posted_at bookkeeping.
+ */
+export async function postDirectCostLedgerLine(
+  db: D1Database,
+  line: Pick<JobCostLedger,
+    "company_id" | "job_id" | "cost_category" | "amount_cents" | "division" |
+    "progress_eligible" | "change_order_id" | "source_receipt_id">,
+): Promise<number> {
+  if (line.cost_category === null) {
+    throw new Error("postDirectCostLedgerLine: cost_category is required for a direct_cost line");
+  }
+  const result = await db.prepare(`
+    INSERT INTO job_cost_ledger
+      (company_id, time_entry_id, job_id, line_type, cost_category, amount_cents,
+       division, progress_eligible, change_order_id, source_receipt_id)
+    VALUES (?, NULL, ?, 'direct_cost', ?, ?, ?, ?, ?, ?)
+  `).bind(
+    line.company_id, line.job_id, line.cost_category, line.amount_cents,
+    line.division, line.progress_eligible, line.change_order_id, line.source_receipt_id,
+  ).run();
+  return result.meta.last_row_id as number;
+}
+
+/** Same statement as postDirectCostLedgerLine, but returned unexecuted so
+ * callers (postApprovedReceiptToLedger below) can batch it atomically with
+ * the receipt's write-once posted_at update — either both happen or
+ * neither does. */
+export function postDirectCostLedgerLineStatement(
+  db: D1Database,
+  line: Pick<JobCostLedger,
+    "company_id" | "job_id" | "cost_category" | "amount_cents" | "division" |
+    "progress_eligible" | "change_order_id" | "source_receipt_id">,
+): D1PreparedStatement {
+  if (line.cost_category === null) {
+    throw new Error("postDirectCostLedgerLineStatement: cost_category is required for a direct_cost line");
+  }
+  return db.prepare(`
+    INSERT INTO job_cost_ledger
+      (company_id, time_entry_id, job_id, line_type, cost_category, amount_cents,
+       division, progress_eligible, change_order_id, source_receipt_id)
+    VALUES (?, NULL, ?, 'direct_cost', ?, ?, ?, ?, ?, ?)
+  `).bind(
+    line.company_id, line.job_id, line.cost_category, line.amount_cents,
+    line.division, line.progress_eligible, line.change_order_id, line.source_receipt_id,
+  );
+}
+
+/** All posted job_cost_ledger lines for a job, shaped exactly as
+ * src/engines/job-progress.ts's pure formulas need (LedgerLineForProgress)
+ * — this is the one place the DB row shape gets narrowed down to the
+ * engine's decoupled plain-input shape, so the engine itself never has to
+ * know about job_cost_ledger's real column set. */
+export async function getLedgerLinesForJobProgress(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<LedgerLineForProgress[]> {
+  const { results } = await db.prepare(`
+    SELECT line_type, amount_cents, progress_eligible
+    FROM job_cost_ledger WHERE company_id = ? AND job_id = ?
+  `).bind(companyId, jobId).all<LedgerLineForProgress>();
+  return results;
+}
+
+export async function getJobCostLedgerLine(
+  db: D1Database, companyId: string, id: number,
+): Promise<JobCostLedger | null> {
+  return db.prepare(`SELECT * FROM job_cost_ledger WHERE company_id = ? AND id = ?`)
+    .bind(companyId, id).first<JobCostLedger>();
+}
+
+// ---- job_cost_ledger_adjustments (generalizes time_entry_adjustments) ----
+
+/**
+ * Reverses any posted job_cost_ledger line (labor, overhead, or
+ * direct_cost — generalizing insertReversalTimeEntry's labor/overhead-only
+ * reversal to cover direct_cost lines too) by inserting a same-shape
+ * negative-amount row, optionally followed by a replacement row carrying
+ * the corrected amount, plus the audit-trail job_cost_ledger_adjustments
+ * row linking all of them together. All writes happen in one db.batch() —
+ * either the full reversal (and optional replacement) succeeds, or none of
+ * it does; there is no path that leaves a reversal without its audit row
+ * or vice versa. Posted lines are never UPDATEd or DELETEd directly — this
+ * is the only way to correct one (schema.ts's JobCostLedgerAdjustment doc
+ * comment).
+ */
+export async function reverseJobCostLedgerLine(
+  db: D1Database,
+  companyId: string,
+  original: JobCostLedger,
+  adjustmentId: string,
+  reason: string,
+  createdBy: string,
+  replacementAmountCents?: number,
+): Promise<{ reversal_line_id: number; replacement_line_id: number | null }> {
+  const reversalStmt = db.prepare(`
+    INSERT INTO job_cost_ledger
+      (company_id, time_entry_id, job_id, line_type, cost_category, amount_cents,
+       division, progress_eligible, change_order_id, source_receipt_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    companyId, original.time_entry_id, original.job_id, original.line_type,
+    original.cost_category, -original.amount_cents, original.division,
+    original.progress_eligible, original.change_order_id, original.source_receipt_id,
+  );
+
+  const statements: D1PreparedStatement[] = [reversalStmt];
+  if (replacementAmountCents !== undefined) {
+    statements.push(db.prepare(`
+      INSERT INTO job_cost_ledger
+        (company_id, time_entry_id, job_id, line_type, cost_category, amount_cents,
+         division, progress_eligible, change_order_id, source_receipt_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).bind(
+      companyId, original.time_entry_id, original.job_id, original.line_type,
+      original.cost_category, replacementAmountCents, original.division,
+      original.progress_eligible, original.change_order_id, original.source_receipt_id,
+    ));
+  }
+
+  const results = await db.batch(statements);
+  const reversalLineId = (results[0] as D1Result).meta.last_row_id as number;
+  const replacementLineId = results.length > 1 ? ((results[1] as D1Result).meta.last_row_id as number) : null;
+
+  await db.prepare(`
+    INSERT INTO job_cost_ledger_adjustments
+      (id, company_id, original_line_id, reversal_line_id, replacement_line_id, reason, created_by)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(adjustmentId, companyId, original.id, reversalLineId, replacementLineId, reason, createdBy).run();
+
+  return { reversal_line_id: reversalLineId, replacement_line_id: replacementLineId };
+}
+
+export async function getJobCostLedgerAdjustmentsForLine(
+  db: D1Database, companyId: string, originalLineId: number,
+): Promise<JobCostLedgerAdjustment[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM job_cost_ledger_adjustments WHERE company_id = ? AND original_line_id = ? ORDER BY created_at`,
+  ).bind(companyId, originalLineId).all<JobCostLedgerAdjustment>();
+  return results;
+}
+
+// ---- receipt: cost-category/progress-eligibility + write-once posting ----
+
+/**
+ * Sets a receipt's cost_category and progress_eligible — the human
+ * approver's decision, made at posting time (migration 0085's doc comment:
+ * "Set by the human approver... NOT guessed from vendor name/amount...
+ * NULL until then"), never at initial upload. Refuses to touch a receipt
+ * that's already posted (posted_at NOT NULL) — once a receipt has produced
+ * its one job_cost_ledger line, its category is part of that line's
+ * immutable record, not the receipt's own mutable field anymore; a
+ * post-posting category correction must go through
+ * reverseJobCostLedgerLine instead. Returns false if the receipt doesn't
+ * exist, belongs to another tenant, or is already posted.
+ */
+export async function setReceiptCostCategory(
+  db: D1Database, companyId: string, id: string,
+  costCategory: DirectCostCategory, progressEligible: 0 | 1,
+): Promise<boolean> {
+  const result = await db.prepare(`
+    UPDATE receipt SET cost_category = ?, progress_eligible = ?
+    WHERE company_id = ? AND id = ? AND posted_at IS NULL
+  `).bind(costCategory, progressEligible, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/** Every approved-but-not-yet-posted receipt for a tenant with a job
+ * assigned and a cost_category set — the "ready to post" queue. Receipts
+ * missing a job_id or cost_category still show up in listReceiptsForTenant
+ * generally, but are NOT ready to post (see the unassigned/manual-review
+ * queue below). */
+export async function listReceiptsReadyToPost(
+  db: D1Database, companyId: string,
+): Promise<Receipt[]> {
+  const { results } = await db.prepare(`
+    SELECT * FROM receipt
+    WHERE company_id = ? AND status = 'approved' AND posted_at IS NULL
+      AND job_id IS NOT NULL AND cost_category IS NOT NULL
+    ORDER BY created_at ASC
+  `).bind(companyId).all<Receipt>();
+  return results;
+}
+
+/** Approved receipts that cannot yet be safely posted — no job assigned,
+ * or no cost_category set — surfaced as an explicit "unassigned / needs
+ * manual review" queue (PR C requirement) rather than silently sitting
+ * unposted with no visible reason. */
+export async function listReceiptsNeedingManualAssignment(
+  db: D1Database, companyId: string,
+): Promise<Receipt[]> {
+  const { results } = await db.prepare(`
+    SELECT * FROM receipt
+    WHERE company_id = ? AND status = 'approved' AND posted_at IS NULL
+      AND (job_id IS NULL OR cost_category IS NULL)
+    ORDER BY created_at ASC
+  `).bind(companyId).all<Receipt>();
+  return results;
+}
+
+export async function getReceiptForPosting(
+  db: D1Database, companyId: string, id: string,
+): Promise<Receipt | null> {
+  return db.prepare(`SELECT * FROM receipt WHERE company_id = ? AND id = ?`)
+    .bind(companyId, id).first<Receipt>();
+}
+
+/**
+ * Write-once guard (POSTING.md's "WHERE posted_at IS NULL" pattern,
+ * mirrored exactly from postTimeEntry above): marks a receipt posted,
+ * returning false (no rows changed) if it was already posted by a
+ * concurrent request — the caller (postApprovedReceiptToLedger,
+ * src/api/receipt-posting.ts) must treat false as "someone else already
+ * posted this, return a safe conflict response", never retry the write.
+ */
+export function markReceiptPostedStatement(
+  db: D1Database, companyId: string, id: string,
+): D1PreparedStatement {
+  return db.prepare(`
+    UPDATE receipt SET posted_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND posted_at IS NULL
+  `).bind(companyId, id);
+}
+
+export async function markReceiptPosted(
+  db: D1Database, companyId: string, id: string,
+): Promise<boolean> {
+  const result = await markReceiptPostedStatement(db, companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Duplicate/source-identity protection: is there already a job_cost_ledger
+ * line sourced from this exact receipt? Since markReceiptPosted's
+ * "posted_at IS NULL" guard is the primary write-once gate, this is a
+ * belt-and-suspenders check for the (should-never-happen) case of a
+ * receipt whose posted_at got set without a corresponding ledger line, or
+ * a caller that skips the guarded write path entirely — the posting route
+ * checks this BEFORE attempting to post (see PR C step "prevent duplicate
+ * posting"), not just relying on the write-once column.
+ */
+export async function receiptHasPostedLedgerLine(
+  db: D1Database, companyId: string, receiptId: string,
+): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT id FROM job_cost_ledger WHERE company_id = ? AND source_receipt_id = ? LIMIT 1`,
+  ).bind(companyId, receiptId).first<{ id: number }>();
+  return row !== null;
 }
