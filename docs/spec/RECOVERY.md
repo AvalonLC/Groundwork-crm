@@ -58,11 +58,19 @@ What's built:
 rule (explicit in CLAUDE.md), the "no straight-line" and "no single date" forbidden
 clauses (explicit in tasks.json), the cron-trigger endpoint's fail-closed auth.
 
-**Inferred, not confirmed:** `gather-inputs.ts`'s derivation of
-recovered_to_date/budgeted/absorbed from job_cost_ledger and overhead_allocation
-are reasonable proxies I built, not formulas Tyler confirmed — worth review
-before trusting the numbers for anything customer-facing (see
-docs/PUNCHLIST.md).
+**Superseded 2026-08-25, not merely "inferred":** `gather-inputs.ts`'s
+derivation of recovered_to_date/budgeted/absorbed from job_cost_ledger and
+overhead_allocation are proxies built before Tyler's formulas existed. Tyler's
+final Item 4 decision (`docs/spec/ITEM4-JOBCOST.md`) explicitly confirms the
+**annual company-dashboard formulas above are still correct** (weekly_recovery,
+pct_recovered) — nothing in this file changes. What's superseded is only the
+job-level-adjacent framing of `recovered_to_date_cents` /
+`budgeted_overhead_cents` / `absorbed_overhead_cents` as used anywhere they
+imply a single job's cost/completion picture: those three are being renamed
+and/or replaced with real job-level formulas per `ITEM4-JOBCOST.md`. **Treat
+any job-level reading of today's `gather-inputs.ts` output as provisional or
+unavailable** until that migration and formula work lands — do not present it
+as a confirmed per-job number in any customer-facing surface until then.
 
 **Needs Tyler:** set `CRON_SECRET` on both GitHub Actions and Cloudflare
 Pages (same value, two places) — the only remaining input for scheduling.

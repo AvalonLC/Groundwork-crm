@@ -176,9 +176,16 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    still a separate, not-yet-scoped gap.
 4. **Live QuickBooks API integration** (vs. file upload) remains out of
    scope — would need OAuth, a new binding/secret, rate-limit handling.
-5. **`gather-inputs.ts`'s rollup-input derivations are inferred proxies**
+5. ~~**`gather-inputs.ts`'s rollup-input derivations are inferred proxies**
    (recovered_to_date from posted overhead ledger lines, budgeted/absorbed
-   from weekly allocation shares) — reasonable, not confirmed formulas.
+   from weekly allocation shares) — reasonable, not confirmed formulas.~~
+   **SUPERSEDED 2026-08-25** by Tyler's final Item 4 formula decision — see
+   `docs/spec/ITEM4-JOBCOST.md`. The company-level annual dashboard
+   formulas in `docs/spec/RECOVERY.md` were confirmed as still correct;
+   everything job-level-adjacent in `gather-inputs.ts` is now labeled
+   provisional pending the Stage 1 schema design's approval and the Stage 2
+   implementation that follows it. Not yet built — this replaces the old
+   "not confirmed" framing with a concrete, awaiting-approval spec.
 6. **Receipt upload (`/finance/upload`) has no AI/OCR extraction.**
    `processReceiptUpload` (`src/ai/receipts.ts`) takes an injected `extract`
    callback by design; the UI built for it (2026-08-06) passes through
