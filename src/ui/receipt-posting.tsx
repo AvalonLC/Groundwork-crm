@@ -166,7 +166,17 @@ receiptPostingRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const partial = isPartialRequest(c);
   if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
-  const notice = c.req.query("posted") === "1" ? "Posted." : c.req.query("saved") === "1" ? "Saved." : null;
+  // Non-partial /:id/post failures redirect here with ?error=<reason> (see
+  // below) — this must be surfaced, not silently dropped alongside the
+  // posted/saved cases, or a full-page post failure looks like nothing
+  // happened at all.
+  const errorReason = c.req.query("error");
+  const notice =
+    c.req.query("posted") === "1" ? "Posted."
+    : c.req.query("saved") === "1" ? "Saved."
+    : errorReason && errorReason in REASON_LABEL ? `Error: ${REASON_LABEL[errorReason as keyof typeof REASON_LABEL]}`
+    : errorReason ? "Error: could not post this receipt."
+    : null;
   return c.html(await renderReviewPage(c, tenant_id, role, vocab, notice, partial));
 });
 
