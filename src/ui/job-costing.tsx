@@ -57,6 +57,14 @@ jobCostingRouter.get("/", async (c) => {
         </Card>
       ) : null}
 
+      <div class="fin-note" data-testid="jobcost-provisional-note" style="border-left-color:var(--gw-amber)">
+        <strong>Provisional — labor and overhead only.</strong> This page does
+        not yet include materials, subcontractor, equipment, disposal, or
+        permit costs, and does not yet compute earned completion % against a
+        revised budget. See <code>docs/spec/ITEM4-JOBCOST.md</code> for the
+        confirmed formulas awaiting implementation.
+      </div>
+
       <div class="fin-grid fin-grid-3" data-testid="applied-overhead">
         <div class="fin-tile">
           <div class="fin-tile-l">{vocab === "simple" ? "Crew cost" : "Labor cost"}</div>
