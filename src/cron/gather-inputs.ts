@@ -5,16 +5,19 @@ import type { TenantRollupInput } from "./rollup";
 /**
  * Assembles a TenantRollupInput from real tables for one company.
  *
- * PROVISIONAL, superseded 2026-08-25 — see docs/spec/ITEM4-JOBCOST.md
- * (Tyler's final Item 4 formula decision, Stage 1 design awaiting
- * approval). The company-level annual dashboard formulas this function
- * ultimately feeds (weekly_recovery, pct_recovered via buildTenantRollup)
- * are explicitly confirmed correct and unaffected. What's provisional is
- * the framing of the four derived fields below as job-level-adjacent
- * proxies: recovered_to_date_cents/budgeted_overhead_cents/
- * absorbed_overhead_cents are being renamed and/or replaced with real
- * job-level formulas in Stage 2. Do not read any of the three as a
- * confirmed per-job number until that lands.
+ * See docs/spec/ITEM4-JOBCOST.md — Tyler's final Item 4 formula decision
+ * (approved and landed as of Stage 2). The company-level annual dashboard
+ * formulas this function feeds (weekly_recovery, pct_recovered via
+ * buildTenantRollup) are explicitly confirmed correct by that doc and are
+ * untouched by Stage 2. The real job-level formulas (revised budget,
+ * earned completion %, earned revenue, recovered/absorbed overhead to
+ * date) now live in src/engines/job-progress.ts + src/db/repos.ts's
+ * job-progress read section, and are wired into src/ui/job-costing.tsx —
+ * this file's four company-wide fields below (recovered_to_date_cents,
+ * weekly_budgeted_overhead_target_cents, absorbed_overhead_cents) were
+ * never job-level figures and must never be read as one; §6 completed the
+ * one rename this required (budgeted_overhead_cents ->
+ * weekly_budgeted_overhead_target_cents).
  *
  * EVERY query here is bounded at BOTH ends by asOf. Three of them were not:
  * recovered_to_date and absorbed_this_week had a lower bound only, and the
@@ -39,11 +42,14 @@ export async function gatherTenantRollupInputs(
   // "Recovered to date" = cumulative overhead absorbed via posted work,
   // year-to-date. This is the COMPANY-WIDE annual figure feeding
   // recovery_snapshot/pct_recovered — confirmed correct by
-  // docs/spec/ITEM4-JOBCOST.md's own text ("For the annual company
-  // dashboard: YTD recovered overhead / restated annual overhead target").
-  // Do NOT reuse this query's shape for a per-job "recovered overhead" —
-  // at job granularity this sum is ABSORBED overhead, not EARNED/recovered
-  // overhead; see ITEM4-JOBCOST.md formula 7 for the job-level version.
+  // docs/spec/ITEM4-JOBCOST.md §6 ("recovered_to_date_cents at the
+  // company/tenant level ... is unchanged"). Do NOT reuse this query's
+  // shape for a per-job "recovered overhead" — at job granularity this
+  // sum is ABSORBED overhead, not EARNED/recovered overhead; see
+  // src/engines/job-progress.ts's computeRecoveredOverheadToDate
+  // (ITEM4-JOBCOST.md formula 7) for the real job-level version, exposed
+  // as job_recovered_overhead_cents to avoid ever colliding with this
+  // company-level field of a similar name.
   const recoveredRow = await db.prepare(`
     SELECT COALESCE(SUM(amount_cents), 0) as total FROM job_cost_ledger
     WHERE company_id = ? AND line_type = 'overhead'
@@ -76,12 +82,12 @@ export async function gatherTenantRollupInputs(
     }
   }
 
-  // Absorption variance inputs — both COMPANY-WIDE weekly figures, not a
-  // job's budgeted/absorbed overhead. budgetedRow below should read as
-  // "weekly_budgeted_overhead_target_cents" per ITEM4-JOBCOST.md's
-  // renaming (pending); absorbedThisWeekRow is a valid weekly
-  // absorbed-overhead metric as-is (overhead lines are already generated
-  // from approved hours at the effective rate, per postTimeEntryToLedger).
+  // Absorption variance inputs — both COMPANY-WIDE weekly figures, never a
+  // job's budgeted/absorbed overhead. budgetedRow feeds
+  // weekly_budgeted_overhead_target_cents (the §6 rename, applied below);
+  // absorbedThisWeekRow is a valid weekly absorbed-overhead metric as-is
+  // (overhead lines are already generated from approved hours at the
+  // effective rate, per postTimeEntryToLedger) — no rename needed per §6.
   const budgetedRow = latestAsOfRow?.as_of
     ? await db.prepare(`
         SELECT COALESCE(SUM(allocated_overhead_cents), 0) as total FROM overhead_allocation
@@ -102,7 +108,7 @@ export async function gatherTenantRollupInputs(
     hours_per_week_hundredths: hoursRow?.total ?? 0,
     blended_overhead_rate: Math.round(blendedRate),
     confidence_days: approvalThresholds.recovery_confidence_days_default,
-    budgeted_overhead_cents: Math.round((budgetedRow?.total ?? 0) / 52),
+    weekly_budgeted_overhead_target_cents: Math.round((budgetedRow?.total ?? 0) / 52),
     absorbed_overhead_cents: absorbedThisWeekRow?.total ?? 0,
   };
 }

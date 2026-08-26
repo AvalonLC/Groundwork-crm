@@ -10,9 +10,15 @@ export interface TenantRollupInput {
   /** See docs/spec/RECOVERY.md — provisional until snapshot history exists
    * to derive a real trailing-variance window. */
   confidence_days: number;
-  /** For absorption variance: budgeted (allocated) vs. actually absorbed
-   * overhead over the same period, both in cents. */
-  budgeted_overhead_cents: number;
+  /** For absorption variance: the COMPANY-WIDE weekly overhead target
+   * (annual allocation ÷ 52) vs. actually absorbed overhead over the same
+   * trailing week, both in cents. Renamed from `budgeted_overhead_cents`
+   * per docs/spec/ITEM4-JOBCOST.md §6 — the old name implied a per-job
+   * budgeted-overhead figure, which this has never been; a real job-level
+   * one now exists separately (src/engines/job-progress.ts formula 4,
+   * `revised_budgeted_overhead_cents`). Never conflate the two: this
+   * field is a company/tenant-wide weekly target, not any job's budget. */
+  weekly_budgeted_overhead_target_cents: number;
   absorbed_overhead_cents: number;
 }
 
@@ -28,7 +34,9 @@ export interface TenantRollupResult {
   projected_black_friday: string | null;
   indeterminate_reason: string | null;
   confidence_days: number;
-  /** absorbed - budgeted: positive = absorbing more overhead than planned. */
+  /** absorbed - weekly_budgeted_overhead_target: positive = absorbing more
+   * overhead than the company-wide weekly target planned. §6 rename —
+   * see TenantRollupInput's field of the same name for why. */
   absorption_variance_cents: number;
 }
 
@@ -55,7 +63,7 @@ export function buildTenantRollup(input: TenantRollupInput): TenantRollupResult 
     projected_black_friday: projection.projected_black_friday,
     indeterminate_reason: projection.indeterminate_reason,
     confidence_days: projection.confidence_days,
-    absorption_variance_cents: input.absorbed_overhead_cents - input.budgeted_overhead_cents,
+    absorption_variance_cents: input.absorbed_overhead_cents - input.weekly_budgeted_overhead_target_cents,
   };
 }
 
