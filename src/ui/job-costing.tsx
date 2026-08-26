@@ -65,6 +65,20 @@ jobCostingRouter.get("/", async (c) => {
         confirmed formulas awaiting implementation.
       </div>
 
+      {jobId ? (
+        <div class="fin-note" data-testid="related-pages-link">
+          Contract-value and budget changes for this job (change orders, approval
+          history, and completion-method setup) live in{" "}
+          <a
+            href={`/finance/change-orders?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`}
+            data-testid="change-orders-drillthrough-link"
+          >
+            Change Orders
+          </a>
+          .
+        </div>
+      ) : null}
+
       <div class="fin-grid fin-grid-3" data-testid="applied-overhead">
         <div class="fin-tile">
           <div class="fin-tile-l">{vocab === "simple" ? "Crew cost" : "Labor cost"}</div>

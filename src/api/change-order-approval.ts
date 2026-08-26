@@ -4,7 +4,17 @@ import {
 } from "../db/repos";
 import { computeRevisedBudgetFromChangeOrders, validateRevisedBudget } from "../engines/job-progress";
 import type { BudgetComponents } from "../engines/job-progress";
-import type { Cents, CompletionMethod, JobBudgetVersion } from "../db/schema";
+import type { Cents, HoursHundredths, CompletionMethod, JobBudgetVersion } from "../db/schema";
+
+// Same pattern as src/api/receipt-posting.ts's `toCents` helper: the pure
+// engine (job-progress.ts) deliberately returns/consumes plain `number` for
+// BudgetComponents (it has no notion of the DB's branded types), so every
+// caller writing an engine result — or a `priorVersion?.field ?? 0` fallback,
+// which also collapses to a plain-number union once combined with the `0`
+// literal — into a branded job_budget_versions column must cast explicitly
+// here, once, rather than relying on structural inference.
+const asCents = (n: number): Cents => n as Cents;
+const asHours = (n: number): HoursHundredths => n as HoursHundredths;
 
 export type ChangeOrderApprovalResult =
   | { success: true; budget_version_id: string; revision_seq: number }

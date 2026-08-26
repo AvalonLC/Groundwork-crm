@@ -16,6 +16,7 @@ import { receiptPostingRouter } from "./receipt-posting";
 import { invoicesPaymentsRouter } from "./invoices-payments";
 import { ledgerRouter } from "./ledger";
 import { onboardingRouter } from "./onboarding";
+import { changeOrdersRouter } from "./change-orders";
 
 /**
  * Standalone dev/e2e-test entry for Finance OS UI pages — NOT part of the
@@ -56,6 +57,7 @@ app.route("/post-receipts", receiptPostingRouter);
 app.route("/invoices-payments", invoicesPaymentsRouter);
 app.route("/ledger", ledgerRouter);
 app.route("/onboarding", onboardingRouter);
+app.route("/change-orders", changeOrdersRouter);
 app.route("/api/config", configAdminApiRouter);
 
 // ── Test-only seeding endpoints. Only reachable on this dev-only server,
