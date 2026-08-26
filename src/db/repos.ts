@@ -1147,6 +1147,34 @@ export async function listJobBudgetVersionsNeedingReview(
 }
 
 /**
+ * PR D. Clears needs_review on exactly one job_budget_versions row, WITHOUT
+ * touching any of the row's financial columns (contract_value_cents,
+ * direct_cost_budget_cents, budgeted_overhead_cents, etc.) — this is the
+ * "resolve/confirm" action the review queue needs, deliberately separate
+ * from insertJobBudgetVersion so it can never be mistaken for (or misused
+ * as) a way to correct an approved figure. Per ITEM4-JOBCOST.md's
+ * immutability convention, a genuinely wrong approved value can only be
+ * corrected by a new change order / new revision, never by editing this
+ * flag's sibling columns — this function's UPDATE touches needs_review
+ * only, by construction, so that guarantee holds even if a caller passes
+ * the wrong id (the id + company_id WHERE clause is the only other thing
+ * that can make the UPDATE affect zero rows).
+ *
+ * Returns false if the row doesn't exist under this tenant, or was already
+ * resolved (needs_review already 0) — a caller should treat either as
+ * "nothing to resolve," not an error.
+ */
+export async function resolveJobBudgetVersionReview(
+  db: D1Database, companyId: string, id: string,
+): Promise<boolean> {
+  const result = await db.prepare(`
+    UPDATE job_budget_versions SET needs_review = 0
+    WHERE company_id = ? AND id = ? AND needs_review = 1
+  `).bind(companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
  * Approves a pending change order AND creates the next job_budget_versions
  * revision from it in one atomic batch — either both happen or neither
  * does, since a CO that's "approved" but hasn't produced a new budget
@@ -1585,6 +1613,21 @@ export async function listAssignableJobsForTenant(
     ORDER BY COALESCE(scheduled_date, '9999-12-31') DESC, wo_number DESC
   `).bind(companyId).all<AssignableJob>();
   return results;
+}
+
+/** Single-job counterpart to listAssignableJobsForTenant, for a page that's
+ * already scoped to one job_id (PR D's change-order list / budget-version
+ * history page needs the job's label without pulling every tenant job).
+ * Deliberately not filtered by status (unlike the list version) — a job
+ * that's since been cancelled must still show its own change-order/budget
+ * history, not 404. */
+export async function getAssignableJob(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<AssignableJob | null> {
+  return db.prepare(`
+    SELECT id, wo_number, title, client_name, status FROM work_orders
+    WHERE company_id = ? AND id = ?
+  `).bind(companyId, jobId).first<AssignableJob>();
 }
 
 /**
