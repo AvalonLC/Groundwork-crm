@@ -117,6 +117,39 @@ export function computeRevisedBudgetFromChangeOrders(
   return { contract_value_cents: contractValueCents, direct_cost_budget_cents: directCostBudgetCents, budgeted_overhead_cents: budgetedOverheadCents };
 }
 
+/**
+ * PR D financial-integrity gate: "invalid negative totals or impossible
+ * revised budgets are rejected" (mandate §2). Deliberately narrow — this is
+ * NOT a business-judgment check (a shrinking budget from a scope-reduction
+ * CO is legitimate and common), only a check that the three cumulative
+ * totals a job_budget_versions row stores can never go negative, which
+ * would be nonsensical for a "money owed"/"money budgeted" figure and
+ * would corrupt every downstream formula (1, 2, 4, and everything chained
+ * off them) for the rest of that job's life, since these rows are
+ * immutable once written. Called by the approval route handler on the
+ * result of computeRevisedBudgetFromChangeOrders, BEFORE it's ever passed
+ * to approveChangeOrderAndCreateBudgetVersion — a caller that skips this
+ * check and writes an impossible revision has no way to undo it afterward.
+ */
+export interface RevisedBudgetValidation {
+  valid: boolean;
+  errors: string[];
+}
+
+export function validateRevisedBudget(revised: BudgetComponents): RevisedBudgetValidation {
+  const errors: string[] = [];
+  if (revised.contract_value_cents < 0) {
+    errors.push("Revised contract value cannot be negative.");
+  }
+  if (revised.direct_cost_budget_cents < 0) {
+    errors.push("Revised budgeted direct cost cannot be negative.");
+  }
+  if (revised.budgeted_overhead_cents < 0) {
+    errors.push("Revised budgeted overhead cannot be negative.");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 // ── Formulas 1, 2, 4: read the latest budget version (already cumulative) ──
 // No live recompute at read time — see BudgetComponents' doc comment above.
 // These three accessors exist mainly for null-safety/naming at every call

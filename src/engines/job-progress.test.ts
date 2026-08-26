@@ -10,6 +10,7 @@ import {
   computeRecoveredOverheadToDate,
   computeOverheadRecoveryVariance,
   computeJobProgress,
+  validateRevisedBudget,
   MILLIONTHS_SCALE,
   type LedgerLineForProgress,
 } from "./job-progress";
@@ -336,5 +337,50 @@ describe("no substitution of invoiced revenue, cash collected, or amount_actual"
       ledgerLines: [{ line_type: "labor", amount_cents: toCents(250), progress_eligible: 1 }],
     });
     expect(result.earned_completion.completion_millionths).toBe(500_000);
+  });
+});
+
+// PR D. "invalid negative totals or impossible revised budgets are rejected"
+// (mandate §2) — validateRevisedBudget is the pre-write gate a CO-approval
+// caller runs on computeRevisedBudgetFromChangeOrders's own output BEFORE
+// ever handing it to approveChangeOrderAndCreateBudgetVersion.
+describe("JP-09 validateRevisedBudget — rejects negative cumulative totals (mandate §2)", () => {
+  const positive = { contract_value_cents: toCents(40_000), direct_cost_budget_cents: toCents(24_000), budgeted_overhead_cents: toCents(7_266) };
+
+  it("valid: every component non-negative (including exactly zero)", () => {
+    expect(validateRevisedBudget(positive)).toEqual({ valid: true, errors: [] });
+    expect(validateRevisedBudget({ contract_value_cents: 0, direct_cost_budget_cents: 0, budgeted_overhead_cents: 0 })).toEqual({ valid: true, errors: [] });
+  });
+
+  it("invalid: negative contract value is rejected with a specific error", () => {
+    const result = validateRevisedBudget({ ...positive, contract_value_cents: -1 });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("Revised contract value cannot be negative.");
+  });
+
+  it("invalid: negative direct-cost budget is rejected with a specific error", () => {
+    const result = validateRevisedBudget({ ...positive, direct_cost_budget_cents: -100 });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("Revised budgeted direct cost cannot be negative.");
+  });
+
+  it("invalid: negative overhead budget is rejected with a specific error", () => {
+    const result = validateRevisedBudget({ ...positive, budgeted_overhead_cents: -50 });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("Revised budgeted overhead cannot be negative.");
+  });
+
+  it("invalid: multiple negative components each produce their own error, not just the first", () => {
+    const result = validateRevisedBudget({ contract_value_cents: -1, direct_cost_budget_cents: -1, budgeted_overhead_cents: -1 });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toHaveLength(3);
+  });
+
+  it("a scope-reduction CO that lands exactly at zero is legitimate, not rejected — only negative is impossible", () => {
+    const baseline = { contract_value_cents: toCents(1_000), direct_cost_budget_cents: toCents(500), budgeted_overhead_cents: 0 };
+    const revised = computeRevisedBudgetFromChangeOrders(baseline, [
+      { status: "approved", revenue_adjustment_cents: -toCents(1_000), direct_cost_adjustment_cents: -toCents(500), labor_hours_adjustment_hundredths: 0, overhead_rate_snapshot: null },
+    ]);
+    expect(validateRevisedBudget(revised)).toEqual({ valid: true, errors: [] });
   });
 });

@@ -14,7 +14,7 @@ import {
   setReceiptCostCategory, listReceiptsReadyToPost, listReceiptsNeedingManualAssignment,
   getReceiptForPosting, markReceiptPosted, receiptHasPostedLedgerLine,
   listAssignableJobsForTenant, getJobDivision, setReceiptJobId,
-  listRecentlyPostedReceipts,
+  listRecentlyPostedReceipts, getAssignableJob, resolveJobBudgetVersionReview,
 } from "./repos";
 import { postApprovedReceiptToLedger } from "../api/receipt-posting";
 import type { Receipt } from "./schema";
@@ -293,6 +293,109 @@ describe("job_budget_versions — immutable append-only", () => {
     expect(ok).toBe(false);
     const version = await getLatestJobBudgetVersion(db(), TENANT, jobId);
     expect(version).toBeNull(); // the batch's insert never landed either
+  });
+});
+
+// PR D
+describe("resolveJobBudgetVersionReview — clears needs_review without touching financial columns", () => {
+  it("clears needs_review=1 -> 0 and leaves every financial column untouched", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const jbvId = uid("jbv");
+    await insertJobBudgetVersion(db(), {
+      id: jbvId, company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-nr2",
+      revision_seq: 0, contract_value_cents: 555500, labor_hours_budgeted_hundredths: 2000,
+      labor_rate_used: 350000, materials_budget_cents: 111100, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 22200, direct_cost_budget_cents: 133300, division: "landscape",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 48440, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 1,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "backfill-script",
+    });
+
+    const ok = await resolveJobBudgetVersionReview(db(), TENANT, jbvId);
+    expect(ok).toBe(true);
+
+    const history = await listJobBudgetVersionsForJob(db(), TENANT, jobId);
+    const resolved = history.find((h) => h.id === jbvId);
+    expect(resolved?.needs_review).toBe(0);
+    // Every financial column is byte-for-byte unchanged — resolving review
+    // must never rewrite approved figures, only the flag itself.
+    expect(resolved?.contract_value_cents).toBe(555500);
+    expect(resolved?.materials_budget_cents).toBe(111100);
+    expect(resolved?.other_direct_budget_cents).toBe(22200);
+    expect(resolved?.direct_cost_budget_cents).toBe(133300);
+    expect(resolved?.budgeted_overhead_cents).toBe(48440);
+  });
+
+  it("returns false (no-op) when the row is already resolved (needs_review=0)", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const jbvId = uid("jbv");
+    await insertJobBudgetVersion(db(), {
+      id: jbvId, company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-clean",
+      revision_seq: 0, contract_value_cents: 100, labor_hours_budgeted_hundredths: 0,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 0, division: "landscape",
+      overhead_rate_used: 1, budgeted_overhead_cents: 0, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+
+    const ok = await resolveJobBudgetVersionReview(db(), TENANT, jbvId);
+    expect(ok).toBe(false); // duplicate/idempotent "resolve" attempts are a safe no-op, not an error
+  });
+
+  it("returns false (no cross-tenant resolution) when the row belongs to a different tenant", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const jbvId = uid("jbv");
+    await insertJobBudgetVersion(db(), {
+      id: jbvId, company_id: OTHER_TENANT, job_id: jobId, source_type: "estimate", source_id: "est-other",
+      revision_seq: 0, contract_value_cents: 100, labor_hours_budgeted_hundredths: 0,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 0, division: "landscape",
+      overhead_rate_used: 1, budgeted_overhead_cents: 0, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 1,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+
+    const ok = await resolveJobBudgetVersionReview(db(), TENANT, jbvId); // wrong tenant
+    expect(ok).toBe(false);
+    const stillFlagged = await listJobBudgetVersionsForJob(db(), OTHER_TENANT, jobId);
+    expect(stillFlagged.find((h) => h.id === jbvId)?.needs_review).toBe(1);
+  });
+});
+
+describe("getAssignableJob — single-job counterpart to listAssignableJobsForTenant", () => {
+  it("returns the job's label fields for a tenant-owned work order", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const job = await getAssignableJob(db(), TENANT, jobId);
+    expect(job?.id).toBe(jobId);
+    expect(job?.wo_number).toBe(`WO-${jobId}`);
+  });
+
+  it("returns null for a job that doesn't belong to this tenant", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const job = await getAssignableJob(db(), TENANT, jobId);
+    expect(job).toBeNull();
+  });
+
+  it("returns a cancelled job unfiltered (unlike listAssignableJobsForTenant), since its change-order/budget history must still be reachable", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await db().prepare(`UPDATE work_orders SET status = 'cancelled' WHERE id = ?`).bind(jobId).run();
+    const job = await getAssignableJob(db(), TENANT, jobId);
+    expect(job?.status).toBe("cancelled");
+  });
+
+  it("returns null for a job id that doesn't exist at all", async () => {
+    const job = await getAssignableJob(db(), TENANT, "no-such-job");
+    expect(job).toBeNull();
   });
 });
 

@@ -16,6 +16,7 @@ import { receiptPostingRouter } from "./receipt-posting";
 import { invoicesPaymentsRouter } from "./invoices-payments";
 import { ledgerRouter } from "./ledger";
 import { onboardingRouter } from "./onboarding";
+import { changeOrdersRouter } from "./change-orders";
 import type { FinanceAuthVars } from "./layout";
 
 /**
@@ -55,4 +56,5 @@ financeUiRouter.route("/post-receipts", receiptPostingRouter);
 financeUiRouter.route("/invoices-payments", invoicesPaymentsRouter);
 financeUiRouter.route("/ledger", ledgerRouter);
 financeUiRouter.route("/onboarding", onboardingRouter);
+financeUiRouter.route("/change-orders", changeOrdersRouter);
 financeUiRouter.route("/api/config", configAdminApiRouter);
