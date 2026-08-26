@@ -13,6 +13,8 @@ import {
   reverseJobCostLedgerLine, getJobCostLedgerAdjustmentsForLine,
   setReceiptCostCategory, listReceiptsReadyToPost, listReceiptsNeedingManualAssignment,
   getReceiptForPosting, markReceiptPosted, receiptHasPostedLedgerLine,
+  listAssignableJobsForTenant, getJobDivision, setReceiptJobId,
+  listRecentlyPostedReceipts,
 } from "./repos";
 import { postApprovedReceiptToLedger } from "../api/receipt-posting";
 import type { Receipt } from "./schema";
@@ -592,5 +594,240 @@ describe("postApprovedReceiptToLedger — full authorized posting flow", () => {
 
     const linesForJob = await getLedgerLinesForJobProgress(db(), TENANT, jobId);
     expect(linesForJob.length).toBe(1); // no second line was written
+  });
+});
+
+describe("listAssignableJobsForTenant — PR C's receipt job/work-order selector", () => {
+  it("returns a tenant's work orders, excludes cancelled, includes completed", async () => {
+    const activeJob = uid("job");
+    await seedWorkOrder(activeJob, TENANT);
+    const completedJob = uid("job");
+    await seedWorkOrder(completedJob, TENANT);
+    await db().prepare(`UPDATE work_orders SET status = 'completed' WHERE id = ?`).bind(completedJob).run();
+    const cancelledJob = uid("job");
+    await seedWorkOrder(cancelledJob, TENANT);
+    await db().prepare(`UPDATE work_orders SET status = 'cancelled' WHERE id = ?`).bind(cancelledJob).run();
+
+    const jobs = await listAssignableJobsForTenant(db(), TENANT);
+    const ids = jobs.map((j) => j.id);
+    expect(ids).toContain(activeJob);
+    expect(ids).toContain(completedJob); // receipts commonly land after work wraps up
+    expect(ids).not.toContain(cancelledJob); // nothing should be costed against a job that never happened
+  });
+
+  it("tenant isolation: a job under a different company never appears", async () => {
+    const otherJob = uid("job");
+    await seedWorkOrder(otherJob, OTHER_TENANT);
+    const jobs = await listAssignableJobsForTenant(db(), TENANT);
+    expect(jobs.map((j) => j.id)).not.toContain(otherJob);
+  });
+
+  it("returns an empty list (not an error) for a tenant with no work orders", async () => {
+    const jobs = await listAssignableJobsForTenant(db(), "t-jobprog-empty");
+    expect(jobs).toEqual([]);
+  });
+});
+
+describe("getJobDivision — work_orders.crew_id -> crews.division cascade", () => {
+  it("resolves the division through the job's assigned crew", async () => {
+    const crewId = uid("crew");
+    await seedCrew(crewId, TENANT, "landscape");
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT, crewId);
+
+    const division = await getJobDivision(db(), TENANT, jobId);
+    expect(division).toBe("landscape");
+  });
+
+  it("returns null (not throws) when the job has no crew assigned", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT); // no crewId
+    const division = await getJobDivision(db(), TENANT, jobId);
+    expect(division).toBeNull();
+  });
+
+  it("returns null when the crew has no division set yet", async () => {
+    const crewId = uid("crew");
+    await db().prepare(`INSERT INTO crews (id, company_id, name, division) VALUES (?,?,?,NULL)`)
+      .bind(crewId, TENANT, `Crew ${crewId}`).run();
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT, crewId);
+    const division = await getJobDivision(db(), TENANT, jobId);
+    expect(division).toBeNull();
+  });
+
+  it("returns null for a job that doesn't belong to this tenant (no cross-tenant leak)", async () => {
+    const crewId = uid("crew");
+    await seedCrew(crewId, OTHER_TENANT, "landscape");
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT, crewId);
+    const division = await getJobDivision(db(), TENANT, jobId); // wrong tenant
+    expect(division).toBeNull();
+  });
+
+  it("returns null when the crew row belongs to a different tenant than the job (cross-tenant crew join guarded)", async () => {
+    // A crew_id FK value that happens to collide with another tenant's crew
+    // id must never resolve — the join explicitly requires c.company_id =
+    // wo.company_id, not just crews.id = work_orders.crew_id.
+    const crewId = uid("crew");
+    await seedCrew(crewId, OTHER_TENANT, "landscape");
+    const jobId = uid("job");
+    // Seed the work order directly (bypassing the FK-checked helper's
+    // tenant assumption) so its crew_id points at a crew row that exists
+    // only under OTHER_TENANT.
+    await db().prepare(
+      `INSERT INTO work_orders (id, company_id, wo_number, status, crew_id) VALUES (?,?,?,?,?)`,
+    ).bind(jobId, TENANT, `WO-${jobId}`, "scheduled", crewId).run();
+    const division = await getJobDivision(db(), TENANT, jobId);
+    expect(division).toBeNull();
+  });
+});
+
+describe("setReceiptJobId — tenant-verified job assignment, write-once after posting", () => {
+  it("assigns a valid tenant-owned job to a receipt", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: null });
+
+    const ok = await setReceiptJobId(db(), TENANT, receiptId, jobId);
+    expect(ok).toBe(true);
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.job_id).toBe(jobId);
+  });
+
+  it("clears an assignment when passed null", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId });
+
+    const ok = await setReceiptJobId(db(), TENANT, receiptId, null);
+    expect(ok).toBe(true);
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.job_id).toBeNull();
+  });
+
+  it("rejects a cross-tenant job id: does not assign, and the receipt's own row is untouched", async () => {
+    const foreignJobId = uid("job");
+    await seedWorkOrder(foreignJobId, OTHER_TENANT); // exists, but under a different company
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: null });
+
+    const ok = await setReceiptJobId(db(), TENANT, receiptId, foreignJobId);
+    expect(ok).toBe(false);
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.job_id).toBeNull(); // untouched — no cross-tenant assignment landed
+  });
+
+  it("rejects a job id that doesn't exist at all", async () => {
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: null });
+    const ok = await setReceiptJobId(db(), TENANT, receiptId, "does-not-exist");
+    expect(ok).toBe(false);
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.job_id).toBeNull();
+  });
+
+  it("refuses once the receipt is posted — job_id becomes part of the immutable ledger-line record", async () => {
+    const crewId = uid("crew");
+    await seedCrew(crewId, TENANT, "landscape");
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT, crewId);
+    const otherJobId = uid("job");
+    await seedWorkOrder(otherJobId, TENANT, crewId);
+
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId, amount_cents: 4200 });
+    await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+    const posted = await postApprovedReceiptToLedger(db(), TENANT, receiptId, "landscape", "rep-1");
+    expect(posted.success).toBe(true);
+
+    // Attempting to reassign a posted receipt to a different job must be a
+    // silent no-op (false), never silently succeed — a posted receipt's
+    // job_id is part of the ledger line's immutable record; correcting it
+    // requires reverseJobCostLedgerLine, not this function.
+    const reassigned = await setReceiptJobId(db(), TENANT, receiptId, otherJobId);
+    expect(reassigned).toBe(false);
+    const receipt = await getReceiptForPosting(db(), TENANT, receiptId);
+    expect(receipt?.job_id).toBe(jobId); // untouched
+  });
+
+  it("tenant isolation: cannot assign a job to a receipt belonging to a different company", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, OTHER_TENANT, { status: "approved", job_id: null });
+
+    // Called with the WRONG tenant_id for this receipt.
+    const ok = await setReceiptJobId(db(), TENANT, receiptId, jobId);
+    expect(ok).toBe(false);
+  });
+
+  it("returns false for a receipt id that doesn't exist", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const ok = await setReceiptJobId(db(), TENANT, "does-not-exist", jobId);
+    expect(ok).toBe(false);
+  });
+});
+
+describe("listRecentlyPostedReceipts — the posting-review UI's third queue", () => {
+  it("returns only posted receipts for the tenant, most recently posted first", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    const unposted = uid("rcpt");
+    await seedReceipt(unposted, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, unposted, "materials", 1);
+
+    const postedFirst = uid("rcpt");
+    await seedReceipt(postedFirst, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, postedFirst, "materials", 1);
+    await markReceiptPosted(db(), TENANT, postedFirst);
+    // Force a distinct, earlier posted_at than the second one so ordering is
+    // unambiguous rather than relying on same-instant timestamps.
+    await db().prepare(`UPDATE receipt SET posted_at = '2026-01-01T00:00:00.000Z' WHERE company_id = ? AND id = ?`)
+      .bind(TENANT, postedFirst).run();
+
+    const postedSecond = uid("rcpt");
+    await seedReceipt(postedSecond, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, postedSecond, "materials", 1);
+    await markReceiptPosted(db(), TENANT, postedSecond);
+    await db().prepare(`UPDATE receipt SET posted_at = '2026-02-01T00:00:00.000Z' WHERE company_id = ? AND id = ?`)
+      .bind(TENANT, postedSecond).run();
+
+    const list = await listRecentlyPostedReceipts(db(), TENANT);
+    const ids = list.map((r) => r.id);
+    expect(ids).toContain(postedFirst);
+    expect(ids).toContain(postedSecond);
+    expect(ids).not.toContain(unposted); // never-posted receipts are absent
+    // Most recently posted first.
+    expect(ids.indexOf(postedSecond)).toBeLessThan(ids.indexOf(postedFirst));
+  });
+
+  it("does not leak another tenant's posted receipts", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, OTHER_TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), OTHER_TENANT, receiptId, "materials", 1);
+    await markReceiptPosted(db(), OTHER_TENANT, receiptId);
+
+    const list = await listRecentlyPostedReceipts(db(), TENANT);
+    expect(list.map((r) => r.id)).not.toContain(receiptId);
+  });
+
+  it("respects the limit parameter", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    for (let i = 0; i < 3; i++) {
+      const receiptId = uid("rcpt");
+      await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId });
+      await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+      await markReceiptPosted(db(), TENANT, receiptId);
+    }
+    const list = await listRecentlyPostedReceipts(db(), TENANT, 2);
+    expect(list.length).toBe(2);
   });
 });

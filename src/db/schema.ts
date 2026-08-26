@@ -138,6 +138,12 @@ export interface JobCostLedger {
 export type DirectCostCategory =
   | "materials" | "subcontractor" | "equipment" | "disposal" | "permits" | "other";
 
+/** Runtime companion to the DirectCostCategory type — for building a
+ * <select> of the exact six values the CHECK constraint allows, without
+ * a UI file re-typing the literal list (and risking drift from it). */
+export const DIRECT_COST_CATEGORIES: DirectCostCategory[] =
+  ["materials", "subcontractor", "equipment", "disposal", "permits", "other"];
+
 /**
  * Migration 0085 §4.1. Only status='approved' rows ever feed a job-progress
  * formula — enforced in application code (every read helper filters

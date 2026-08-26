@@ -12,6 +12,7 @@ import { obligationsRouter } from "./obligations";
 import { reconciliationRouter } from "./reconciliation";
 import { forecastRouter } from "./forecast";
 import { documentsRouter } from "./documents";
+import { receiptPostingRouter } from "./receipt-posting";
 import { invoicesPaymentsRouter } from "./invoices-payments";
 import { ledgerRouter } from "./ledger";
 import { onboardingRouter } from "./onboarding";
@@ -51,6 +52,7 @@ app.route("/obligations", obligationsRouter);
 app.route("/reconciliation", reconciliationRouter);
 app.route("/forecast", forecastRouter);
 app.route("/documents", documentsRouter);
+app.route("/post-receipts", receiptPostingRouter);
 app.route("/invoices-payments", invoicesPaymentsRouter);
 app.route("/ledger", ledgerRouter);
 app.route("/onboarding", onboardingRouter);
@@ -67,11 +69,31 @@ app.route("/api/config", configAdminApiRouter);
 // need to also clear their finance-only columns, which /test/reset-crm's
 // company_id-scoped DELETE already handles by removing the rows entirely).
 const FINANCE_TABLES = [
-  "classification_finding", "receipt", "job_cost_ledger", "action_item",
-  "upload_batch",
+  "classification_finding",
+  // job_cost_ledger_adjustments before job_cost_ledger: its own FKs
+  // (original_line_id/reversal_line_id/replacement_line_id) reference
+  // job_cost_ledger(id) (migration 0085 §4.5) — children before parents,
+  // same discipline as every other entry in this list.
+  //
+  // job_cost_ledger before receipt: job_cost_ledger.source_receipt_id is a
+  // real FK into receipt(id) (migration 0085 §4.4) — job_cost_ledger is the
+  // child here, receipt the parent, so job_cost_ledger (and its own child,
+  // job_cost_ledger_adjustments) must both be deleted before receipt or the
+  // DELETE FROM receipt fails with SQLITE_CONSTRAINT_FOREIGNKEY the moment
+  // any posted receipt exists (PR C's setReceiptJobId/getJobDivision e2e
+  // suite is the first test file to actually post a receipt AND reset
+  // afterward, which is why this was never caught before PR C).
+  "job_cost_ledger_adjustments", "job_cost_ledger",
+  "receipt",
+  "action_item", "upload_batch",
   "recovery_snapshot", "overhead_allocation", "overhead_pool",
   "equipment_rate_profile", "labor_rate_profile", "tenant_finance_policy",
   "finance_config_override",
+  // change_orders/job_budget_versions (migration 0085 §4.1/§4.2): both
+  // reference work_orders(id), not each other or job_cost_ledger, so
+  // either order relative to those two is fine; listed last since
+  // they're this migration's own newest additions.
+  "change_orders", "job_budget_versions",
 ];
 
 app.post("/test/reset", async (c) => {
