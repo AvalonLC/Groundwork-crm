@@ -175,7 +175,7 @@ function budgetVersionRow(v: JobBudgetVersion, isActive: boolean, canManage: boo
 
 async function renderJobChangeOrdersPage(
   c: Context<{ Bindings: ChangeOrdersBindings; Variables: FinanceAuthVars }>,
-  tenant_id: string, role: Role, vocab: VocabularyMode, jobId: string, notice: string | null, partial: boolean,
+  basePath: string, tenant_id: string, role: Role, vocab: VocabularyMode, jobId: string, notice: string | null, partial: boolean,
 ) {
   const canManage = canSee(role, "can_manage_change_orders");
   const canApprove = canSee(role, "can_approve_change_orders");
@@ -187,7 +187,6 @@ async function renderJobChangeOrdersPage(
     listJobBudgetVersionsForJob(db, tenant_id, jobId),
     getWorkOrderProgress(db, tenant_id, jobId),
   ]);
-  const basePath = c.req.path.replace(/\/[^/]+$/, "") || "/finance/change-orders";
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
   const latest = history.length > 0 ? history[history.length - 1] : null;
 
@@ -379,14 +378,19 @@ async function renderNewOrEditChangeOrderPage(
 
 async function renderReviewQueuePage(
   c: Context<{ Bindings: ChangeOrdersBindings; Variables: FinanceAuthVars }>,
-  tenant_id: string, role: Role, vocab: VocabularyMode, notice: string | null, partial: boolean,
+  routerRoot: string, tenant_id: string, role: Role, vocab: VocabularyMode, notice: string | null, partial: boolean,
 ) {
   const [needingReview, jobs] = await Promise.all([
     listJobBudgetVersionsNeedingReview(c.env.DB, tenant_id),
     listAssignableJobsForTenant(c.env.DB, tenant_id),
   ]);
   const canManage = canSee(role, "can_manage_change_orders");
-  const basePath = c.req.path;
+  // This page's own canonical path, not whatever route happened to render
+  // it (e.g. the resolve-review POST route, whose own c.req.path still
+  // has "/{id}/resolve-review" on the end) — derived once from routerRoot
+  // so every form action below points back at THIS page, never a doubled
+  // path (routerRoot + the POST route's own suffix).
+  const basePath = `${routerRoot}/budget-versions/review`;
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
   const jobLabel = (jid: string) => {
     const j = jobs.find((x: AssignableJob) => x.id === jid);
@@ -412,14 +416,14 @@ async function renderReviewQueuePage(
               <tbody>
                 {needingReview.map((v) => (
                   <tr data-testid={`review-row-${v.id}`}>
-                    <td><a href={`/finance/change-orders?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(v.job_id)}`}>{jobLabel(v.job_id)}</a></td>
+                    <td><a href={`${routerRoot}?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(v.job_id)}`}>{jobLabel(v.job_id)}</a></td>
                     <td>{v.revision_seq}</td>
                     <td class="fin-num">{money(v.contract_value_cents)}</td>
                     <td class="fin-num">{money(v.direct_cost_budget_cents)}</td>
                     <td class="fin-num">{money(v.budgeted_overhead_cents)}</td>
                     <td>
                       {canManage ? (
-                        <form method="post" action={`${basePath}/budget-versions/${v.id}/resolve-review${qs}`}>
+                        <form method="post" action={`${routerRoot}/budget-versions/${v.id}/resolve-review${qs}`}>
                           <button type="submit" data-testid={`resolve-review-${v.id}`}>Confirm reviewed</button>
                         </form>
                       ) : (
@@ -478,7 +482,7 @@ changeOrdersRouter.get("/", async (c) => {
             ) : (
               <ul data-testid="job-picker">
                 {jobs.map((j) => (
-                  <li><a href={`/finance/change-orders${qs}&job_id=${encodeURIComponent(j.id)}`} data-testid={`job-picker-link-${j.id}`}>{j.wo_number} — {j.title || j.client_name}</a></li>
+                  <li><a href={`${c.req.path}${qs}&job_id=${encodeURIComponent(j.id)}`} data-testid={`job-picker-link-${j.id}`}>{j.wo_number} — {j.title || j.client_name}</a></li>
                 ))}
               </ul>
             )}
@@ -488,7 +492,7 @@ changeOrdersRouter.get("/", async (c) => {
     );
   }
 
-  return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, notice, partial));
+  return c.html(await renderJobChangeOrdersPage(c, c.req.path, tenant_id, role, vocab, jobId, notice, partial));
 });
 
 changeOrdersRouter.get("/new", async (c) => {
@@ -505,11 +509,12 @@ changeOrdersRouter.post("/new", async (c) => {
   if (!canSee(role, "can_manage_change_orders")) return c.text("not available for your role", 403);
   const jobId = c.req.query("job_id") ?? "";
   const repId = c.var.repId ?? "office";
+  const basePath = c.req.path.replace(/\/new$/, "");
 
   const job = await getAssignableJob(c.env.DB, tenant_id, jobId);
   if (!job) {
     if (partial) return c.html(await renderNewOrEditChangeOrderPage(c, tenant_id, role, vocab, jobId, null, "Error: no_job", true));
-    return c.redirect(`/finance/change-orders?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}&error=no_job`);
+    return c.redirect(`${basePath}?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}&error=no_job`);
   }
 
   const form = await c.req.parseBody();
@@ -526,8 +531,8 @@ changeOrdersRouter.post("/new", async (c) => {
   });
 
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Saved.", true));
-  return c.redirect(`/finance/change-orders${qs}&saved=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Saved.", true));
+  return c.redirect(`${basePath}${qs}&saved=1`);
 });
 
 changeOrdersRouter.get("/:id/edit", async (c) => {
@@ -548,6 +553,7 @@ changeOrdersRouter.post("/:id/edit", async (c) => {
   if (!canSee(role, "can_manage_change_orders")) return c.text("not available for your role", 403);
   const id = c.req.param("id")!;
   const jobId = c.req.query("job_id") ?? "";
+  const basePath = c.req.path.replace(/\/[^/]+\/edit$/, "");
 
   const form = await c.req.parseBody();
   const ok = await updateChangeOrder(c.env.DB, tenant_id, id, {
@@ -561,11 +567,11 @@ changeOrdersRouter.post("/:id/edit", async (c) => {
 
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
   if (!ok) {
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: not_editable", true));
-    return c.redirect(`/finance/change-orders${qs}&error=not_editable`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: not_editable", true));
+    return c.redirect(`${basePath}${qs}&error=not_editable`);
   }
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Saved.", true));
-  return c.redirect(`/finance/change-orders${qs}&saved=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Saved.", true));
+  return c.redirect(`${basePath}${qs}&saved=1`);
 });
 
 changeOrdersRouter.post("/:id/submit", async (c) => {
@@ -574,15 +580,16 @@ changeOrdersRouter.post("/:id/submit", async (c) => {
   if (!canSee(role, "can_manage_change_orders")) return c.text("not available for your role", 403);
   const id = c.req.param("id")!;
   const jobId = c.req.query("job_id") ?? "";
+  const basePath = c.req.path.replace(/\/[^/]+\/submit$/, "");
 
   const ok = await submitChangeOrderForApproval(c.env.DB, tenant_id, id);
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
   if (!ok) {
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: not_draft", true));
-    return c.redirect(`/finance/change-orders${qs}&error=not_draft`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: not_draft", true));
+    return c.redirect(`${basePath}${qs}&error=not_draft`);
   }
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Submitted for approval.", true));
-  return c.redirect(`/finance/change-orders${qs}&submitted=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Submitted for approval.", true));
+  return c.redirect(`${basePath}${qs}&submitted=1`);
 });
 
 changeOrdersRouter.post("/:id/void", async (c) => {
@@ -591,6 +598,7 @@ changeOrdersRouter.post("/:id/void", async (c) => {
   if (!canSee(role, "can_manage_change_orders")) return c.text("not available for your role", 403);
   const id = c.req.param("id")!;
   const jobId = c.req.query("job_id") ?? "";
+  const basePath = c.req.path.replace(/\/[^/]+\/void$/, "");
   const form = await c.req.parseBody();
   const reason = String(form.reason ?? "").trim();
 
@@ -598,11 +606,11 @@ changeOrdersRouter.post("/:id/void", async (c) => {
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
   if (!ok) {
     const err = reason ? "not_editable" : "reason_required";
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, `Error: ${err}`, true));
-    return c.redirect(`/finance/change-orders${qs}&error=${err}`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, `Error: ${err}`, true));
+    return c.redirect(`${basePath}${qs}&error=${err}`);
   }
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Voided.", true));
-  return c.redirect(`/finance/change-orders${qs}&voided=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Voided.", true));
+  return c.redirect(`${basePath}${qs}&voided=1`);
 });
 
 changeOrdersRouter.post("/:id/reject", async (c) => {
@@ -611,23 +619,24 @@ changeOrdersRouter.post("/:id/reject", async (c) => {
   if (!canSee(role, "can_approve_change_orders")) return c.text("not available for your role", 403);
   const id = c.req.param("id")!;
   const jobId = c.req.query("job_id") ?? "";
+  const basePath = c.req.path.replace(/\/[^/]+\/reject$/, "");
   const form = await c.req.parseBody();
   const reason = String(form.reason ?? "").trim();
   const repId = c.var.repId ?? "owner";
 
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
   if (!reason) {
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: reason_required", true));
-    return c.redirect(`/finance/change-orders${qs}&error=reason_required`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: reason_required", true));
+    return c.redirect(`${basePath}${qs}&error=reason_required`);
   }
 
   const ok = await rejectChangeOrder(c.env.DB, tenant_id, id, repId, reason);
   if (!ok) {
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: not_pending", true));
-    return c.redirect(`/finance/change-orders${qs}&error=not_pending`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: not_pending", true));
+    return c.redirect(`${basePath}${qs}&error=not_pending`);
   }
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Rejected.", true));
-  return c.redirect(`/finance/change-orders${qs}&rejected=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Rejected.", true));
+  return c.redirect(`${basePath}${qs}&rejected=1`);
 });
 
 /**
@@ -648,6 +657,7 @@ changeOrdersRouter.post("/:id/approve", async (c) => {
   const id = c.req.param("id")!;
   const jobId = c.req.query("job_id") ?? "";
   const repId = c.var.repId ?? "owner";
+  const basePath = c.req.path.replace(/\/[^/]+\/approve$/, "");
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
 
   // The CO's own effective_date, not "today", is the as-of date used to
@@ -661,11 +671,11 @@ changeOrdersRouter.post("/:id/approve", async (c) => {
   const result = await approveChangeOrderWorkflow(c.env.DB, tenant_id, id, repId, null, asOf);
 
   if (!result.success) {
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, `Error: ${REASON_LABEL[result.reason] ?? result.reason}`, true));
-    return c.redirect(`/finance/change-orders${qs}&error=${result.reason}`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, `Error: ${REASON_LABEL[result.reason] ?? result.reason}`, true));
+    return c.redirect(`${basePath}${qs}&error=${result.reason}`);
   }
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Approved — a new budget version was created.", true));
-  return c.redirect(`/finance/change-orders${qs}&approved=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Approved — a new budget version was created.", true));
+  return c.redirect(`${basePath}${qs}&approved=1`);
 });
 
 // ── Progress-input configuration (manual %, service units completed) ───────
@@ -675,6 +685,7 @@ changeOrdersRouter.post("/progress", async (c) => {
   const partial = isPartialRequest(c);
   if (!canSee(role, "can_manage_change_orders")) return c.text("not available for your role", 403);
   const jobId = c.req.query("job_id") ?? "";
+  const basePath = c.req.path.replace(/\/progress$/, "");
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
 
   const latest = await getLatestJobBudgetVersion(c.env.DB, tenant_id, jobId);
@@ -690,29 +701,29 @@ changeOrdersRouter.post("/progress", async (c) => {
     if (pct === null || (Number.isFinite(pct) && pct >= 0 && pct <= 1_000_000)) {
       await setWorkOrderManualCompletion(c.env.DB, tenant_id, jobId, pct);
     } else {
-      if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: invalid_budget", true));
-      return c.redirect(`/finance/change-orders${qs}&error=invalid_budget`);
+      if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: invalid_budget", true));
+      return c.redirect(`${basePath}${qs}&error=invalid_budget`);
     }
   } else if (latest?.completion_method === "service_units") {
     if (latest.service_units_planned === null) {
-      if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: no_service_units_planned", true));
-      return c.redirect(`/finance/change-orders${qs}&error=no_service_units_planned`);
+      if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: no_service_units_planned", true));
+      return c.redirect(`${basePath}${qs}&error=no_service_units_planned`);
     }
     const raw = String(form.service_units_completed ?? "").trim();
     const units = raw === "" ? null : parseFloat(raw);
     if (units === null || (Number.isFinite(units) && units >= 0)) {
       await setWorkOrderServiceUnitsCompleted(c.env.DB, tenant_id, jobId, units);
     } else {
-      if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: invalid_budget", true));
-      return c.redirect(`/finance/change-orders${qs}&error=invalid_budget`);
+      if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Error: invalid_budget", true));
+      return c.redirect(`${basePath}${qs}&error=invalid_budget`);
     }
   }
   // cost_to_cost / completed: no manual input accepted, nothing to write —
   // the form doesn't even render inputs for those methods (see the page
   // composer), so a POST here for those methods is a no-op save.
 
-  if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Saved.", true));
-  return c.redirect(`/finance/change-orders${qs}&saved=1`);
+  if (partial) return c.html(await renderJobChangeOrdersPage(c, basePath, tenant_id, role, vocab, jobId, "Saved.", true));
+  return c.redirect(`${basePath}${qs}&saved=1`);
 });
 
 // ── Budget-version review queue (tenant-wide) ───────────────────────────────
@@ -729,7 +740,8 @@ changeOrdersRouter.get("/budget-versions/review", async (c) => {
     : errorReason && errorReason in REASON_LABEL ? `Error: ${REASON_LABEL[errorReason]}`
     : errorReason ? "Error: could not resolve."
     : null;
-  return c.html(await renderReviewQueuePage(c, tenant_id, role, vocab, notice, partial));
+  const routerRoot = c.req.path.replace(/\/budget-versions\/review$/, "");
+  return c.html(await renderReviewQueuePage(c, routerRoot, tenant_id, role, vocab, notice, partial));
 });
 
 changeOrdersRouter.post("/budget-versions/:id/resolve-review", async (c) => {
@@ -738,6 +750,7 @@ changeOrdersRouter.post("/budget-versions/:id/resolve-review", async (c) => {
   if (!canSee(role, "can_manage_change_orders")) return c.text("not available for your role", 403);
   const id = c.req.param("id")!;
   const jobId = c.req.query("job_id") ?? "";
+  const routerRoot = c.req.path.replace(/\/budget-versions\/[^/]+\/resolve-review$/, "");
 
   const ok = await resolveJobBudgetVersionReview(c.env.DB, tenant_id, id);
 
@@ -746,18 +759,18 @@ changeOrdersRouter.post("/budget-versions/:id/resolve-review", async (c) => {
   if (jobId) {
     const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&job_id=${encodeURIComponent(jobId)}`;
     if (!ok) {
-      if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Error: already_resolved", true));
-      return c.redirect(`/finance/change-orders${qs}&error=already_resolved`);
+      if (partial) return c.html(await renderJobChangeOrdersPage(c, routerRoot, tenant_id, role, vocab, jobId, "Error: already_resolved", true));
+      return c.redirect(`${routerRoot}${qs}&error=already_resolved`);
     }
-    if (partial) return c.html(await renderJobChangeOrdersPage(c, tenant_id, role, vocab, jobId, "Marked reviewed.", true));
-    return c.redirect(`/finance/change-orders${qs}&resolved=1`);
+    if (partial) return c.html(await renderJobChangeOrdersPage(c, routerRoot, tenant_id, role, vocab, jobId, "Marked reviewed.", true));
+    return c.redirect(`${routerRoot}${qs}&resolved=1`);
   }
 
   const qs = `?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
   if (!ok) {
-    if (partial) return c.html(await renderReviewQueuePage(c, tenant_id, role, vocab, "Error: already_resolved", true));
-    return c.redirect(`/finance/change-orders/budget-versions/review${qs}&error=already_resolved`);
+    if (partial) return c.html(await renderReviewQueuePage(c, routerRoot, tenant_id, role, vocab, "Error: already_resolved", true));
+    return c.redirect(`${routerRoot}/budget-versions/review${qs}&error=already_resolved`);
   }
-  if (partial) return c.html(await renderReviewQueuePage(c, tenant_id, role, vocab, "Marked reviewed.", true));
-  return c.redirect(`/finance/change-orders/budget-versions/review${qs}&resolved=1`);
+  if (partial) return c.html(await renderReviewQueuePage(c, routerRoot, tenant_id, role, vocab, "Marked reviewed.", true));
+  return c.redirect(`${routerRoot}/budget-versions/review${qs}&resolved=1`);
 });
