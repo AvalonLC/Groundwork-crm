@@ -1500,6 +1500,25 @@ export async function getReceiptForPosting(
     .bind(companyId, id).first<Receipt>();
 }
 
+/** Already-posted receipts, most recent first — the posting-review UI's
+ * third queue. Without this, a receipt disappears from every list the
+ * moment it posts (listReceiptsReadyToPost/listReceiptsNeedingManualAssignment
+ * both require posted_at IS NULL), so its posted badge would never be
+ * visible anywhere after the fact — this is what makes "posted-state
+ * display" (PR C requirement) actually true instead of a dead code path.
+ * Capped with LIMIT so this stays a review aid, not an unbounded history
+ * dump; not a substitute for a real ledger/audit report. */
+export async function listRecentlyPostedReceipts(
+  db: D1Database, companyId: string, limit = 25,
+): Promise<Receipt[]> {
+  const { results } = await db.prepare(`
+    SELECT * FROM receipt
+    WHERE company_id = ? AND posted_at IS NOT NULL
+    ORDER BY posted_at DESC LIMIT ?
+  `).bind(companyId, limit).all<Receipt>();
+  return results;
+}
+
 /**
  * Write-once guard (POSTING.md's "WHERE posted_at IS NULL" pattern,
  * mirrored exactly from postTimeEntry above): marks a receipt posted,

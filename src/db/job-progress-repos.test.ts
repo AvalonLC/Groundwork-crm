@@ -14,6 +14,7 @@ import {
   setReceiptCostCategory, listReceiptsReadyToPost, listReceiptsNeedingManualAssignment,
   getReceiptForPosting, markReceiptPosted, receiptHasPostedLedgerLine,
   listAssignableJobsForTenant, getJobDivision, setReceiptJobId,
+  listRecentlyPostedReceipts,
 } from "./repos";
 import { postApprovedReceiptToLedger } from "../api/receipt-posting";
 import type { Receipt } from "./schema";
@@ -768,5 +769,65 @@ describe("setReceiptJobId — tenant-verified job assignment, write-once after p
     await seedWorkOrder(jobId, TENANT);
     const ok = await setReceiptJobId(db(), TENANT, "does-not-exist", jobId);
     expect(ok).toBe(false);
+  });
+});
+
+describe("listRecentlyPostedReceipts — the posting-review UI's third queue", () => {
+  it("returns only posted receipts for the tenant, most recently posted first", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+
+    const unposted = uid("rcpt");
+    await seedReceipt(unposted, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, unposted, "materials", 1);
+
+    const postedFirst = uid("rcpt");
+    await seedReceipt(postedFirst, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, postedFirst, "materials", 1);
+    await markReceiptPosted(db(), TENANT, postedFirst);
+    // Force a distinct, earlier posted_at than the second one so ordering is
+    // unambiguous rather than relying on same-instant timestamps.
+    await db().prepare(`UPDATE receipt SET posted_at = '2026-01-01T00:00:00.000Z' WHERE company_id = ? AND id = ?`)
+      .bind(TENANT, postedFirst).run();
+
+    const postedSecond = uid("rcpt");
+    await seedReceipt(postedSecond, TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), TENANT, postedSecond, "materials", 1);
+    await markReceiptPosted(db(), TENANT, postedSecond);
+    await db().prepare(`UPDATE receipt SET posted_at = '2026-02-01T00:00:00.000Z' WHERE company_id = ? AND id = ?`)
+      .bind(TENANT, postedSecond).run();
+
+    const list = await listRecentlyPostedReceipts(db(), TENANT);
+    const ids = list.map((r) => r.id);
+    expect(ids).toContain(postedFirst);
+    expect(ids).toContain(postedSecond);
+    expect(ids).not.toContain(unposted); // never-posted receipts are absent
+    // Most recently posted first.
+    expect(ids.indexOf(postedSecond)).toBeLessThan(ids.indexOf(postedFirst));
+  });
+
+  it("does not leak another tenant's posted receipts", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, OTHER_TENANT, { status: "approved", job_id: jobId });
+    await setReceiptCostCategory(db(), OTHER_TENANT, receiptId, "materials", 1);
+    await markReceiptPosted(db(), OTHER_TENANT, receiptId);
+
+    const list = await listRecentlyPostedReceipts(db(), TENANT);
+    expect(list.map((r) => r.id)).not.toContain(receiptId);
+  });
+
+  it("respects the limit parameter", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    for (let i = 0; i < 3; i++) {
+      const receiptId = uid("rcpt");
+      await seedReceipt(receiptId, TENANT, { status: "approved", job_id: jobId });
+      await setReceiptCostCategory(db(), TENANT, receiptId, "materials", 1);
+      await markReceiptPosted(db(), TENANT, receiptId);
+    }
+    const list = await listRecentlyPostedReceipts(db(), TENANT, 2);
+    expect(list.length).toBe(2);
   });
 });

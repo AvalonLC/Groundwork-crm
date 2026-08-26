@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import {
   listReceiptsNeedingManualAssignment, listReceiptsReadyToPost, getReceiptForPosting,
   setReceiptCostCategory, setReceiptJobId, listAssignableJobsForTenant, getJobDivision,
-  type AssignableJob,
+  listRecentlyPostedReceipts, type AssignableJob,
 } from "../db/repos";
 import { postApprovedReceiptToLedger, type ReceiptPostingResult } from "../api/receipt-posting";
 import { DIRECT_COST_CATEGORIES, type DirectCostCategory, type Receipt } from "../db/schema";
@@ -50,7 +50,7 @@ const REASON_LABEL: Record<Exclude<ReceiptPostingResult, { success: true }>["rea
 };
 
 function receiptRow(
-  r: Receipt, jobs: AssignableJob[], basePath: string, qs: string, mode: "assign" | "ready",
+  r: Receipt, jobs: AssignableJob[], basePath: string, qs: string, mode: "assign" | "ready" | "posted",
 ) {
   const job = jobs.find((j) => j.id === r.job_id);
   return (
@@ -104,9 +104,10 @@ async function renderReviewPage(
   c: Context<{ Bindings: ReceiptPostingBindings; Variables: FinanceAuthVars }>,
   tenant_id: string, role: Role, vocab: VocabularyMode, notice: string | null, partial: boolean,
 ) {
-  const [readyToPost, needsAssignment, jobs] = await Promise.all([
+  const [readyToPost, needsAssignment, recentlyPosted, jobs] = await Promise.all([
     listReceiptsReadyToPost(c.env.DB, tenant_id),
     listReceiptsNeedingManualAssignment(c.env.DB, tenant_id),
+    listRecentlyPostedReceipts(c.env.DB, tenant_id),
     listAssignableJobsForTenant(c.env.DB, tenant_id),
   ]);
   const basePath = c.req.path;
@@ -158,6 +159,19 @@ async function renderReviewPage(
           moves="Clicking Approve & post. Never OCR, upload, or the Documents page's Approve action alone."
         />
       </Card>
+
+      <Card title="Recently posted" sub="already written to the job cost ledger — a correction from here on uses a reversal/adjustment, never a re-edit">
+        <div data-testid="recently-posted-list">
+          {recentlyPosted.length === 0 ? (
+            <Empty title="Nothing posted yet" hint="Posted receipts will appear here, most recent first." />
+          ) : (
+            <table class="fin-table">
+              <thead><tr><th>Vendor</th><th>Amount</th><th>Date</th><th>Job</th><th>Category</th><th>Status</th></tr></thead>
+              <tbody>{recentlyPosted.map((r) => receiptRow(r, jobs, basePath, qs, "posted"))}</tbody>
+            </table>
+          )}
+        </div>
+      </Card>
     </Page>
   );
 }
@@ -184,7 +198,16 @@ receiptPostingRouter.get("/", async (c) => {
  * touches job_cost_ledger, purely the receipt's own pre-posting fields.
  * Refuses (via setReceiptJobId/setReceiptCostCategory's own posted_at IS
  * NULL guards) once the receipt is posted — this route does not special-
- * case that; the underlying repo calls already make it a no-op. */
+ * case that; the underlying repo calls already make it a no-op.
+ *
+ * Deliberately does NOT also gate on receipt.status === 'approved': setting
+ * a job/category is inert data prep (same as document-upload.tsx setting
+ * cost_category at upload time, before any approve/reject decision exists
+ * at all) and moves no money. The one gate that actually matters —
+ * status === 'approved' before *posting* — is enforced independently by
+ * postApprovedReceiptToLedger's own not_approved check, so a
+ * pending/rejected receipt can never reach the ledger no matter what this
+ * route allows on job/category fields. */
 receiptPostingRouter.post("/:id/assign", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const partial = isPartialRequest(c);
