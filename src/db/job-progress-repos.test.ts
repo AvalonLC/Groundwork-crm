@@ -15,6 +15,7 @@ import {
   getReceiptForPosting, markReceiptPosted, receiptHasPostedLedgerLine,
   listAssignableJobsForTenant, getJobDivision, setReceiptJobId,
   listRecentlyPostedReceipts, getAssignableJob, resolveJobBudgetVersionReview,
+  getJobProgress,
 } from "./repos";
 import { postApprovedReceiptToLedger } from "../api/receipt-posting";
 import type { Receipt } from "./schema";
@@ -932,5 +933,206 @@ describe("listRecentlyPostedReceipts — the posting-review UI's third queue", (
     }
     const list = await listRecentlyPostedReceipts(db(), TENANT, 2);
     expect(list.length).toBe(2);
+  });
+});
+
+// PR E. getJobProgress — the single assembly point wiring real
+// work_orders/job_budget_versions/job_cost_ledger rows into
+// src/engines/job-progress.ts's computeJobProgress, per ITEM4-JOBCOST.md
+// §5/§11. computeJobProgress itself is exhaustively tested in
+// src/engines/job-progress.test.ts against §8's worked examples; these
+// tests instead prove the DB-assembly wiring is correct — that real rows
+// land in the right fields of JobProgressInput.
+describe("getJobProgress — assembles real DB rows into computeJobProgress (§5/§11)", () => {
+  it("returns null when the job doesn't exist under this tenant", async () => {
+    const result = await getJobProgress(db(), TENANT, "no-such-job");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the job exists under a different tenant (no cross-tenant leak)", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, OTHER_TENANT);
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result).toBeNull();
+  });
+
+  it("a job with no job_budget_versions row at all: every budget-derived field is null, not fabricated", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result).not.toBeNull();
+    expect(result!.revised_contract_value_cents).toBeNull();
+    expect(result!.revised_budgeted_direct_cost_cents).toBeNull();
+    expect(result!.revised_budgeted_overhead_cents).toBeNull();
+    expect(result!.earned_completion.completion_millionths).toBeNull();
+    expect(result!.earned_completion.unavailable_reason).toBe("no_budget_version");
+    expect(result!.earned_revenue_to_date_cents).toBeNull();
+    expect(result!.recovered_overhead_to_date_cents).toBeNull();
+    // Formulas 3 and 8 are always computable (sum of zero posted lines is 0,
+    // never null) — only the budget-derived formulas 1/2/4/5/6/7/9 go null.
+    expect(result!.actual_direct_cost_to_date_cents).toBe(0);
+    expect(result!.absorbed_overhead_to_date_cents).toBe(0);
+    expect(result!.overhead_recovery_variance_cents).toBeNull();
+  });
+
+  it("worked example 8.1 (cost_to_cost), assembled entirely from real inserted rows", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-81",
+      revision_seq: 0, contract_value_cents: 4000000, labor_hours_budgeted_hundredths: 30000,
+      labor_rate_used: 280000, materials_budget_cents: 1200000, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 360000, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 2400000, division: "hardscape",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 726600, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-07-01T00:00:00Z", approved_by: "rep-1",
+    });
+    // Approved CO #1: revenue +$6,000, direct-cost +$3,500, +40 hrs @ $24.22/hr snapshot.
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "change_order", source_id: "co-81",
+      revision_seq: 1, contract_value_cents: 4600000, labor_hours_budgeted_hundredths: 34000,
+      labor_rate_used: 280000, materials_budget_cents: 1200000, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 360000, disposal_budget_cents: 350000, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 2750000, division: "hardscape",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 823480, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-07-15T00:00:00Z", approved_by: "rep-2",
+    });
+    await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "materials", amount_cents: 840000,
+      division: "hardscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+    });
+    await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "materials", amount_cents: 200000,
+      division: "hardscape", progress_eligible: 0, change_order_id: null, source_receipt_id: null,
+    });
+    await postDirectCostLedgerLine(db(), {
+      company_id: TENANT, job_id: jobId, cost_category: "equipment", amount_cents: 210000,
+      division: "hardscape", progress_eligible: 1, change_order_id: null, source_receipt_id: null,
+    });
+    await db().prepare(`
+      INSERT INTO job_cost_ledger (company_id, time_entry_id, job_id, line_type, amount_cents, division)
+      VALUES (?, NULL, ?, 'labor', ?, ?)
+    `).bind(TENANT, jobId, 910000, "hardscape").run();
+    await db().prepare(`
+      INSERT INTO job_cost_ledger (company_id, time_entry_id, job_id, line_type, amount_cents, division)
+      VALUES (?, NULL, ?, 'overhead', ?, ?)
+    `).bind(TENANT, jobId, 823480, "hardscape").run();
+
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result).not.toBeNull();
+    expect(result!.revised_contract_value_cents).toBe(4600000);
+    expect(result!.revised_budgeted_direct_cost_cents).toBe(2750000);
+    expect(result!.revised_budgeted_overhead_cents).toBe(823480);
+    expect(result!.actual_direct_cost_to_date_cents).toBe(840000 + 200000 + 210000 + 910000);
+    expect(result!.progress_eligible_direct_cost_to_date_cents).toBe(840000 + 210000 + 910000);
+    // 1,960,000 / 2,750,000 = 0.712727... millionths
+    const expectedMillionths = Math.round((1_960_000 / 2_750_000) * 1_000_000);
+    expect(result!.earned_completion.completion_millionths).toBe(expectedMillionths);
+    expect(result!.absorbed_overhead_to_date_cents).toBe(823480);
+    expect(result!.overhead_recovery_variance_cents).not.toBeNull();
+  });
+
+  it("financially_closed_at forces earned completion to 1.00 regardless of the stored completion_method", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-closed",
+      revision_seq: 0, contract_value_cents: 80000, labor_hours_budgeted_hundredths: 1000,
+      labor_rate_used: 320000, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 32000, division: "snow",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 24220, target_margin_millionths: null,
+      completion_method: "completed", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+    await db().prepare(`UPDATE work_orders SET status = 'completed' WHERE id = ?`).bind(jobId).run();
+    await setWorkOrderFinanciallyClosed(db(), TENANT, jobId, "2026-01-05T00:00:00Z");
+
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result).not.toBeNull();
+    expect(result!.earned_completion.completion_millionths).toBe(1_000_000);
+    expect(result!.earned_completion.unavailable_reason).toBeNull();
+    expect(result!.earned_revenue_to_date_cents).toBe(80000);
+  });
+
+  it("service_units completion method reads service_units_completed/planned from the right rows", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-su",
+      revision_seq: 0, contract_value_cents: 60000, labor_hours_budgeted_hundredths: 1200,
+      labor_rate_used: 320000, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 36000, division: "maintenance",
+      overhead_rate_used: 242200, budgeted_overhead_cents: 29064, target_margin_millionths: null,
+      completion_method: "service_units", service_units_planned: 4, needs_review: 0,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+    await setWorkOrderServiceUnitsCompleted(db(), TENANT, jobId, 3);
+
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result!.earned_completion.completion_millionths).toBe(750_000); // 3/4
+    expect(result!.earned_revenue_to_date_cents).toBe(45000); // 60000 * 0.75
+  });
+
+  it("manual completion method reads work_orders.completion_pct_millionths", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-man",
+      revision_seq: 0, contract_value_cents: 10000, labor_hours_budgeted_hundredths: 100,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 5000, division: "landscape",
+      overhead_rate_used: 1, budgeted_overhead_cents: 100, target_margin_millionths: null,
+      completion_method: "manual", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+    await setWorkOrderManualCompletion(db(), TENANT, jobId, 400000);
+
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result!.earned_completion.completion_millionths).toBe(400000);
+    expect(result!.earned_revenue_to_date_cents).toBe(4000); // 10000 * 0.4
+  });
+
+  it("tenant isolation: a job under one tenant never reads another tenant's ledger/budget rows", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: TENANT, job_id: jobId, source_type: "estimate", source_id: "est-iso",
+      revision_seq: 0, contract_value_cents: 5000, labor_hours_budgeted_hundredths: 100,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 1000, division: "landscape",
+      overhead_rate_used: 1, budgeted_overhead_cents: 10, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+
+    // A job of the SAME id existing under OTHER_TENANT with wildly different
+    // figures must never leak into this tenant's read.
+    const sameIdOtherTenant = jobId; // same string id, different company scope is impossible for work_orders(id) PK
+    // work_orders.id is a global PK (see mandate's known gotcha), so we can't
+    // literally reuse the same id under a second tenant; instead prove
+    // isolation via a distinct job id under OTHER_TENANT that must not
+    // affect this tenant's read at all.
+    const otherJobId = uid("job");
+    await seedWorkOrder(otherJobId, OTHER_TENANT);
+    await insertJobBudgetVersion(db(), {
+      id: uid("jbv"), company_id: OTHER_TENANT, job_id: otherJobId, source_type: "estimate", source_id: "est-other",
+      revision_seq: 0, contract_value_cents: 999999, labor_hours_budgeted_hundredths: 1,
+      labor_rate_used: null, materials_budget_cents: 0, subcontractor_budget_cents: 0,
+      equipment_budget_cents: 0, disposal_budget_cents: 0, permits_budget_cents: 0,
+      other_direct_budget_cents: 0, direct_cost_budget_cents: 1, division: "landscape",
+      overhead_rate_used: 1, budgeted_overhead_cents: 1, target_margin_millionths: null,
+      completion_method: "cost_to_cost", service_units_planned: null, needs_review: 0,
+      approved_at: "2026-01-01T00:00:00Z", approved_by: "rep-1",
+    });
+
+    const result = await getJobProgress(db(), TENANT, jobId);
+    expect(result!.revised_contract_value_cents).toBe(5000); // this tenant's own figure, not 999999
+    void sameIdOtherTenant;
   });
 });
