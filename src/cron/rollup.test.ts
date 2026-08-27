@@ -17,7 +17,7 @@ function fixtureInput(tenantId: string): TenantRollupInput {
     hours_per_week_hundredths: F.hours_per_week * 100,
     blended_overhead_rate: Math.round(F.blended_overhead_rate * 10000),
     confidence_days: F.confidence_days,
-    budgeted_overhead_cents: 1000000,
+    weekly_budgeted_overhead_target_cents: 1000000,
     absorbed_overhead_cents: 1050000,
   };
 }

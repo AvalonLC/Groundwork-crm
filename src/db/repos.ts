@@ -6,7 +6,7 @@ import type {
   RateConfidence, Receipt, RecoverySnapshot, TenantFinancePolicy,
   TimeEntryAdjustment, UploadBatch, UploadDomain,
 } from "./schema";
-import type { LedgerLineForProgress } from "../engines/job-progress";
+import { computeJobProgress, type JobProgressResult, type LedgerLineForProgress } from "../engines/job-progress";
 
 export const GLOBAL_CONFIG_SCOPE = "__global__";
 
@@ -1355,6 +1355,63 @@ export async function getLedgerLinesForJobProgress(
     FROM job_cost_ledger WHERE company_id = ? AND job_id = ?
   `).bind(companyId, jobId).all<LedgerLineForProgress>();
   return results;
+}
+
+/**
+ * ITEM4-JOBCOST.md §5/§11: the single assembly point that gathers every
+ * real-table input src/engines/job-progress.ts's computeJobProgress needs
+ * for one job, and runs it. This is the "new src/db/repos.ts read section
+ * for the new tables" §5's own text calls for — computeJobProgress itself
+ * stays pure (no DB, no I/O, per its file-level doc comment); this
+ * function is the one and only place that DB row shapes get narrowed into
+ * the engine's plain-input shape and handed to it.
+ *
+ * `as_of` is accepted for the caller's own record-keeping / future
+ * backfill-analysis use (Phase 3), but is NOT applied as a query bound
+ * here: job_cost_ledger lines have no upper-bound filter in this read,
+ * matching formula 3/8's "posted_at <= as_of" from §5 being the caller's
+ * responsibility once historical as-of reads are needed. Today's only
+ * caller (job-costing.tsx) always wants "as of right now," so every
+ * posted line for the job is read unconditionally — there is no
+ * unposted/future-dated line to accidentally include, since
+ * job_cost_ledger rows are only ever inserted at post time (immutable,
+ * POSTING.md). A future Phase 3/backfill caller needing a true historical
+ * "as of" cutoff should filter its own job_cost_ledger read rather than
+ * assume this function does it.
+ *
+ * Returns null only when the job itself doesn't exist under this tenant —
+ * every other missing piece (no budget version, no crew, etc.) is honestly
+ * represented inside JobProgressResult's own null-propagating fields
+ * (§9 test 4), never collapsed into an early return here.
+ */
+export async function getJobProgress(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<JobProgressResult | null> {
+  const [job, latestBudgetVersion, progress, ledgerLines] = await Promise.all([
+    db.prepare(`SELECT status FROM work_orders WHERE company_id = ? AND id = ?`)
+      .bind(companyId, jobId).first<{ status: string }>(),
+    getLatestJobBudgetVersion(db, companyId, jobId),
+    getWorkOrderProgress(db, companyId, jobId),
+    getLedgerLinesForJobProgress(db, companyId, jobId),
+  ]);
+  if (!job) return null; // job not found under this tenant
+
+  return computeJobProgress({
+    latestBudgetVersion: latestBudgetVersion
+      ? {
+          contract_value_cents: latestBudgetVersion.contract_value_cents,
+          direct_cost_budget_cents: latestBudgetVersion.direct_cost_budget_cents,
+          budgeted_overhead_cents: latestBudgetVersion.budgeted_overhead_cents,
+        }
+      : null,
+    completionMethod: latestBudgetVersion?.completion_method ?? null,
+    serviceUnitsPlanned: latestBudgetVersion?.service_units_planned ?? null,
+    serviceUnitsCompleted: progress?.service_units_completed ?? null,
+    manualCompletionPctMillionths: progress?.completion_pct_millionths ?? null,
+    workOrderCompleted: job.status === "completed",
+    financiallyClosed: progress?.financially_closed_at != null,
+    ledgerLines,
+  });
 }
 
 export async function getJobCostLedgerLine(
