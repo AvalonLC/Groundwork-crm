@@ -231,11 +231,26 @@ test("JP-E2E-05 financially_closed_at forces 100% earned completion and a positi
   // (100% of the $242.20 budgeted overhead) minus the true absorbed total
   // ($266.42 + $193.74 = $460.16) is -$217.96, not worked example 8.3's own
   // -$24.22 in isolation — this still proves the negative-variance render
-  // path (color:var(--gw-rose)) and that money() renders a negative amount
-  // correctly, not just a magnitude, which is this test's actual purpose.
+  // path and that money() renders a negative amount correctly, not just a
+  // magnitude, which is this test's actual purpose.
   const varianceEl = page.getByTestId("jp-overhead-variance");
   await expect(varianceEl).toHaveText("$-217.96");
-  await expect(varianceEl).toHaveCSS("color", "rgb(139, 58, 42)"); // --gw-rose
+  // Assert the rendered inline style attribute directly, not the browser's
+  // *computed* color: this Playwright suite runs against src/ui/dev-server.ts
+  // (a standalone Worker for e2e/dev use only — see its own file-level doc
+  // comment), which mounts Finance UI routers and /test/* seeding endpoints
+  // but never serves /js/finance-shell.css (the stylesheet defining
+  // --gw-rose). In production, layout.tsx links that same stylesheet and
+  // the Cloudflare Pages build's serveStatic actually serves it, so
+  // color:var(--gw-rose) resolves for real users — but under this
+  // dev-only harness the custom property is undefined and the computed
+  // color falls back to the inherited default, making a toHaveCSS(color)
+  // assertion here meaningless regardless of whether job-costing.tsx is
+  // correct. The inline style attribute is the actual thing FormulaTile
+  // renders (job-costing.tsx), so this is still a real assertion on the
+  // negative-variance styling path — just not one that depends on static
+  // asset serving this harness doesn't provide.
+  await expect(varianceEl).toHaveAttribute("style", "color:var(--gw-rose)");
 });
 
 test("JP-E2E-06 no job_budget_versions row at all: every budget-derived tile shows review-required, never a fabricated number, while actual/absorbed cost still render as real zeros", async ({ page }) => {
