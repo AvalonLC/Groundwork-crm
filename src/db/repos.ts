@@ -7,6 +7,10 @@ import type {
   TimeEntryAdjustment, UploadBatch, UploadDomain,
 } from "./schema";
 import { computeJobProgress, type JobProgressResult, type LedgerLineForProgress } from "../engines/job-progress";
+import {
+  classifyJobForBackfill, buildBackfillAnalysisReport,
+  type JobBackfillAnalysisInput, type BackfillAnalysisReport,
+} from "../engines/backfill-analysis";
 
 export const GLOBAL_CONFIG_SCOPE = "__global__";
 
@@ -1708,4 +1712,244 @@ export async function getJobDivision(
     WHERE wo.id = ? AND wo.company_id = ?
   `).bind(jobId, companyId).first<{ division: string | null }>();
   return row?.division ?? null;
+}
+
+// ── §10 backfill analysis (Phase 3 — REPORT-ONLY, ZERO-WRITE) ───────────────
+//
+// Every function below issues SELECTs only. Nothing in this section ever
+// executes an INSERT/UPDATE/DELETE against job_budget_versions or any other
+// table — the real §10 migration script (still unimplemented/unscheduled)
+// is a deliberately separate, future, explicitly-approved effort. This
+// section answers "what WOULD the real script do to each job," using
+// src/engines/backfill-analysis.ts's pure classifier for every actual
+// decision; this file's only job is assembling that classifier's plain-
+// value input shape from real tables, exactly the same division of labor
+// as getJobProgress/job-progress.ts above.
+//
+// `asOf` is a REAL upper bound here (unlike getJobProgress's `as_of`
+// parameter, which that function's own doc comment says is accepted but
+// not applied) — this section's whole purpose is backfill-style historical
+// analysis, so every date-bounded read below is bounded at asOf, following
+// gather-inputs.ts's documented discipline: "A backfilled row that looks
+// authoritative and is not is worse than no row."
+
+/** One candidate job for backfill analysis — every work_orders row in the
+ * tenant as of `asOf` (created at or before it), since a job created after
+ * the as-of date shouldn't appear in a backfill snapshot labelled for an
+ * earlier date. */
+interface BackfillCandidateJob {
+  id: string;
+  crew_id: string | null;
+  type: string | null;
+}
+
+async function listBackfillCandidateJobs(
+  db: D1Database, companyId: string, asOf: string,
+): Promise<BackfillCandidateJob[]> {
+  const { results } = await db.prepare(`
+    SELECT id, crew_id, type FROM work_orders
+    WHERE company_id = ? AND substr(created_at, 1, 10) <= ?
+  `).bind(companyId, asOf).all<BackfillCandidateJob>();
+  return results;
+}
+
+/** True iff job_budget_versions already has >=1 row for this job — the
+ * idempotency short-circuit. Not bounded by asOf: a job_budget_versions
+ * row created after asOf is still evidence a backfill must not touch this
+ * job (the real script's actual run date is unknown/irrelevant here; what
+ * matters is "does this job already have one, ever"). */
+async function jobAlreadyHasBudgetVersion(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT 1 as present FROM job_budget_versions WHERE company_id = ? AND job_id = ? LIMIT 1`,
+  ).bind(companyId, jobId).first<{ present: number }>();
+  return row !== null;
+}
+
+/** The single accepted estimate this job's baseline row would be built
+ * from, as of `asOf` — bounded so a backfill snapshot labelled for an
+ * earlier date never picks up an estimate accepted later. Deterministic
+ * tie-break when more than one estimates row is accepted for the same job
+ * (via work_orders.estimate_id, estimates.work_order_id, or a shared
+ * opp_id — the same three-branch reachability listBilledWorkOrderIds
+ * already uses): the estimate with the EARLIEST accepted_at wins, since
+ * §10 describes "the accepted estimate" as the one baseline event a job
+ * has, and the earliest acceptance is the one that actually established
+ * the original contract value this baseline row is meant to capture. Ties
+ * on accepted_at itself break on estimates.id ascending, purely for
+ * determinism (never on row-insertion order, which SQLite does not
+ * guarantee is stable). Malformed rows (total_cents/accepted_at missing or
+ * unusable) are intentionally NOT filtered out here — they are passed
+ * through to the classifier, whose own defensive handling (see
+ * backfill-analysis.ts's BA-02 tests) is what must decide they're
+ * unusable; filtering them out here would silently hide a
+ * malformed-record case from the report instead of surfacing it. */
+async function getAcceptedEstimateForJob(
+  db: D1Database, companyId: string, jobId: string, asOf: string,
+): Promise<{ id: string; total_cents: number | null; accepted_at: string | null } | null> {
+  return db.prepare(`
+    SELECT es.id AS id, es.total_cents AS total_cents, es.accepted_at AS accepted_at
+    FROM estimates es
+    WHERE es.company_id = ?
+      AND es.status = 'accepted'
+      AND es.accepted_at IS NOT NULL AND es.accepted_at != ''
+      AND substr(es.accepted_at, 1, 10) <= ?
+      AND (
+        (es.work_order_id IS NOT NULL AND es.work_order_id != '' AND es.work_order_id = ?)
+        OR es.id = (SELECT wo.estimate_id FROM work_orders wo WHERE wo.id = ? AND wo.company_id = es.company_id)
+        OR (
+          es.opp_id IS NOT NULL AND es.opp_id != ''
+          AND es.opp_id = (SELECT wo.opp_id FROM work_orders wo WHERE wo.id = ? AND wo.company_id = es.company_id AND wo.opp_id IS NOT NULL AND wo.opp_id != '')
+        )
+      )
+    ORDER BY es.accepted_at ASC, es.id ASC
+    LIMIT 1
+  `).bind(companyId, asOf, jobId, jobId, jobId).first<{ id: string; total_cents: number | null; accepted_at: string | null }>();
+}
+
+/** work_orders.crew_id -> crews.division, or null if crew_id is null, the
+ * crew row doesn't exist, or crews.division is null/empty. Reuses the
+ * exact same cascade as the existing getJobDivision (above) rather than
+ * re-deriving it, but returns null instead of throwing on a dangling
+ * crew_id (a malformed-record safety concern this report must tolerate;
+ * getJobDivision's own JOIN already achieves this by simply not matching). */
+async function resolveDivisionForBackfill(
+  db: D1Database, companyId: string, crewId: string | null,
+): Promise<string | null> {
+  if (!crewId) return null;
+  const row = await db.prepare(
+    `SELECT division FROM crews WHERE company_id = ? AND id = ?`,
+  ).bind(companyId, crewId).first<{ division: string | null }>();
+  return row?.division ?? null;
+}
+
+/** Whether an overhead_allocation row exists for `division` at or before
+ * `asOfDate` (the estimate's own accepted_at, per §10 step 1's "the
+ * overhead_allocation rate for that division at/before the estimate's
+ * accepted_at date") — reuses the exact lookup gather-inputs.ts/
+ * getLatestOverheadAllocationForDivision already performs, existence-only
+ * here since the classifier only needs a boolean. */
+async function overheadRateAvailableForDivision(
+  db: D1Database, companyId: string, division: string, asOfDate: string,
+): Promise<boolean> {
+  const row = await db.prepare(`
+    SELECT 1 as present FROM overhead_allocation
+    WHERE company_id = ? AND division = ? AND as_of <= ?
+    ORDER BY as_of DESC LIMIT 1
+  `).bind(companyId, division, asOfDate).first<{ present: number }>();
+  return row !== null;
+}
+
+/** §10 step 2's "receipt/vendor-cost history suggesting materials were
+ * ever separately budgeted" — modeled here as: any receipt row linked to
+ * this job (receipt.job_id) with a non-null cost_category other than
+ * 'other', posted/created at or before asOf. A receipt merely uploaded
+ * with no category assigned yet is NOT treated as evidence (an
+ * unclassified receipt says nothing about what it's for); 'other' is
+ * likewise deliberately excluded because it is the direct_cost catch-all
+ * bucket and not specific evidence of a materials/subs/equipment/
+ * disposal/permits split. */
+async function hasNonLaborCostEvidence(
+  db: D1Database, companyId: string, jobId: string, asOf: string,
+): Promise<boolean> {
+  const row = await db.prepare(`
+    SELECT 1 as present FROM receipt
+    WHERE company_id = ? AND job_id = ?
+      AND cost_category IS NOT NULL AND cost_category != 'other'
+      AND substr(created_at, 1, 10) <= ?
+    LIMIT 1
+  `).bind(companyId, jobId, asOf).first<{ present: number }>();
+  return row !== null;
+}
+
+/** §10 step 3's recurring-plan link: a plan_visits row whose
+ * work_order_id equals this job, scheduled at or before asOf (a visit
+ * scheduled after the as-of date is not yet evidence the job existed
+ * under that plan link as of that date). */
+async function hasRecurringPlanLink(
+  db: D1Database, companyId: string, jobId: string, asOf: string,
+): Promise<boolean> {
+  const row = await db.prepare(`
+    SELECT 1 as present FROM plan_visits
+    WHERE company_id = ? AND work_order_id = ?
+      AND substr(scheduled_date, 1, 10) <= ?
+    LIMIT 1
+  `).bind(companyId, jobId, asOf).first<{ present: number }>();
+  return row !== null;
+}
+
+/**
+ * Assembles the full JobBackfillAnalysisInput for one job from real
+ * tables — the one place DB row shapes get narrowed into the pure
+ * classifier's plain-input shape, same convention as getJobProgress
+ * above. Every sub-lookup is read-only; this function itself never writes
+ * anything.
+ */
+async function buildBackfillInputForJob(
+  db: D1Database, companyId: string, job: BackfillCandidateJob, asOf: string,
+): Promise<JobBackfillAnalysisInput> {
+  const [alreadyHasBudgetVersion, acceptedEstimate, division] = await Promise.all([
+    jobAlreadyHasBudgetVersion(db, companyId, job.id),
+    getAcceptedEstimateForJob(db, companyId, job.id, asOf),
+    resolveDivisionForBackfill(db, companyId, job.crew_id),
+  ]);
+
+  // The overhead-rate/non-labor-evidence/plan-link lookups are only ever
+  // consulted by the classifier once accepted_estimate/division are both
+  // usable — but they're still computed unconditionally here (cheap
+  // existence checks) rather than short-circuited in this assembly
+  // function, keeping ALL §10 business-rule short-circuiting inside the
+  // pure classifier where backfill-analysis.test.ts's priority-ordering
+  // tests (BA-10) can verify it directly, rather than splitting that logic
+  // across two files.
+  const overheadRateAvailable = acceptedEstimate?.accepted_at
+    ? await overheadRateAvailableForDivision(db, companyId, division ?? "", acceptedEstimate.accepted_at)
+    : false;
+
+  const [nonLaborEvidence, planLink] = await Promise.all([
+    hasNonLaborCostEvidence(db, companyId, job.id, asOf),
+    hasRecurringPlanLink(db, companyId, job.id, asOf),
+  ]);
+
+  return {
+    job_id: job.id,
+    already_has_budget_version: alreadyHasBudgetVersion,
+    accepted_estimate: acceptedEstimate,
+    division,
+    overhead_rate_available: overheadRateAvailable,
+    has_non_labor_cost_evidence: nonLaborEvidence,
+    work_order_type: job.type,
+    has_recurring_plan_link: planLink,
+  };
+}
+
+/**
+ * The Phase 3 entry point: a fully report-only, zero-write §10 backfill
+ * analysis for one tenant as of one explicit date. Never issues a write
+ * of any kind (see this whole section's header comment) — every job in
+ * the tenant (as of `asOf`) is classified into exactly one of the 10
+ * BACKFILL_BUCKETS via src/engines/backfill-analysis.ts's pure
+ * classifier, and the result is a deterministic BackfillAnalysisReport:
+ * calling this twice with the same `companyId`/`asOf` against an
+ * unchanged database always returns a deep-equal report (verified in
+ * backfill-analysis-repos.test.ts's BA-REPO determinism tests).
+ *
+ * `companyId` and `asOf` are both REQUIRED, explicit parameters —
+ * deliberately no "all tenants" or "today" default, per the mandate's
+ * "explicit tenant/as-of targeting" requirement. A caller wanting every
+ * tenant must loop over tenant ids itself, one call per tenant.
+ */
+export async function runBackfillAnalysis(
+  db: D1Database, companyId: string, asOf: string,
+): Promise<BackfillAnalysisReport> {
+  const jobs = await listBackfillCandidateJobs(db, companyId, asOf);
+  const classifications = await Promise.all(
+    jobs.map(async (job) => classifyJobForBackfill(await buildBackfillInputForJob(db, companyId, job, asOf))),
+  );
+  // Sort by job_id for a stable, deterministic report ordering — jobs
+  // arrive from a SELECT with no ORDER BY, and SQLite does not guarantee
+  // row order absent one.
+  classifications.sort((a, b) => (a.job_id < b.job_id ? -1 : a.job_id > b.job_id ? 1 : 0));
+  return buildBackfillAnalysisReport(companyId, asOf, classifications);
 }
