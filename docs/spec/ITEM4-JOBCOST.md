@@ -554,6 +554,25 @@ For every job with an accepted estimate today:
    (`no_accepted_estimate` / `no_division` / `ambiguous_direct_cost_split` /
    `no_completion_method_signal`), for Tyler/ops to work through manually.
 
+**Implemented (Item 4 Stage 2, Phase 3): a report-only, zero-write preview
+of this exception report.** `src/engines/backfill-analysis.ts`
+(`classifyJobForBackfill`, `buildBackfillAnalysisReport`) plus
+`src/db/repos.ts`'s `runBackfillAnalysis` implement exactly step 6's
+exception-report query above — callable programmatically today, with
+explicit tenant/`as_of` targeting — as 10 review buckets (the 4 named
+reasons above, one additional implied failure mode
+`no_overhead_rate_for_division` generalized from the same "skip, don't
+guess" rule, `already_has_budget_version`, and 4 forward-compatibility
+buckets that are currently unreachable — see that file's own comments for
+the full reasoning). **This tool only ever issues `SELECT`s — it does not
+create any `job_budget_versions` rows.** Steps 1–5 above (the row-creating
+migration script itself) remain unimplemented and unscheduled, per this
+document's own "Nothing in Stage 2 starts until this document is
+approved" note below and the standing production restriction against any
+live backfill. Running that script against production data — as opposed
+to previewing what it would do — requires a separate, explicit approval
+and is out of scope for this analysis tool.
+
 ---
 
 ## 11. Implementation sequence (recap)
