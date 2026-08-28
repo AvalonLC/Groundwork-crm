@@ -59,11 +59,30 @@ async function seedOverheadAllocation(companyId: string, division: string, asOf:
   `).bind(companyId, division, asOf, 1000, 100000, 2500, 2422, 90000, 300000, 5000).run();
 }
 
-async function seedReceipt(id: string, companyId: string, jobId: string, costCategory: string | null) {
+async function seedReceipt(
+  id: string, companyId: string, jobId: string, costCategory: string | null,
+  createdAt?: string,
+) {
+  // IMPORTANT: created_at must always be an explicit, deterministic value at
+  // or before AS_OF (see const above). The `receipt` table defines
+  // `created_at TEXT NOT NULL DEFAULT (datetime('now'))` (see
+  // migrations/0057_finance_merge.sql), so omitting this column entirely
+  // would silently bind every seeded receipt's created_at to the sandbox's
+  // real wall-clock time at test-run time. AS_OF is a fixed historical date;
+  // once real time passes it, hasNonLaborCostEvidence()'s
+  // `substr(created_at,1,10) <= asOf` filter in src/db/repos.ts would start
+  // excluding these seeded rows even though cost_category is non-null and
+  // not 'other', causing classifyJobForBackfill() to fall through past
+  // ambiguous_direct_cost_split into would_create_needs_review_cost_to_cost.
+  // That is not a classifier bug -- the asOf bound is intentional, spec-
+  // correct behavior (§10 step 2: never use future evidence) -- it is a test
+  // fixture bug: the fixture must control its own "as of" evidence dates
+  // explicitly, the same way seedWorkOrder/seedAcceptedEstimate/
+  // seedPlanVisit already do, rather than depending on real calendar time.
   await db().prepare(`
-    INSERT INTO receipt (id, company_id, job_id, r2_key, content_hash, cost_category)
-    VALUES (?,?,?,?,?,?)
-  `).bind(id, companyId, jobId, `r2/${id}`, `hash-${id}`, costCategory).run();
+    INSERT INTO receipt (id, company_id, job_id, r2_key, content_hash, cost_category, created_at)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(id, companyId, jobId, `r2/${id}`, `hash-${id}`, costCategory, createdAt ?? "2026-01-20").run();
 }
 
 async function seedPlanVisit(id: string, companyId: string, workOrderId: string, scheduledDate: string) {
@@ -502,5 +521,59 @@ describe("BA-REPO-06 invariant totals", () => {
     expect(report.jobs.find((j) => j.job_id === jAmbig)?.bucket).toBe("ambiguous_direct_cost_split");
     expect(report.jobs.find((j) => j.job_id === jNoMethod)?.bucket).toBe("no_completion_method_signal");
     expect(report.jobs.find((j) => j.job_id === jHasVersion)?.bucket).toBe("already_has_budget_version");
+  });
+});
+
+describe("BA-REPO-07 fixture calendar-drift regression", () => {
+  // Regression coverage for a bug where seedReceipt() omitted an explicit
+  // created_at, so every seeded receipt fell back to the `receipt` table's
+  // `DEFAULT (datetime('now'))` column default (real wall-clock UTC).
+  // AS_OF above is a fixed historical date. hasNonLaborCostEvidence() in
+  // src/db/repos.ts intentionally bounds its query to
+  // `substr(created_at,1,10) <= asOf` (§10 step 2: never use future
+  // evidence as grounds for classification). Once real time advanced past
+  // AS_OF, every freshly seeded receipt's created_at fell after AS_OF, so
+  // the evidence query stopped finding it -- silently flipping
+  // ambiguous_direct_cost_split results to would_create_needs_review_cost_to_cost
+  // with no code change and no test edit, purely because the calendar
+  // advanced. This test fails loudly, from first principles, if that same
+  // class of drift is ever reintroduced (whether in seedReceipt or in any
+  // other seed helper for a date/time column with a datetime('now') default).
+  it("seedReceipt's created_at must be safely at-or-before AS_OF regardless of real wall-clock time", async () => {
+    const jobId = uid("job");
+    await seedCrew("crew-drift", TENANT, "div-drift");
+    await seedWorkOrder(jobId, TENANT, { crew_id: "crew-drift" });
+    await seedAcceptedEstimate(uid("est"), TENANT, { work_order_id: jobId });
+    await seedOverheadAllocation(TENANT, "div-drift", "2026-01-01");
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, jobId, "materials");
+
+    // 1) Directly assert the persisted created_at is the fixed historical
+    //    default, not whatever "now" happens to be when the suite runs.
+    const row = await db().prepare(
+      `SELECT created_at FROM receipt WHERE id = ?`,
+    ).bind(receiptId).first<{ created_at: string }>();
+    expect(row?.created_at).toBeDefined();
+    expect(row!.created_at.slice(0, 10) <= AS_OF).toBe(true);
+
+    // 2) Assert the end-to-end classification this fixture exists to
+    //    support still resolves to the financially-correct bucket. If a
+    //    future change reintroduces a wall-clock-dependent default, this
+    //    fails the same way BA-REPO-04 originally failed -- but with a
+    //    comment at the exact fixture responsible, instead of a bare
+    //    assertion mismatch that looks like a classifier regression.
+    const report = await runBackfillAnalysis(db(), TENANT, AS_OF);
+    expect(report.jobs.find((j) => j.job_id === jobId)?.bucket).toBe("ambiguous_direct_cost_split");
+  });
+
+  it("an explicit createdAt argument to seedReceipt overrides the fixed default", async () => {
+    const jobId = uid("job");
+    await seedWorkOrder(jobId, TENANT);
+    const receiptId = uid("rcpt");
+    await seedReceipt(receiptId, TENANT, jobId, "materials", "2025-06-01");
+    const row = await db().prepare(
+      `SELECT created_at FROM receipt WHERE id = ?`,
+    ).bind(receiptId).first<{ created_at: string }>();
+    expect(row?.created_at.slice(0, 10)).toBe("2025-06-01");
   });
 });
