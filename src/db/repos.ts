@@ -1139,6 +1139,61 @@ export async function insertJobBudgetVersion(
   ).run();
 }
 
+/**
+ * Phase 2 (writing backfill)'s idempotent counterpart to
+ * insertJobBudgetVersion above. Identical column list/binding order, but
+ * `INSERT OR IGNORE` instead of a plain `INSERT` — relies on
+ * migration 0085's `idx_job_budget_versions_seq` UNIQUE INDEX on
+ * (company_id, job_id, revision_seq) as the actual concurrency/duplicate
+ * guard (mandate items 11-13): two concurrent executions racing to insert
+ * the same job's revision_seq=0 baseline can only ever result in ONE row
+ * existing afterward, enforced by SQLite itself, not by an application-
+ * level check-then-insert race window. Returns whether a row was actually
+ * inserted (`meta.changes > 0`) so the caller's rows_written accounting
+ * (backfill_manifest_execution.rows_written) reflects reality even when a
+ * same-job race or a stale manifest re-run causes some rows to be
+ * legitimately skipped rather than written twice.
+ *
+ * Never used for the plain (non-backfill) CO-approval INSERT path above —
+ * that path's own idempotency story (one call site, always
+ * revision_seq = prior max + 1, no concurrent-writer scenario) is already
+ * covered by the same unique index without needing OR IGNORE; keeping
+ * insertJobBudgetVersion's existing behavior (a genuine constraint-
+ * violation error on impossible duplicate revision_seq, surfacing a real
+ * bug loudly) unchanged is itself the mandate's "do not rewrite proven
+ * repo logic" instruction applied here.
+ */
+export function insertJobBudgetVersionIfAbsentStatement(
+  db: D1Database, row: Omit<JobBudgetVersion, "created_at">,
+): D1PreparedStatement {
+  return db.prepare(`
+    INSERT OR IGNORE INTO job_budget_versions
+      (id, company_id, job_id, source_type, source_id, revision_seq,
+       contract_value_cents, labor_hours_budgeted_hundredths, labor_rate_used,
+       materials_budget_cents, subcontractor_budget_cents, equipment_budget_cents,
+       disposal_budget_cents, permits_budget_cents, other_direct_budget_cents,
+       direct_cost_budget_cents, division, overhead_rate_used, budgeted_overhead_cents,
+       target_margin_millionths, completion_method, service_units_planned,
+       needs_review, approved_at, approved_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    row.id, row.company_id, row.job_id, row.source_type, row.source_id, row.revision_seq,
+    row.contract_value_cents, row.labor_hours_budgeted_hundredths, row.labor_rate_used,
+    row.materials_budget_cents, row.subcontractor_budget_cents, row.equipment_budget_cents,
+    row.disposal_budget_cents, row.permits_budget_cents, row.other_direct_budget_cents,
+    row.direct_cost_budget_cents, row.division, row.overhead_rate_used, row.budgeted_overhead_cents,
+    row.target_margin_millionths, row.completion_method, row.service_units_planned,
+    row.needs_review, row.approved_at, row.approved_by,
+  );
+}
+
+export async function insertJobBudgetVersionIfAbsent(
+  db: D1Database, row: Omit<JobBudgetVersion, "created_at">,
+): Promise<{ inserted: boolean }> {
+  const result = await insertJobBudgetVersionIfAbsentStatement(db, row).run();
+  return { inserted: (result.meta.changes ?? 0) > 0 };
+}
+
 /** All job_budget_versions rows flagged needs_review=1 for a tenant — the
  * §10 backfill's "needs manual review" queue surfaced in the UI (PR D). */
 export async function listJobBudgetVersionsNeedingReview(
@@ -1232,6 +1287,110 @@ export async function approveChangeOrderAndCreateBudgetVersion(
   const approveChanges = (results[0] as D1Result).meta.changes ?? 0;
   const insertChanges = (results[1] as D1Result).meta.changes ?? 0;
   return approveChanges > 0 && insertChanges > 0;
+}
+
+// ---- backfill_manifest_execution (migration 0086, Item 4 Stage 2 Phase 2:
+// the writing-backfill's durable manifest-execution/audit ledger — see
+// src/engines/backfill-write.ts's header comment and
+// src/db/backfill-write-repos.ts's executeBackfillManifest for how this
+// table's row is written inside the SAME db.batch() as the
+// job_budget_versions inserts it accounts for) ----
+
+interface BackfillManifestExecutionRow {
+  id: string;
+  company_id: string;
+  manifest_hash: string;
+  schema_version: number;
+  environment: string;
+  as_of: string;
+  generated_at: string;
+  job_count: number;
+  status: "in_progress" | "completed" | "failed";
+  rows_written: number;
+  error_message: string | null;
+  approved_by: string;
+  confirmation_token_hash: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+/**
+ * The "has this exact manifest already been fully executed" check mandate
+ * item 18 ("refusal of ... consumed manifests") requires. Deliberately
+ * scoped to status='completed' only: an 'in_progress' row from a process
+ * that crashed mid-batch, or a 'failed' row from a validation rejection,
+ * must NOT block a legitimate retry of the same manifest — only a
+ * genuinely completed execution makes re-running the same manifest_hash a
+ * duplicate-write risk (see migration 0086's own header comment for why
+ * this is an application-level check rather than a UNIQUE constraint).
+ */
+export async function findCompletedManifestExecution(
+  db: D1Database, companyId: string, manifestHash: string,
+): Promise<BackfillManifestExecutionRow | null> {
+  return db.prepare(`
+    SELECT * FROM backfill_manifest_execution
+    WHERE company_id = ? AND manifest_hash = ? AND status = 'completed'
+    ORDER BY started_at DESC LIMIT 1
+  `).bind(companyId, manifestHash).first<BackfillManifestExecutionRow>();
+}
+
+export function insertManifestExecutionStartStatement(
+  db: D1Database, row: {
+    id: string; company_id: string; manifest_hash: string; schema_version: number;
+    environment: string; as_of: string; generated_at: string; job_count: number;
+    approved_by: string; confirmation_token_hash: string;
+  },
+): D1PreparedStatement {
+  return db.prepare(`
+    INSERT INTO backfill_manifest_execution
+      (id, company_id, manifest_hash, schema_version, environment, as_of, generated_at,
+       job_count, status, rows_written, approved_by, confirmation_token_hash)
+    VALUES (?,?,?,?,?,?,?,?, 'in_progress', 0, ?, ?)
+  `).bind(
+    row.id, row.company_id, row.manifest_hash, row.schema_version, row.environment,
+    row.as_of, row.generated_at, row.job_count, row.approved_by, row.confirmation_token_hash,
+  );
+}
+
+/**
+ * Finalizes the ledger row WITHIN THE SAME db.batch() as the
+ * job_budget_versions inserts it accounts for — the actual mechanism
+ * behind mandate item 10's "transaction boundaries" and item 15's
+ * "before/after reconciliation." `attemptedJobRowIds` is the full list of
+ * ids executeBackfillManifest generated for THIS execution's
+ * job_budget_versions insert attempts (one INSERT OR IGNORE statement per
+ * id, immediately preceding this statement in the same batch array); since
+ * every one of those ids is a fresh crypto.randomUUID-based value that
+ * cannot possibly collide with any pre-existing row, `rows_written` is
+ * computed here as `COUNT(*) FROM job_budget_versions WHERE id IN (...)` —
+ * a row with one of these exact ids exists IF AND ONLY IF this batch's own
+ * INSERT OR IGNORE for it actually inserted (never IGNOREd due to the
+ * unique (company_id, job_id, revision_seq) index already having a row).
+ * This lets rows_written reflect ground truth read back from the database
+ * itself in the SAME atomic batch, rather than assumed to equal
+ * attemptedJobRowIds.length (which a same-job race or a stale-manifest
+ * replay could make false).
+ */
+export function finishManifestExecutionStatement(
+  db: D1Database, id: string,
+  outcome: { status: "completed" | "failed"; attemptedJobRowIds: string[]; errorMessage: string | null },
+): D1PreparedStatement {
+  if (outcome.attemptedJobRowIds.length === 0) {
+    return db.prepare(`
+      UPDATE backfill_manifest_execution
+      SET status = ?, rows_written = 0, error_message = ?, finished_at = datetime('now')
+      WHERE id = ?
+    `).bind(outcome.status, outcome.errorMessage, id);
+  }
+  const placeholders = outcome.attemptedJobRowIds.map(() => "?").join(",");
+  return db.prepare(`
+    UPDATE backfill_manifest_execution
+    SET status = ?,
+        rows_written = (SELECT COUNT(*) FROM job_budget_versions WHERE id IN (${placeholders})),
+        error_message = ?,
+        finished_at = datetime('now')
+    WHERE id = ?
+  `).bind(outcome.status, ...outcome.attemptedJobRowIds, outcome.errorMessage, id);
 }
 
 // ---- work_orders progress columns (migration 0085 §4.3) ----
@@ -1737,13 +1896,19 @@ export async function getJobDivision(
  * tenant as of `asOf` (created at or before it), since a job created after
  * the as-of date shouldn't appear in a backfill snapshot labelled for an
  * earlier date. */
-interface BackfillCandidateJob {
+export interface BackfillCandidateJob {
   id: string;
   crew_id: string | null;
   type: string | null;
 }
 
-async function listBackfillCandidateJobs(
+// Exported (not just used by runBackfillAnalysis below) because Phase 2's
+// write orchestration (src/db/backfill-write-repos.ts, a different file)
+// needs this exact same candidate-job list — with crew_id/type — to
+// resolve division/completion-method inputs per job, rather than
+// re-deriving its own candidate-job query. Purely a visibility change;
+// the query itself is untouched.
+export async function listBackfillCandidateJobs(
   db: D1Database, companyId: string, asOf: string,
 ): Promise<BackfillCandidateJob[]> {
   const { results } = await db.prepare(`
@@ -1808,13 +1973,53 @@ async function getAcceptedEstimateForJob(
   `).bind(companyId, asOf, jobId, jobId, jobId).first<{ id: string; total_cents: number | null; accepted_at: string | null }>();
 }
 
+/**
+ * Phase 2 (writing backfill) needs everything getAcceptedEstimateForJob
+ * already resolves PLUS estimates.subtotal_cents — §10 step 2's
+ * direct_cost_budget_cents source, a field the Phase 3 report-only path
+ * above never needed and so never selected. Deliberately a SEPARATE
+ * exported function rather than widening getAcceptedEstimateForJob itself:
+ * that private function's return type is exactly what
+ * buildBackfillInputForJob/classifyJobForBackfill's tested contract
+ * expects, and this mandate's "do not rewrite proven analysis/repo logic"
+ * instruction means the already-tested read path stays untouched even
+ * though the two queries are otherwise identical (same estimate-selection
+ * WHERE clause, same tie-break order) — see backfill-write-repos.ts's
+ * generateBackfillManifest for the one call site.
+ */
+export async function getAcceptedEstimateForBackfillWrite(
+  db: D1Database, companyId: string, jobId: string, asOf: string,
+): Promise<{ id: string; total_cents: number | null; subtotal_cents: number | null; accepted_at: string | null } | null> {
+  return db.prepare(`
+    SELECT es.id AS id, es.total_cents AS total_cents, es.subtotal_cents AS subtotal_cents, es.accepted_at AS accepted_at
+    FROM estimates es
+    WHERE es.company_id = ?
+      AND es.status = 'accepted'
+      AND es.accepted_at IS NOT NULL AND es.accepted_at != ''
+      AND substr(es.accepted_at, 1, 10) <= ?
+      AND (
+        (es.work_order_id IS NOT NULL AND es.work_order_id != '' AND es.work_order_id = ?)
+        OR es.id = (SELECT wo.estimate_id FROM work_orders wo WHERE wo.id = ? AND wo.company_id = es.company_id)
+        OR (
+          es.opp_id IS NOT NULL AND es.opp_id != ''
+          AND es.opp_id = (SELECT wo.opp_id FROM work_orders wo WHERE wo.id = ? AND wo.company_id = es.company_id AND wo.opp_id IS NOT NULL AND wo.opp_id != '')
+        )
+      )
+    ORDER BY es.accepted_at ASC, es.id ASC
+    LIMIT 1
+  `).bind(companyId, asOf, jobId, jobId, jobId).first<{ id: string; total_cents: number | null; subtotal_cents: number | null; accepted_at: string | null }>();
+}
+
 /** work_orders.crew_id -> crews.division, or null if crew_id is null, the
  * crew row doesn't exist, or crews.division is null/empty. Reuses the
  * exact same cascade as the existing getJobDivision (above) rather than
  * re-deriving it, but returns null instead of throwing on a dangling
  * crew_id (a malformed-record safety concern this report must tolerate;
  * getJobDivision's own JOIN already achieves this by simply not matching). */
-async function resolveDivisionForBackfill(
+// Exported for the same reason listBackfillCandidateJobs is above: Phase
+// 2's write orchestration needs this exact division-resolution cascade
+// (not a re-derived one) to build a manifest row's `division` field.
+export async function resolveDivisionForBackfill(
   db: D1Database, companyId: string, crewId: string | null,
 ): Promise<string | null> {
   if (!crewId) return null;
@@ -1877,6 +2082,57 @@ async function hasRecurringPlanLink(
     LIMIT 1
   `).bind(companyId, jobId, asOf).first<{ present: number }>();
   return row !== null;
+}
+
+/**
+ * §10 step 3's "the plan's remaining scheduled visit count" — the figure
+ * Phase 2's manifest engine (src/engines/backfill-write.ts) validates as
+ * `remaining_service_units` and, once validated, persists as
+ * job_budget_versions.service_units_planned for a recurring-plan-linked
+ * job's baseline row. Phase 3's report-only path never needed an actual
+ * COUNT (only hasRecurringPlanLink's existence boolean, above) since it
+ * never writes service_units_planned; this is a genuinely new query, not a
+ * widening of an existing one.
+ *
+ * "Remaining" is defined here as STATUS-based, not date-based:
+ * `status IN ('scheduled', 'in_progress')`, counted regardless of whether
+ * scheduled_date falls before or after `asOf`. This is a deliberate
+ * decision (not the only possible reading of the spec's plain-English
+ * wording), for two reasons:
+ *   1. hasRecurringPlanLink's own `scheduled_date <= asOf` bound answers a
+ *      different question — "did this job already exist under the plan as
+ *      of asOf" (an existence check that must not leak future visits into
+ *      a report about the past). "Remaining" is not that question: a
+ *      visit that was scheduled before asOf but never actually completed,
+ *      skipped, or cancelled is still outstanding WORK, and is exactly the
+ *      kind of visit a real job's service_units_planned baseline must
+ *      count — excluding it because its scheduled_date happens to be in
+ *      the past would silently understate the plan's remaining workload.
+ *   2. `job-progress.ts`'s computeEarnedCompletion divides
+ *      service_units_completed / service_units_planned to produce a
+ *      point-in-time earned-completion percentage; date-bounding
+ *      "remaining" would make service_units_planned itself drift
+ *      backwards as asOf moves forward even with zero visits actually
+ *      completed/skipped/cancelled in between — an artifact of the
+ *      as_of parameter, not a real change in the plan's remaining
+ *      workload, which this backfill must never introduce into a stored,
+ *      immutable baseline row (JobBudgetVersion is "never updated in
+ *      place" per schema.ts's own doc comment).
+ * `in_progress` is included (not just `scheduled`) because a visit
+ * actively underway is by definition not yet completed and still
+ * contributes to the plan's total remaining/outstanding unit count;
+ * `completed`/`skipped`/`cancelled` are excluded as already resolved,
+ * one way or another, and no longer "remaining" by any reading.
+ */
+export async function countRemainingPlanVisitsForJob(
+  db: D1Database, companyId: string, jobId: string,
+): Promise<number> {
+  const row = await db.prepare(`
+    SELECT COUNT(*) AS n FROM plan_visits
+    WHERE company_id = ? AND work_order_id = ?
+      AND status IN ('scheduled', 'in_progress')
+  `).bind(companyId, jobId).first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 /**
