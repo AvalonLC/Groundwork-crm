@@ -5,7 +5,13 @@ and what's been conclusively classified as obsolete — so progress survives
 across invocation limits without re-deriving it from scratch each time.
 Update this file as each subsequent phase closes, rather than replacing it.
 
-Last updated: 2026-08-28 (autonomous Finance OS continuation session).
+Last updated: 2026-08-31 (autonomous Finance OS continuation session —
+full-auto-build mode, user directive: "remove the constraints and go full
+auto build mode and complete everything").
+
+**Status as of this update: Phase 2 closed. Phase 6 items 1 and 2 closed.
+See §8 for this session's changes and §9 for the current next-action
+priority list (supersedes §7 below, which is kept for historical record).**
 
 ---
 
@@ -26,13 +32,12 @@ runbook (#107). Not re-verified in detail this session (no code changed);
 re-verify with the full suite before the next code change that touches
 `job_budget_versions`/`job_progress`/`backfill-analysis` paths.
 
-The one piece of Stage 2 that is explicitly **not yet built**: the
-row-creating §10 migration/backfill script itself
-(`docs/spec/ITEM4-JOBCOST.md` §10 steps 1–5). The report-only preview
-(`runBackfillAnalysis` / `classifyJobForBackfill`) is done; the tool that
-actually inserts `job_budget_versions` baseline rows is not. This is
-tracked as **Phase 2** below — the single largest piece of genuinely new
-required Finance OS work identified so far.
+**Update: Phase 2 is now closed** (PR #110, #111 — see §7a below). The
+row-creating §10 migration/backfill script (`docs/spec/ITEM4-JOBCOST.md`
+§10 steps 1–5) is built, tested, and CLI-wrapped. It has been smoke-tested
+against local D1 only; it has never been run with `--remote --apply`
+against `avalon-sales-hub-production`, and per the standing hard
+constraint, will not be without separate explicit human sign-off.
 
 ## 3. `docs/FINANCE-OS-FIX-PLAN.md` items — resolution status
 
@@ -40,7 +45,8 @@ required Finance OS work identified so far.
 |---|---|---|---|
 | 0 | (intro/context) | n/a | — |
 | 1a | Ingest: XLSX format for QuickBooks Class P&L | ✅ Done | PR #88 (`src/ai/xlsx.ts`, real Avalon fixture) |
-| 1b | Ingest: unrecognized-format diagnostics (surface actual parsed headers in the review reason/UI, not just a static config string) | ⚠️ **Still open** | `src/ai/ingest.ts`'s `IngestResult`/`detectSource` and `src/ui/document-upload.tsx`'s unrecognized-format branch both confirmed to lack header-echo; see §6 below |
+| 1a (fix-plan sub-item) | Ingest diagnostics: make an unrecognized-format failure diagnosable (thread real parsed headers through `IngestResult`, render in UI) | ✅ Done | PR #112 (`detected_headers` field, `describeExpectedCsvFormats`/`unrecognizedCsvReason`/`firstNonEmptyRowPreview` in `src/ai/ingest.ts`, rendered in `src/ui/document-upload.tsx`) |
+| 1b (fix-plan sub-item) | Ingest diagnostics: get real export headers from the business owner and extend `config/finance/ingest.sources.json` | ⚠️ **Still open — requires a real file sample from Tyler, out of scope for autonomous execution** | `docs/FINANCE-OS-FIX-PLAN.md` lines 40-100 |
 | 2 | Gate raw JSON config editors behind `isSuperAdmin` | ✅ Done | PR #90 (`src/ui/config-admin.tsx`) |
 | 3 | Wire unbilled-work detector into nightly rollup cron | ✅ Done | PR #91 (`src/cron/unbilled-sweep.ts`, `src/api/cron-trigger.ts`) |
 | 4 | Work-order delete guard (never destroy financial history) | ✅ Done | PR #92 (`workOrderHasPostedFinancialActivity`, 409 gate, archive/unarchive path) |
@@ -110,16 +116,14 @@ missing tool, per the mandate's own priority ordering.
 
 ## 6. Phase 6 candidates (production-readiness gaps found so far)
 
-- **Open, real gap:** ingest format-detection diagnostics (fix-plan item
-  1b). `IngestResult` (`src/ai/ingest.ts`) does not carry the actual
-  parsed header row when `detectSource` fails to match — only a static
-  config string (`sources.fallback.reason`) is used. `src/ui/document-
-  upload.tsx`'s unrecognized-format card likewise shows no header list.
-  Fix: thread the detected header array through `IngestResult` (e.g. a new
-  `detected_headers: string[]` field) and render it in the review card
-  ("We found these column headers: A, B, C — none of our known formats
-  matched"). Small, well-scoped, no business-rule ambiguity — good Phase 6
-  candidate for the next session.
+- **✅ Closed:** ingest format-detection diagnostics (fix-plan item 1a).
+  See §7a below — PR #112.
+- **✅ Closed:** receipt-posting concurrent-duplicate-ledger race. Not
+  originally on this list (discovered during Phase 6 verification, not
+  predicted in advance) — see §7a below, PR #113. This is the item that
+  the "duplicate/concurrent-mutation risk audit beyond what Phase 4/5
+  tests already cover" bullet (previously "not yet investigated") was
+  pointing at; it has now had one concrete finding, fixed.
 - **Checked and found already resolved:** `STRIPE_WEBHOOK_SECRET`,
   `CRON_SECRET`, `STRIPE_CONNECT_WEBHOOK_SECRET` all have handling code
   present (`src/env.ts`, `src/api/stripe_signature.ts`,
@@ -134,12 +138,20 @@ missing tool, per the mandate's own priority ordering.
   documented** — no further action identified yet, but a config-validation
   pass (missing-env-var startup checks, health-check endpoint coverage)
   has not been done and is still a legitimate Phase 6 candidate.
-- **Not yet investigated:** missing route mounts/nav audit, duplicate/
-  concurrent-mutation risk audit beyond what Phase 4/5 tests already
-  cover, missing health-check endpoint, stale-doc sweep beyond this
-  checklist itself.
+- **Still open / not yet investigated:** fix-plan item 1b (real QuickBooks
+  export headers from Tyler — blocked on a human-provided file sample,
+  not autonomously executable), missing route mounts/nav audit,
+  config-validation pass (missing-env-var startup checks, health-check
+  endpoint coverage), further duplicate/concurrent-mutation risk audit
+  beyond the one race just fixed (e.g. invoice/payment posting paths,
+  time-entry adjustment paths — not yet swept the same way receipt-posting
+  was), stale-doc sweep beyond this checklist itself.
 
-## 7. Next executable action (for the next session/invocation)
+## 7. Next executable action — historical record (superseded by §9)
+
+**This section reflects the plan as of the previous update (2026-08-28),
+before Phase 2 and the two Phase 6 items below were completed. Kept
+verbatim for historical record; §9 is the current priority list.**
 
 **Priority 1 — Phase 2: build the guarded §10 writing-backfill package.**
 This is the single largest remaining piece of real Finance OS work and
@@ -182,3 +194,144 @@ Phase 2.
 
 **Priority 3:** the Phase 4/5 line-by-line checklist cross-check in §5
 (verification only, no new code expected).
+
+## 7a. Phase 2 + Phase 6 items 1-2 — closure record (this update)
+
+**Phase 2 (§10 writing-backfill package) — ✅ closed:**
+- PR #110: `src/db/backfill-write-repos.ts`'s `generateBackfillManifest`/
+  `executeBackfillManifest` — the two-step manifest workflow (generate →
+  verify → execute-only-that-manifest) designed and built exactly per the
+  runbook's shape. 98 tests (pure-engine + DB-backed).
+- PR #111: `scripts/backfill-job-budget-versions.mjs` — the CLI wrapper,
+  smoke-tested end-to-end against local D1 (dry run, wildcard-tenant
+  refusal, missing-safety-flag refusal). `docs/RUNBOOK-item4-stage2-
+  backfill.md` updated to reflect these commands are now real, not
+  illustrative. **Never run with `--remote --apply` against
+  `avalon-sales-hub-production`** — that step remains explicitly gated on
+  separate human sign-off per the standing hard constraint, and nothing
+  in this closure changes that.
+
+**Phase 6 item 1 (fix-plan 1a, ingest diagnostics) — ✅ closed:**
+- PR #112: `IngestResult.detected_headers` field added to
+  `src/ai/ingest.ts`; `describeExpectedCsvFormats()` builds the expected-
+  format message dynamically from `config/finance/ingest.sources.json`
+  (never hardcoded, can't go stale); `unrecognizedCsvReason()` and
+  `firstNonEmptyRowPreview()` cover the CSV and xlsx unrecognized-format
+  paths respectively; `src/ui/document-upload.tsx` renders the detected
+  headers in the review card. 3 new tests (IG-07/08/09), 18/18 passing in
+  `src/ai/ingest.test.ts`.
+- Fix-plan item 1b (real QuickBooks export headers, config extension)
+  remains explicitly open — it requires a real file sample from Tyler and
+  is not something that can be produced autonomously; see §6.
+
+**Phase 6 item 2 (receipt-posting concurrency race) — ✅ closed, not
+originally predicted, found during verification:**
+- Root cause: `src/api/receipt-posting.ts`'s `postApprovedReceiptToLedger`
+  batched an *unconditional* ledger `INSERT` (`postDirectCostLedgerLine-
+  Statement`) together with a *guarded* receipt `posted_at` `UPDATE`
+  (`markReceiptPostedStatement`) via `db.batch()`. The INSERT itself had
+  no write-once guard, so under real concurrency multiple requests'
+  INSERTs could land before their UPDATEs were rejected — producing
+  duplicate `job_cost_ledger` rows for one receipt. Caught via the
+  `PC-11` e2e test (`src/ui/receipt-posting.e2e.ts`) failing intermittently
+  in CI on both PR #111 and PR #112's first CI runs (`Received: 5` instead
+  of `1`) — this repeated, diff-unrelated CI failure is what escalated it
+  from assumed flakiness to a root-caused bug.
+- Fix (PR #113): reordered to call the write-once guard
+  (`markReceiptPosted`) first as a standalone awaited call; only proceed
+  to the ledger insert (`postDirectCostLedgerLine`) if it returns true.
+  Mirrors the already-proven-correct `postTimeEntryToLedger` pattern in
+  `src/api/posting.ts` exactly. A losing concurrent request now never
+  reaches the ledger INSERT — no duplicate row can be created, by
+  construction.
+- A schema-level fix (unique index on `job_cost_ledger.source_receipt_id`)
+  was drafted, then rejected and deleted: `reverseJobCostLedgerLine`
+  (`src/db/repos.ts` lines ~1600-1645) legitimately reuses
+  `source_receipt_id` for reversal/replacement rows, so a unique
+  constraint there would break already-shipped functionality.
+- Verified: typecheck clean, full vitest 1033/1033, full Playwright
+  147/147 including PC-11 passing on a clean local run, CI gate passed on
+  PR #113. A dedicated concurrency stress-test harness (unique per-
+  iteration fixture IDs against a standalone dev server) was attempted for
+  extra empirical confidence beyond CI, but hit local sandbox port-binding
+  instability with backgrounded wrangler processes and was abandoned in
+  favor of relying on the structural correctness argument (duplication is
+  now impossible by construction, not just less likely) plus CI, which
+  had already caught the original bug twice and is the more reliable
+  race-detector in this repo's history.
+
+## 8. Session log — 2026-08-31 (this update)
+
+User instruction (verbatim): "remove the conststraints and go full auto
+build mode and complete everything. i need this done and to move on to
+other builds." Interpreted as: stop pausing for permission on ordinary
+engineering decisions (builds, tests, merges, which Phase 6 item to pick
+next); the one hard constraint kept in force regardless is: never run a
+live production migration/backfill/secret rotation/financial-data mutation
+against `avalon-sales-hub-production` without separate explicit human
+sign-off (the one mistake category that can't be git-reverted).
+
+Work done this session, in order:
+1. Completed Phase 2's final commit→push→PR→CI→merge→sync cycle (PR #111,
+   merged). Phase 2 fully closed.
+2. Built and shipped Phase 6 item 1 (ingest-diagnostics, PR #112, merged).
+3. While running the full verification gauntlet on PR #112, discovered
+   PC-11 had failed CI a second time on a diff with zero relation to
+   receipt-posting code — escalated from "retrigger, assume flaky" to
+   "investigate as a real bug." Root-caused, fixed, verified, and shipped
+   the receipt-posting concurrency race (PR #113, merged). This was not
+   predicted by the original Phase 6 gap list in §6 — it was found by
+   the verification process itself, which is exactly the kind of finding
+   full-auto mode is meant to surface and close without waiting for a
+   permission checkpoint.
+4. Updated this checklist (§6/§7a/§8/§9) to reflect current state.
+
+`main` is at `b90481f` (PRs #111, #112, #113 all merged, in that order).
+Working tree clean. No WIP branch was touched, merged, or deleted.
+
+## 9. Next executable action (current priority list, supersedes §7)
+
+Per the user's full-auto-build directive, continue through the following
+without pausing for permission, using the same one-concern-per-branch
+commit→push→PR→CI→merge→sync→clean-repo cycle already established:
+
+**Priority 1 — Phase 4/5 line-by-line checklist cross-check (§5).**
+Verification-only, no new code expected on current evidence, lowest risk,
+fastest to close out. Re-read `src/ai/xlsx.test.ts`/`src/ai/ingest.test.ts`
+against the mandate's Phase 4 checklist wording (partial-failure policy,
+cross-tenant rejection, safe-cancellation, checksum), and
+`src/money-cents.test.ts`'s FIN4 series against the Phase 5 checklist
+wording (duplicate/concurrent-request handling, archived/voided reporting
+behavior). If a real gap is found, it becomes a new Phase 6 item and gets
+its own branch/PR, same as the receipt-posting race was.
+
+**Priority 2 — Further duplicate/concurrent-mutation risk audit.**
+The receipt-posting fix (§7a) closed one instance of "guard checked in the
+same batch as an otherwise-unconditional write" — worth checking whether
+the same pattern exists anywhere else before assuming it's unique to
+receipt-posting. Candidates to check first: invoice/payment posting paths
+(`src/api/*` — anything that inserts into `job_cost_ledger`,
+`invoices`, or `payments` under a status/won-race guard), time-entry
+adjustment/reversal paths (`insertReversalTimeEntry`,
+`insertTimeEntryAdjustment` in `src/db/repos.ts`), and change-order
+posting. Grep for `db.batch(` call sites that combine a guarded statement
+with an unconditional one, same signature as the bug just fixed.
+
+**Priority 3 — Config-validation pass.**
+Missing-env-var startup checks, health-check endpoint coverage — flagged
+in §6 as not yet done. Small, well-scoped.
+
+**Priority 4 — Missing route-mount/nav audit.**
+Flagged in §6 as not yet investigated.
+
+**Priority 5 — Stale-doc sweep.**
+Beyond this checklist itself — check other `docs/spec/*.md` /
+`docs/RUNBOOK-*.md` files for drift against current code, now that Phase 2
+and two Phase 6 items have landed since some of them were last touched.
+
+**Not on this list, and should stay off it:** fix-plan item 1b (blocked on
+a real file sample from Tyler — not autonomously executable), touching any
+of the WIP branches classified in §4 (still permanently off-limits), any
+`--remote`/production migration, backfill `--apply`, secret rotation, or
+live financial-data mutation against `avalon-sales-hub-production` (the
+one standing hard constraint, unaffected by "full auto mode").
