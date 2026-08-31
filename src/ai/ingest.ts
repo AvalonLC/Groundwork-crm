@@ -54,6 +54,18 @@ function detectXlsxSource(grid: ReturnType<typeof readXlsxGrid>, sources: Ingest
   return null;
 }
 
+/** Best-effort diagnostic preview for an xlsx that matched no known shape:
+ * the first row with any populated cell, stringified, capped at 20 cells
+ * so a very wide sheet doesn't produce an unbounded message. Returns null
+ * if the whole grid is empty. */
+function firstNonEmptyRowPreview(grid: ReturnType<typeof readXlsxGrid>): string[] | null {
+  for (const row of grid) {
+    const populated = row.filter((v) => v !== null && v !== "" && v !== undefined);
+    if (populated.length > 0) return row.slice(0, 20).map((v) => (v === null || v === undefined ? "" : String(v)));
+  }
+  return null;
+}
+
 export interface IngestLine {
   target: string;
   account: string | null;
@@ -125,6 +137,32 @@ export interface IngestResult {
   lines: IngestLine[];
   gap_report: GapReport;
   review_action_item_ids: string[];
+  // Only set when source_id is null (unrecognized format) — the actual
+  // header row (CSV) or a short shape-description (xlsx) that was parsed
+  // from the upload, so "nothing is reading the file" can be diagnosed in
+  // ~10 seconds from the review item / UI instead of requiring a fresh
+  // investigation. See docs/FINANCE-OS-FIX-PLAN.md item 1a/1b.
+  detected_headers: string[] | null;
+}
+
+/** Builds a human-readable "Expected one of: ..." string from whatever csv
+ * sources are currently configured, so this diagnostic message can never
+ * go stale relative to ingest.sources.json — no format list is hardcoded
+ * here or in the UI. */
+function describeExpectedCsvFormats(sources: IngestSourcesConfig): string {
+  return sources.sources
+    .filter((s) => s.format === "csv")
+    .map((s) => `${s.detect.required_headers.join(",")} (${s.label})`)
+    .join("; ");
+}
+
+/** The diagnostic reason stored on the review action_item and returned to
+ * the caller when a CSV's header row doesn't subset-match any configured
+ * source — includes the actual headers seen, not just the generic static
+ * fallback string, per fix-plan item 1a. */
+function unrecognizedCsvReason(headers: string[], sources: IngestSourcesConfig): string {
+  const seen = headers.length > 0 ? headers.join(", ") : "(no header row found)";
+  return `${sources.fallback.reason}. Found headers: ${seen}. Expected one of: ${describeExpectedCsvFormats(sources)}.`;
 }
 
 export interface IngestFileOptions {
@@ -143,13 +181,14 @@ export async function ingestFile(
 
   if (!automationPolicy.ingest_auto_detect_enabled) {
     const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, "ingest auto-detect disabled by automation-policy.json");
-    return { source_id: null, source_label: null, total_rows: rows.length, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
+    return { source_id: null, source_label: null, total_rows: rows.length, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId], detected_headers: null };
   }
 
   const source = detectSource(headers, sources);
   if (!source) {
-    const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, sources.fallback.reason);
-    return { source_id: null, source_label: null, total_rows: rows.length, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
+    const reason = unrecognizedCsvReason(headers, sources);
+    const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, reason);
+    return { source_id: null, source_label: null, total_rows: rows.length, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId], detected_headers: headers };
   }
 
   const lines = rows.map((row) => mapRow(row, source, divMap));
@@ -167,7 +206,7 @@ export async function ingestFile(
     ? await computeGapReport(db, companyId, lines)
     : emptyGapReport();
 
-  return { source_id: source.id, source_label: source.label, total_rows: rows.length, lines, gap_report: gapReport, review_action_item_ids: reviewActionIds };
+  return { source_id: source.id, source_label: source.label, total_rows: rows.length, lines, gap_report: gapReport, review_action_item_ids: reviewActionIds, detected_headers: null };
 }
 
 function emptyGapReport(): GapReport {
@@ -194,7 +233,7 @@ export async function ingestXlsxFile(
 
   if (!automationPolicy.ingest_auto_detect_enabled) {
     const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, "ingest auto-detect disabled by automation-policy.json");
-    return { source_id: null, source_label: null, total_rows: 0, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
+    return { source_id: null, source_label: null, total_rows: 0, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId], detected_headers: null };
   }
 
   let grid: ReturnType<typeof readXlsxGrid>;
@@ -203,13 +242,20 @@ export async function ingestXlsxFile(
   } catch (e) {
     const reason = e instanceof Error ? e.message : "could not read .xlsx file";
     const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, reason);
-    return { source_id: null, source_label: null, total_rows: 0, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
+    return { source_id: null, source_label: null, total_rows: 0, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId], detected_headers: null };
   }
 
   const source = detectXlsxSource(grid, sources);
   if (!source) {
-    const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, sources.fallback.reason);
-    return { source_id: null, source_label: null, total_rows: 0, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
+    // No CSV-style header row exists to echo back (this shape is detected
+    // by grid structure, not a header line) — instead surface the first
+    // populated row's cell values as a best-effort diagnostic preview, so
+    // "nothing is reading this workbook" still gets something concrete to
+    // look at instead of just the generic fallback string.
+    const preview = firstNonEmptyRowPreview(grid);
+    const reason = `${sources.fallback.reason}. No recognized .xlsx shape found (checked: wide-format Class/Division P&L, i.e. a blank-first-column header row ending in "Total"). First populated row seen: ${preview ? preview.join(", ") : "(workbook appears to have no populated rows)"}.`;
+    const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, reason);
+    return { source_id: null, source_label: null, total_rows: 0, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId], detected_headers: preview };
   }
 
   const header = findWideClassPnlHeader(grid)!; // detectXlsxSource already confirmed this is non-null
@@ -230,7 +276,7 @@ export async function ingestXlsxFile(
     ? await computeGapReport(db, companyId, lines)
     : emptyGapReport();
 
-  return { source_id: source.id, source_label: source.label, total_rows: lines.length, lines, gap_report: gapReport, review_action_item_ids: reviewActionIds };
+  return { source_id: source.id, source_label: source.label, total_rows: lines.length, lines, gap_report: gapReport, review_action_item_ids: reviewActionIds, detected_headers: null };
 }
 
 async function createIngestReviewItem(

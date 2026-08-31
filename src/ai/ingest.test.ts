@@ -54,6 +54,30 @@ describe("ingestFile — unknown format", () => {
     const open = await getOpenActionItems(db(), TENANT, "decide");
     expect(open.some((a) => a.id === result.review_action_item_ids[0])).toBe(true);
   });
+
+  it("IG-07 the actual detected header row is returned and stored in the review item's reason (fix-plan item 1a)", async () => {
+    const result = await ingestFile(db(), "t-ingest-diag-1", "Foo,Bar,Baz\n1,2,3", "office-user-1");
+    expect(result.source_id).toBeNull();
+    expect(result.detected_headers).toEqual(["Foo", "Bar", "Baz"]);
+    const open = await getOpenActionItems(db(), "t-ingest-diag-1", "decide");
+    const item = open.find((a) => a.id === result.review_action_item_ids[0]);
+    expect(item).toBeDefined();
+    const staleComponents = JSON.parse(item!.stale_components ?? "[]") as string[];
+    expect(staleComponents[0]).toContain("Foo, Bar, Baz");
+    expect(staleComponents[0]).toContain("Expected one of:");
+  });
+
+  it("IG-08 a recognized format returns detected_headers: null (only set on the unrecognized path)", async () => {
+    const result = await ingestFile(db(), "t-ingest-diag-2", "Account,Total\nFuel,500.00", "office-user-1");
+    expect(result.source_id).toBe("qbo_pnl_export");
+    expect(result.detected_headers).toBeNull();
+  });
+
+  it("IG-09 a header-less unrecognized file still reports gracefully (no header row found)", async () => {
+    const result = await ingestFile(db(), "t-ingest-diag-3", "", "office-user-1");
+    expect(result.source_id).toBeNull();
+    expect(result.detected_headers).toEqual([]);
+  });
 });
 
 describe("ingestFile — class/division P&L", () => {
