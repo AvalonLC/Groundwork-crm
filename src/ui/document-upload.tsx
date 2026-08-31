@@ -62,10 +62,17 @@ function ingestResultCard(result: IngestResult) {
       <div data-testid="ingest-result">
       {result.source_id === null ? (
         <div class="fin-note" data-testid="ingest-unrecognized" style="border-left-color:var(--gw-amber)">
-          Format not recognized against any configured import format
-          (<code>config/finance/ingest.sources.json</code>). {result.total_rows} row
-          {result.total_rows === 1 ? "" : "s"} found but not processed — flagged for review
-          rather than guessed at.
+          <div>
+            Format not recognized against any configured import format
+            (<code>config/finance/ingest.sources.json</code>). {result.total_rows} row
+            {result.total_rows === 1 ? "" : "s"} found but not processed — flagged for review
+            rather than guessed at.
+          </div>
+          {result.detected_headers && (
+            <div data-testid="ingest-detected-headers" style="margin-top:8px">
+              We found these column headers: <code>{result.detected_headers.join(", ") || "(none)"}</code>
+            </div>
+          )}
         </div>
       ) : (
         <>
