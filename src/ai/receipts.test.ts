@@ -77,6 +77,52 @@ describe("processReceiptUpload", () => {
     expect(openFix.some((a) => a.source_id === result.receipt_id)).toBe(true);
   });
 
+  // Phase 4/5 checklist cross-check (Finance OS Phase 6, 2026-08-31): this
+  // exact scenario — findLikelyDuplicateReceipts's fuzzy vendor+date+total
+  // dedupe path, called from processReceiptUpload — had no test anywhere in
+  // the repo (confirmed via grep across src/**/*.test.ts and *.e2e.ts before
+  // adding this). Item 1's Tyler quote ("document hash + vendor + date +
+  // receipt/invoice number + total") explicitly calls out this signal
+  // as required; only the byte-hash half (RC-03 above) was covered.
+  it("RC-05 a different photo of the same paper receipt (different bytes, same vendor/date/total) is flagged as a likely duplicate for review, not silently stored", async () => {
+    await seedWorkOrder("job-5");
+    const shared = {
+      company_id: TENANT, job_id: "job-5",
+      extract: async () => ({ vendor: "Ace Hardware", amount_cents: 5500, receipt_date: "2026-07-05" }),
+      reviewOwnerId: "office-user-1", reviewOwnerRole: "office" as const,
+    };
+    const first = await processReceiptUpload(db(), r2(), {
+      ...shared, bytes: bytes("photo-angle-1"), filename: "r5a.jpg",
+    });
+    expect(first.status).toBe("stored");
+    if (first.status !== "stored") throw new Error("unreachable");
+    // High confidence on every field and no receipt_number collision to
+    // force review through the confidence path — isolates the assertion
+    // below to the fuzzy-duplicate signal specifically.
+    expect(first.needs_review).toBe(false);
+
+    // A second, genuinely different set of bytes (different photo of the
+    // same paper receipt) — hash dedupe (RC-03) does NOT catch this; only
+    // the vendor+date+amount fuzzy match does.
+    const second = await processReceiptUpload(db(), r2(), {
+      ...shared, bytes: bytes("photo-angle-2-slightly-different-crop"), filename: "r5b.jpg",
+    });
+    expect(second.status).toBe("stored");
+    if (second.status !== "stored") throw new Error("unreachable");
+    expect(second.needs_review).toBe(true);
+    expect(second.likely_duplicate_of).toEqual([first.receipt_id]);
+
+    // Never blocks the upload outright (per findLikelyDuplicateReceipts's
+    // own doc comment — a false positive is possible) — it is stored, just
+    // flagged, alongside a review action_item that names the duplicate
+    // suspicion explicitly so a human can tell this apart from a plain
+    // low-confidence-field review.
+    const openFix = await getOpenActionItems(db(), TENANT, "fix");
+    const item = openFix.find((a) => a.source_id === second.receipt_id);
+    expect(item).toBeDefined();
+    expect(JSON.parse(item!.stale_components as string)).toContain("possible_duplicate");
+  });
+
   it("forbidden: routing a bookkeeping review to the crew role throws", async () => {
     await expect(
       processReceiptUpload(db(), r2(), {
