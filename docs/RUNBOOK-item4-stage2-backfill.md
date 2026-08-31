@@ -9,13 +9,25 @@ in one place, instead of being improvised live against production.**
 
 This is a **write-only** document per the standing Item 4 Stage 2 mandate.
 No command below has been run against production. No migration has been
-applied to production. No live backfill has occurred. `src/engines/backfill-
-analysis.ts` / `runBackfillAnalysis` (Item 4 Stage 2 Phase 3, merged PR
-#105) already exist and are safe to run any time — they are report-only
-and issue nothing but `SELECT`s. Everything else in this document describes
-a *future*, currently-unbuilt, row-creating script and is explicitly gated
-on a separate approval before anyone runs it for real. See "13. Residual
-risks" for why the row-creating script itself is not built yet.
+applied to production. No live backfill has occurred.
+
+**Update (Phase 2, merged PR #110, PR #111):** the row-creating layer this
+runbook describes now exists and is fully tested — this is no longer a
+purely forward-looking document for that part.
+`src/engines/backfill-analysis.ts` / `runBackfillAnalysis` (Item 4 Stage 2
+Phase 3, merged PR #105) were already report-only and safe to run any
+time. Built on top of them, `src/db/backfill-write-repos.ts`'s
+`generateBackfillManifest`/`executeBackfillManifest` (98 tests, PR #110)
+are the actual row-creating functions, and
+`scripts/backfill-job-budget-versions.mjs` (PR #111) is the CLI wrapper
+around them that this runbook's commands below now literally match — it
+has been smoke-tested end-to-end against local D1 (dry run, wildcard-
+tenant refusal, missing-safety-flag refusal; see that PR's description),
+though never against `--remote`. Running `--remote --apply` against
+`avalon-sales-hub-production` is still explicitly gated on a separate
+approval — see §12 — and has not happened. See "13. Residual risks" for
+what is genuinely still unverified (real production data, real `--remote`
+run) versus what is now built and tested.
 
 ---
 
@@ -59,48 +71,70 @@ tables, not against a script bug that writes somewhere unexpected.
 
 ## 2. Migration commands / order
 
-The row-creating §10 script does not exist as a runnable artifact yet (see
-§13). When it is built, it is expected to be a standalone Node script
-under `scripts/` (following the exact precedent of
-`scripts/migrate-finance-data.mjs`, documented in
-`docs/RUNBOOK-finance-merge.md`) rather than a numbered SQL migration file
-— §10's logic (skip-vs-baseline decisions, division/overhead-rate
-resolution, completion-method classification) is conditional business
-logic per row, not a fixed-shape schema change, so it does not belong in
+The row-creating layer now exists (`src/db/backfill-write-repos.ts`, PR
+#110) and its CLI wrapper (`scripts/backfill-job-budget-versions.mjs`, PR
+#111) is a real, runnable, standalone Node script under `scripts/` --
+following the precedent of `scripts/migrate-finance-data.mjs`
+(`docs/RUNBOOK-finance-merge.md`), but bridging TypeScript directly (via
+an esbuild bundle + `getPlatformProxy`) rather than shelling out to
+`wrangler d1 execute`, since (unlike that script, which bridged two
+genuinely separate databases with no shared code) this backfill has one
+shared, already-tested TS layer to call into directly. §10's logic
+(skip-vs-baseline decisions, division/overhead-rate resolution,
+completion-method classification) is conditional business logic per row,
+not a fixed-shape schema change, so it correctly does not belong in
 `/migrations`.
 
-Expected order, once that script exists:
+Required schema state before running it: both
+`0085_job_budget_change_orders.sql` (the `needs_review` column §10 step 2
+relies on) and `0086_backfill_manifest_execution.sql` (the idempotency/
+audit ledger `executeBackfillManifest` writes to) must already be
+applied. Check `migrations/` for the highest-numbered file at the time --
+if either of those two, or anything after them, isn't yet applied to
+production:
+```bash
+wrangler d1 migrations apply avalon-sales-hub-production --remote
+```
 
-1. Apply any schema-only migration it depends on (if `job_budget_versions`
-   or a related table needs a new nullable column not yet in production —
-   check `migrations/` for the highest-numbered file at the time; as of
-   this writing the last applied is `0085_job_budget_change_orders.sql`
-   and already includes the `needs_review` column §10 step 2 relies on, so
-   no new schema migration may be needed at all):
+Actual order to run the backfill itself:
+
+1. Confirm the migration state above.
+2. Dry-run the backfill script (default behavior -- no `--apply` needed):
    ```bash
-   wrangler d1 migrations apply avalon-sales-hub-production --remote
+   node scripts/backfill-job-budget-versions.mjs --remote --company <tenant_id> --as-of <YYYY-MM-DD>
    ```
-2. Dry-run the backfill script itself (flag name illustrative — match
-   whatever the actual script implements, following
-   `migrate-finance-data.mjs --remote`'s own dry-run-by-default pattern):
-   ```bash
-   node scripts/backfill-job-budget-versions.mjs --remote
-   ```
-3. Review the dry-run's summary against §9 below before ever passing
+   This prints the manifest (eligible jobs, excluded jobs with reasons,
+   and a `manifest_hash`) and writes nothing. `--company` must be one
+   real tenant id -- the script refuses `all`/`*`/blank outright
+   (`assertUsableTenantId`).
+3. Review the dry-run's summary against §7/§9 below before ever passing
    `--apply`.
-4. Apply for real, only after separate explicit approval (§12):
+4. Apply for real, only after separate explicit approval (§12), using the
+   exact `manifest_hash` the dry run printed as `--confirm`:
    ```bash
-   node scripts/backfill-job-budget-versions.mjs --remote --apply
+   node scripts/backfill-job-budget-versions.mjs --remote --company <tenant_id> --as-of <YYYY-MM-DD> \
+     --apply --confirm <manifest_hash_from_step_2> --backup-confirmed --approved-by "Tyler Ridge"
    ```
+   `--backup-confirmed` and `--approved-by` are not optional flourishes --
+   omitting either (or passing a blank `--approved-by`) is treated as a
+   validation failure by `executeBackfillManifest` and refuses to write
+   anything (verified by this exact refusal path in
+   `src/db/backfill-write-repos.test.ts` and smoke-tested against local
+   D1 for PR #111).
 
-**Never run step 4 twice.** Per §10 step 4 ("skip, don't guess") and step
-5 ("no historical change orders invented"), a `job_budget_versions` row is
-a `revision_seq=0` baseline meant to exist exactly once per job. Re-running
-the apply step against jobs that already have a baseline row is expected
-to be a no-op (skip via the `already_has_budget_version` bucket — see §4
-of `src/engines/backfill-analysis.ts`) rather than a duplicate insert, but
-that guarantee should be confirmed by the script's own tests, not assumed,
-before the first real run.
+**Never re-run step 4 with the same manifest twice, and never re-run it
+at all without first re-generating a fresh manifest (step 2) if any real
+time has passed.** Two independent protections exist here, both already
+tested: (a) a `manifest_hash` that has already been consumed by a
+completed execution is rejected by `findCompletedManifestExecution`
+(`backfill_manifest_execution` ledger, migration 0086) -- a literal replay
+of the same manifest is refused, not silently no-op'd; (b) even without
+that ledger check, a same-job race or accidental double-run can only ever
+produce *fewer* rows than expected, never duplicates, because every insert
+goes through `insertJobBudgetVersionIfAbsentStatement` (`INSERT OR IGNORE`
+against the unique `(company_id, job_id, revision_seq)` index from
+migration 0085). Always generate a fresh manifest (step 2) immediately
+before any `--apply` run rather than reusing an old dry run's hash.
 
 ---
 
@@ -169,7 +203,8 @@ Before running the real backfill script against production:
 
 ## 6. Post-deploy smoke tests
 
-After the real backfill script runs (`--apply`, real production run):
+After the real backfill script runs (`--remote --apply`, real production
+run, per §2 step 4):
 
 ```bash
 # Total new baseline rows created should equal the dry-run's predicted
@@ -196,11 +231,15 @@ wrangler d1 execute avalon-sales-hub-production --remote --command \
 ## 7. Dry-run backfill command + expected buckets
 
 ```bash
-node scripts/backfill-job-budget-versions.mjs --remote
-# (or, until that script exists, run runBackfillAnalysis programmatically
-# against production — same effective preview, today, zero-write, via
-# Phase 3's own tool)
+node scripts/backfill-job-budget-versions.mjs --remote --company <tenant_id> --as-of <YYYY-MM-DD>
 ```
+
+(`runBackfillAnalysis` — Phase 3's own report-only tool, PR #105 — remains
+available and safe to run any time as a lighter-weight alternative if you
+only need the classification counts and not a manifest/hash to later
+apply; the CLI script above calls it internally as its first step, so its
+printed bucket-shaped output is that same data, just also assembled into
+an application-ready manifest.)
 
 Expected output shape (per `BackfillAnalysisReport` from
 `src/engines/backfill-analysis.ts`) — a `bucket_counts` object with all 10
@@ -295,7 +334,8 @@ stopping for, not guessing past.
   terminal output is the only log of the run itself. Redirect it to a file
   for the permanent record:
   ```bash
-  node scripts/backfill-job-budget-versions.mjs --remote --apply \
+  node scripts/backfill-job-budget-versions.mjs --remote --company <tenant_id> --as-of <YYYY-MM-DD> \
+    --apply --confirm <manifest_hash> --backup-confirmed --approved-by "Tyler Ridge" \
     2>&1 | tee "backups/backfill-run-$(date +%Y-%m-%d_%H%M).log"
   ```
 - **After deploy** (if a UI change shipped alongside): the existing
@@ -389,14 +429,19 @@ Before anyone runs `node scripts/backfill-job-budget-versions.mjs --remote
 
 ## 13. Residual risks
 
-- **The row-creating script does not exist yet.** This runbook describes
-  its expected shape and command surface based on §10's spec and the
-  `migrate-finance-data.mjs` precedent, but no code has been written for
-  it. Building it is future work, not part of this mandate's Phase 3
-  (which deliberately scoped to the report-only preview tool only, per
-  the PR #105 description). Until it's built and has its own test suite,
-  this runbook's §2/§6/§7 commands are illustrative, not literally
-  copy-pasteable.
+- **The row-creating layer now exists and is tested, but has never run
+  against real production data.** `generateBackfillManifest`/
+  `executeBackfillManifest` (PR #110, 98 tests) and the CLI wrapper
+  `scripts/backfill-job-budget-versions.mjs` (PR #111) are real, and the
+  CLI has been smoke-tested end-to-end against local D1 (dry run against
+  several tenants, wildcard-tenant refusal, missing-safety-flag refusal —
+  all behaved as designed). What remains genuinely unverified is anything
+  specific to `avalon-sales-hub-production`'s actual data shape: real
+  bucket-count magnitudes, real `--remote` connectivity/auth behavior
+  under `getPlatformProxy`, and real wall-clock run time for however many
+  jobs production actually has. None of that can be checked without
+  running `--remote` (even the dry-run half), which itself has not
+  happened and is not authorized by anything in this document — see §12.
 - **§10 step 2's "everything to labor" fallback is a judgment call, not a
   verified fact**, for every job it applies to. The classifier flags those
   rows `needs_review=1`, which is the honest, designed-in mitigation — but
@@ -410,15 +455,18 @@ Before anyone runs `node scripts/backfill-job-budget-versions.mjs --remote
   `--apply` run (e.g. a review-and-approve cycle spanning days), re-run
   the dry run immediately before `--apply` rather than trusting an older
   one — §8's Invariant 4 note already calls this out.
-- **No idempotency test exists yet** because the row-creating script
-  doesn't exist yet — §5 point 3 and §10's rollback note both depend on
-  this guarantee holding, but it is currently a *design intent*
-  (`already_has_budget_version` existing as a bucket specifically to
-  support it), not yet a verified, tested behavior of a real script. This
-  must be confirmed by that script's own dedicated tests before its first
-  production run, not assumed from the classifier engine's tests alone
-  (which only prove the classification decision is idempotent, not that
-  the actual INSERT statements built around that decision are).
+- **Idempotency is now verified, but only against synthetic test/local
+  data, not production's.** §5 point 3 and §10's rollback note both
+  depend on this guarantee holding; it is no longer just a *design
+  intent* — `src/db/backfill-write-repos.test.ts` has dedicated tests for
+  re-execution refusal via the `backfill_manifest_execution` ledger,
+  dry-run-against-a-consumed-manifest, and a same-job race between two
+  independently-generated manifests, all passing. What those tests cannot
+  prove is that production's actual `job_budget_versions` rows (created
+  through the app's normal flow, not test fixtures) interact with the
+  `(company_id, job_id, revision_seq)` unique index the same way — treat
+  the guarantee as strong, not as a substitute for reviewing §7's
+  `already_has_budget_version` count on the very first real dry run.
 - **This runbook itself has not been reviewed by Tyler.** Per this
   mandate's Phase 5 scope ("write, but never execute"), it is a complete,
   ready-to-review draft, not a pre-approved procedure. Treat every command
