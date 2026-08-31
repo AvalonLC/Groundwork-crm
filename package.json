@@ -13,7 +13,7 @@
     "test": "vitest run && npm run test:browser-js",
     "test:watch": "vitest",
     "//test:browser-js": "Plain browser scripts under public/js. Separate from vitest because that suite runs in the Cloudflare workers pool, and workerd is pinned to UTC — it ignores TZ, so the date bugs these cover are invisible there. Chained onto `test` so CI still gates on them.",
-    "test:browser-js": "TZ=America/New_York node --test tests/gw-date.test.mjs tests/no-shadow-assets.test.mjs",
+    "test:browser-js": "TZ=America/New_York node --test tests/gw-date.test.mjs tests/no-shadow-assets.test.mjs tests/backfill-cli-args.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.finance.json",
     "e2e": "playwright test",
     "e2e:spa": "playwright test --config=playwright.spa.config.ts",
