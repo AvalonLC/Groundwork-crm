@@ -40,3 +40,20 @@ mention of "bookkeeping-capable roles") — nothing in evidence names them. This
 single biggest guess in the whole Wave 0 spec set and should be confirmed before
 W4-roles starts, since it defines a gate (`crew-cannot-see-margin`) that other UI
 tasks depend on indirectly.
+
+**Resolved by implementation:** `src/ui/roles.ts`, `src/ui/vocabulary.ts`,
+`src/ui/roles.e2e.ts`, and `docs/dictionary.json` (W4-roles' exact `files_owned`) have
+shipped, and `roles.e2e.ts` contains a `crew-cannot-see-margin` test suite matching
+the gate above. The four roles landed exactly as guessed —
+`export type Role = "crew" | "crew_lead" | "office" | "owner"` — with
+`ROLE_PERMISSIONS` matching this doc's ranked split: `crew_lead` currently has
+identical (zero) financial visibility to `crew` per the doc's own hedge ("not
+necessarily full margin detail"); `office` sees margin/wage/rate/recovery and can
+manage receipts and change orders but not budget-rates or approvals; `owner` has
+every permission including `can_see_budget_rates` and `can_approve_change_orders`.
+Two permissions not enumerated in this doc's original four bullets
+(`can_manage_change_orders`, `can_approve_change_orders`, added for Item 4 Stage 2 PR
+D) were assigned following the same inferred-boundary precedent documented in
+`roles.ts`'s own comments, not a fresh confirmation from Tyler — the underlying "not
+formally confirmed" status of the office/owner split carries forward even though the
+code now exists.
