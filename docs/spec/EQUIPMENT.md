@@ -49,3 +49,19 @@ forbidden clause).
 in the W5-equipcapture task title — I inferred the mechanics (crew selection list,
 OCR meter reading) from RECEIPTS.md's confidence pattern and CLASSIFIER.md's staged
 approach. Needs Tyler to confirm the actual UI/capture flow before W5-equipcapture starts.
+
+**Resolved by implementation:** `src/ai/equip-capture.ts` (W5-equipcapture's exact
+`files_owned`) has shipped and is gate-passing (`src/ai/equip-capture.test.ts`, EC-01
+through EC-0N). It builds both tiers essentially as guessed above:
+`validateTier1Attachment` takes a bare `{ time_entry_id, equipment_id }` pair (crew
+selection, no meter reading, high/low confidence on presence alone) and
+`reconcileMeterReading`/`processTier2MeterReading` take an OCR'd `meter_hours` +
+`period_days` reading, annualize it, and compare against the rate profile's
+`assumed_annual_machine_hours` — writing a `classification_finding` (not a bespoke
+equipment_usage table, per the module's own header comment) only when materially
+divergent, matching CLASSIFIER.md's staged/materiality-threshold pattern this doc
+predicted. No dedicated capture UI page exists yet (these are pure/DB functions
+callable from any future page) and no OCR provider is wired in — the meter photo's
+actual OCR extraction remains a caller-supplied input, same "extraction injected
+rather than called inline" pattern as `receipts.ts`. The mechanics guess held; the
+UI wrapper around it is the only piece still open, not "before this task starts."
