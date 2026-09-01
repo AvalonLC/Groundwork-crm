@@ -146,10 +146,32 @@ self.addEventListener('fetch', e => { e.respondWith(fetch(e.request)); });
     'Cache-Control': 'no-cache, no-store, must-revalidate',
   });
 })
+// GET /api/status — public, unauthenticated health check.
+//
+// Finance OS §9 Priority 3 (config-validation pass). Before this, the ONLY
+// way to check whether the platform-level secrets were actually set after a
+// deploy was to log in and hit one of the per-integration status endpoints
+// (/api/google/status, /api/sms/status, /api/email/status, /api/stripe/status)
+// — every one of which requires requireAuth (a session + company context).
+// There was no way for an ops engineer or an external uptime monitor to
+// sanity-check "did the secrets actually get set" without a login.
+//
+// `config` reports boolean-only flags — never the secret values themselves —
+// mirroring the exact pattern already proven safe for public exposure by
+// src/api/cron-trigger.ts's `GET /rollup/status` (`cron_secret_configured`).
+// A boolean "is this set" reveals nothing an attacker can use; it's the same
+// class of disclosure Cloudflare Pages' own deploy log already shows.
 app.get('/api/status', (c) => c.json({
   app: 'Groundwork CRM',
   status: 'ok',
   server_time: new Date().toISOString(),
+  config: {
+    cron_secret_configured: !!(c.env as any).CRON_SECRET,
+    stripe_configured: !!(c.env as any).STRIPE_SECRET_KEY,
+    sendgrid_configured: !!(c.env as any).SENDGRID_API_KEY,
+    openai_configured: !!(c.env as any).OPENAI_API_KEY,
+    google_oauth_configured: !!((c.env as any).GOOGLE_CLIENT_ID && (c.env as any).GOOGLE_CLIENT_SECRET),
+  },
 }))
 
 app.get('/site.webmanifest', (c) => {
