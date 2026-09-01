@@ -317,6 +317,43 @@ closed, PR #115:**
   portal) were not swept — out of scope for this mandate, which is
   specifically about Finance OS.
 
+**§9 Priority 3 (config-validation pass) — ✅ closed, PR #117:**
+- **"Missing-env-var startup checks" half — investigated, no fix needed.**
+  Surveyed the full secret/config surface: `CRON_SECRET`,
+  `STRIPE_SECRET_KEY` (and `STRIPE_WEBHOOK_SECRET`/
+  `STRIPE_CONNECT_WEBHOOK_SECRET`), `SENDGRID_API_KEY` (and
+  `SENDGRID_WEBHOOK_PUBLIC_KEY`), `OPENAI_API_KEY`/`OPENAI_BASE_URL`, and
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`. Every one already has
+  defensive, graceful per-call-site truthiness checking — a 400/503
+  response, never an unhandled crash — at every call site (Stripe checks
+  in `src/index.tsx`'s invoice/payment-method/charge routes; the 4-tier
+  `_aiCreds` OpenAI key resolution cascade with 10+ downstream call sites
+  all handling a missing key gracefully; the Google OAuth
+  DB-setting-then-env-fallback cascade; `CRON_SECRET`'s fail-closed 503 in
+  `src/api/cron-trigger.ts`). Cloudflare Workers have no traditional
+  process "startup" phase to hook a check into — per-call-site graceful
+  degradation is the correct idiom here, not a gap. No fix needed.
+- **"Health-check endpoint coverage" half — real, narrow gap, fixed.**
+  Several per-integration status endpoints already existed
+  (`GET /api/google/status`, `GET /api/sms/status`, `GET /api/email/status`,
+  `GET /api/stripe/status`, all in `src/index.tsx`) — but every one of
+  them requires `requireAuth` (a session + company context). There was no
+  unauthenticated route an ops engineer or an external uptime monitor
+  could hit to confirm platform secrets actually landed after a deploy,
+  without logging in first. `src/api/cron-trigger.ts`'s pre-auth
+  `GET /rollup/status` already proved the safe pattern for this
+  (`cron_secret_configured` — a boolean, never the secret value, safe to
+  expose without auth). Fix: extended the already-public
+  `GET /api/status` (`src/index.tsx`) with a `config` block reporting
+  `cron_secret_configured`, `stripe_configured`, `sendgrid_configured`,
+  `openai_configured`, `google_oauth_configured` — booleans only, mirroring
+  `/rollup/status`'s proven-safe pattern exactly. New test file
+  `src/status.test.ts` (ST-01..ST-04): no-auth 200, base fields unchanged,
+  config block is booleans only (with an explicit assertion that no raw
+  secret value ever appears anywhere in the response JSON), and
+  `google_oauth_configured` requires BOTH client id and secret set, not
+  either alone.
+
 ## 8. Session log — 2026-08-31 (this update)
 
 User instruction (verbatim): "remove the conststraints and go full auto
@@ -350,7 +387,10 @@ Working tree clean. No WIP branch was touched, merged, or deleted.
 
 **Priority 1 — ✅ closed** (§5, RC-05/PR #114). **Priority 2 — ✅ closed**
 (§7a, PR #115 — the `/adjust` double-post fix plus the four other
-candidates' dispositions). Remaining: Priorities 3-5 below.
+candidates' dispositions). **Priority 3 — ✅ closed** (§7a, PR #117 —
+config-validation pass: missing-env-var startup checks confirmed already
+handled gracefully everywhere, health-check endpoint coverage extended
+onto the public `/api/status` route). Remaining: Priorities 4-5 below.
 
 Per the user's full-auto-build directive, continue through the following
 without pausing for permission, using the same one-concern-per-branch
