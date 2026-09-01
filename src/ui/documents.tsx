@@ -134,6 +134,21 @@ async function renderDocumentsPage(
       <div class="fin-note">
         <a href={basePath.replace(/\/documents$/, "/upload")} style="font-weight:700">Upload another document</a>
       </div>
+
+      {/* Finance OS §9 Priority 4 (route-mount/nav audit): /post-receipts is a
+          real, fully-tested page (src/ui/receipt-posting.tsx, PC-01..PC-11)
+          mounted in src/ui/mount.ts, but had no link anywhere in the finance
+          UI — reachable only by typing the URL directly. It marks itself
+          active="finDocuments" (the same nav tab this page is under), so it
+          belongs here as a related-pages link, same pattern as Reconciliation/
+          Forecast under Money Loop and Collections/Obligations under Work
+          Queue. Same can_manage_receipts gate as the rest of this page, so no
+          extra check is needed beyond the one this whole page already passed
+          to render at all. */}
+      <div class="fin-note" data-testid="related-pages-link">
+        Ready to post an approved receipt to the job cost ledger?{" "}
+        <a href={basePath.replace(/\/documents$/, "/post-receipts")} style="font-weight:700">Post Receipts</a>
+      </div>
     </Page>
   );
 }
