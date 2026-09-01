@@ -260,6 +260,63 @@ originally predicted, found during verification:**
   had already caught the original bug twice and is the more reliable
   race-detector in this repo's history.
 
+**§9 Priority 2 (further duplicate/concurrent-mutation risk audit) — ✅
+closed, PR #115:**
+- **Real bug found and fixed:** `POST /api/time/entries/:id/adjust`
+  (`src/index.tsx`) only checked `original.posted_at` before calling
+  `insertReversalTimeEntry` — nothing marked the original entry as
+  "already adjusted," so a SECOND call against the same `:id` (sequential
+  double-click/retry, or genuine concurrency — didn't even need real
+  concurrency to trigger) posted a second full reversal, silently
+  doubling the negative `job_cost_ledger` impact with every repeat call.
+  Fix (migration 0087): `time_entries.adjusted_at`, written exactly once
+  via `markTimeEntryAdjusted`'s `WHERE adjusted_at IS NULL` guard, checked
+  and won BEFORE `insertReversalTimeEntry` — mirrors `markReceiptPosted`'s
+  proven-correct order from PR #113 exactly. New regression test FIN5-08.
+- **`recalibrateLaborRate`/`recalibrateEquipmentRate`** (`src/db/repos.ts`)
+  — batches a guarded `closePrior` UPDATE with an unconditional
+  `insertNew` INSERT, the same shape as the receipt-posting bug. Checked
+  and downgraded to **low severity, no fix needed**: `getLaborRateAsOf`/
+  `getEquipmentRateAsOf` resolve via `ORDER BY effective_from DESC LIMIT
+  1`, so a duplicate-open-row race would resolve deterministically at
+  lookup time rather than double-count a calculation — qualitatively
+  different from the receipt-posting bug's direct duplicate-ledger-row
+  money-doubling. Both write routes (`src/ui/budget.tsx`'s `/labor-rate`
+  and `/equipment-rate`) are also owner-only (`can_see_budget_rates`),
+  a single-privileged-actor context that meaningfully reduces real-world
+  concurrency likelihood versus a multi-user-driven race. `listCurrentLaborRates`
+  (no `LIMIT 1`, used by `budget.tsx`'s read-only display) would show a
+  transient duplicate row if this ever raced, but that's a display
+  artifact on an owner-only screen, not a financial miscalculation.
+- **`src/api/rates.ts`'s `POST /internal/rates/profile`** — a third,
+  separate code path writing `labor_rate_profile` with its own explicit
+  pre-check-then-batch logic. Same TOCTOU shape and same mitigation as
+  above (protected by `getLaborRateAsOf`'s `ORDER BY ... LIMIT 1`, and
+  gated by `canViewCompensation`, again a narrow-privilege gate). No fix
+  needed for the same reasons.
+- **`reverseJobCostLedgerLine`** (`src/db/repos.ts`) — batches its
+  reversal + optional replacement INSERTs atomically, but writes the
+  `job_cost_ledger_adjustments` audit-trail row in a separate, non-batched
+  statement AFTER the batch, a narrower gap than its own doc comment's
+  atomicity claim covers. Grepped for callers across the entire route
+  layer (`src/**/*.ts`, `src/**/*.tsx`, excluding tests) and found none —
+  it is only referenced from its own unit tests
+  (`src/db/job-progress-repos.test.ts`) and doc comments
+  (`docs/spec/ITEM4-JOBCOST.md`, this checklist's own §7a). **Unwired/dead
+  code today, not a live production risk.** No fix needed; flagged here so
+  a future caller-wiring effort knows to batch the audit-trail INSERT in
+  too, or accept the same narrower gap PR #113's schema-level unique-index
+  fix was explicitly rejected to avoid re-breaking (see §7a above).
+- **`approveChangeOrderAndCreateBudgetVersion`** — already confirmed safe
+  in a prior session (uses the correct `WHERE changes() > 0` same-batch
+  guard pattern, structurally different from the anti-pattern being
+  audited for).
+- **Scoping note:** this audit stayed within Finance-OS-prefixed code
+  (time entries, rates, receipts, change orders, job cost ledger).
+  General-CRM `db.batch(` call sites (scheduling, marketing, recurring,
+  portal) were not swept — out of scope for this mandate, which is
+  specifically about Finance OS.
+
 ## 8. Session log — 2026-08-31 (this update)
 
 User instruction (verbatim): "remove the conststraints and go full auto
@@ -290,6 +347,10 @@ Work done this session, in order:
 Working tree clean. No WIP branch was touched, merged, or deleted.
 
 ## 9. Next executable action (current priority list, supersedes §7)
+
+**Priority 1 — ✅ closed** (§5, RC-05/PR #114). **Priority 2 — ✅ closed**
+(§7a, PR #115 — the `/adjust` double-post fix plus the four other
+candidates' dispositions). Remaining: Priorities 3-5 below.
 
 Per the user's full-auto-build directive, continue through the following
 without pausing for permission, using the same one-concern-per-branch
