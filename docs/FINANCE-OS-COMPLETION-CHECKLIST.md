@@ -354,6 +354,25 @@ closed, PR #115:**
   `google_oauth_configured` requires BOTH client id and secret set, not
   either alone.
 
+**§9 Priority 4 (missing route-mount/nav audit) — ✅ closed, PR #119:**
+Swept every mounted finance UI route in `src/ui/mount.ts` for
+discoverability. Found one real orphan: **`/post-receipts`**
+(`src/ui/receipt-posting.tsx`) — a real, fully-tested page (PC-01..PC-11
+e2e coverage) mounted in `mount.ts`, but with no link anywhere in the
+finance UI; reachable only by typing the URL directly. Every other
+mounted route checked out clean: either in the top tab-strip
+(`FINANCE_NAV` in `src/ui/layout.tsx`) or reachable via an existing
+related-pages link (Reconciliation/Forecast under Money Loop,
+Collections/Obligations under Work Queue, change-orders drill-through
+from Job Costing, policy/upload/onboarding from Config). Fix: added a
+related-pages link on Documents — the page `receipt-posting.tsx` already
+marks itself active under (`active="finDocuments"`) — mirroring the
+existing Money Loop/Work Queue related-pages link pattern exactly. Same
+`can_manage_receipts` auth gate as the rest of Documents, so no new
+authorization surface: crew/crew_lead get 403 before ever reaching the
+page that would show the link. New tests UFN-07/UFN-08 in
+`src/ui/finance-nav.e2e.ts`.
+
 ## 8. Session log — 2026-08-31 (this update)
 
 User instruction (verbatim): "remove the conststraints and go full auto
@@ -390,7 +409,9 @@ Working tree clean. No WIP branch was touched, merged, or deleted.
 candidates' dispositions). **Priority 3 — ✅ closed** (§7a, PR #117 —
 config-validation pass: missing-env-var startup checks confirmed already
 handled gracefully everywhere, health-check endpoint coverage extended
-onto the public `/api/status` route). Remaining: Priorities 4-5 below.
+onto the public `/api/status` route). **Priority 4 — ✅ closed** (§7a,
+PR #119 — the orphaned `/post-receipts` page linked from Documents; every
+other mounted route already reachable). Remaining: Priority 5 below.
 
 Per the user's full-auto-build directive, continue through the following
 without pausing for permission, using the same one-concern-per-branch
