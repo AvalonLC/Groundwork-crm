@@ -1,0 +1,36 @@
+-- Migration 0087: write-once guard against double-adjusting a time entry.
+--
+-- Finance OS §9 Priority 2 (concurrent/duplicate-mutation risk audit).
+--
+-- Bug found (not merely theoretical, not even concurrency-dependent):
+-- POST /api/time/entries/:id/adjust (src/index.tsx) only checked
+-- `original.posted_at IS NOT NULL` before calling insertReversalTimeEntry.
+-- Nothing marked the original entry as "already adjusted," so a SECOND
+-- call to /adjust with the exact same :id -- issued sequentially by mistake
+-- (double-click, retried request after a timeout, two office staff both
+-- correcting the same entry) or concurrently -- passed the same guard both
+-- times and posted a SECOND full reversal of the original's job_cost_ledger
+-- lines. Each repeat call silently pushes the job's net ledger total further
+-- negative by one reversal's worth, with no error and no indication anything
+-- was wrong -- a direct money-corruption bug in the same class as the
+-- receipt-posting race fixed in PR #113 (§7a), except worse: it doesn't even
+-- require real concurrency to trigger, just a repeated call.
+--
+-- Fix: adjusted_at is time_entries' analogue of posted_at -- set exactly
+-- once, guarded by `WHERE adjusted_at IS NULL`, checked and won BEFORE
+-- insertReversalTimeEntry is ever called (see markTimeEntryAdjusted /
+-- src/db/repos.ts, mirroring markReceiptPosted's proven-correct order:
+-- guard first, unconditional writes only if the guard actually won).
+--
+-- Scoped to the ENTRY BEING ADJUSTED, not the whole original->reversal->
+-- replacement chain: if a replacement entry (itself freshly posted via the
+-- normal postTimeEntryToLedger path) later turns out to need its own
+-- correction, that is a fresh, legitimate /adjust call against the
+-- REPLACEMENT's id, not a second call against the original's id. Each
+-- entry -- original, reversal, or replacement -- may be the subject of
+-- /adjust at most once; reversal entries are already blocked from ever
+-- being the subject of /adjust as a matter of business logic today (a
+-- reversal has no ledger lines of its own that would make sense to reverse
+-- again), and this column enforces the same "at most once" rule uniformly
+-- for the case that was NOT already covered: the original.
+ALTER TABLE time_entries ADD COLUMN adjusted_at TEXT DEFAULT NULL;

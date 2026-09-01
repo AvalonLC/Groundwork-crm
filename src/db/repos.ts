@@ -507,6 +507,39 @@ export async function getTimeEntryAdjustmentsForEntry(
   return results;
 }
 
+/**
+ * Write-once guard: marks a time entry as "already the subject of an
+ * /adjust call" exactly once. `WHERE adjusted_at IS NULL` makes a second
+ * attempt a no-op (0 rows affected, returns false) instead of silently
+ * allowing a second reversal to post.
+ *
+ * Root cause this guards against (migration 0087): without it,
+ * POST /api/time/entries/:id/adjust only checked `posted_at IS NOT NULL`
+ * before calling insertReversalTimeEntry -- nothing stopped a SECOND call
+ * against the same :id from posting a SECOND full reversal, doubling the
+ * negative ledger impact with every repeat call. Not even a concurrency
+ * bug -- two sequential calls (double-click, retried request) trigger it
+ * just as reliably as two concurrent ones.
+ *
+ * Caller order matters, mirroring markReceiptPosted's proven-correct
+ * pattern (src/api/receipt-posting.ts / PR #113): call this FIRST, as its
+ * own awaited statement, and only proceed to insertReversalTimeEntry if it
+ * returns true. Never batch this guard together with the unconditional
+ * reversal INSERTs -- batching a guarded statement with an unconditional
+ * one is exactly the anti-pattern PR #113 fixed elsewhere, and doing that
+ * here would recreate the same class of bug this migration exists to
+ * close.
+ */
+export async function markTimeEntryAdjusted(
+  db: D1Database, companyId: string, id: string,
+): Promise<boolean> {
+  const result = await db.prepare(`
+    UPDATE time_entries SET adjusted_at = datetime('now')
+    WHERE company_id = ? AND id = ? AND adjusted_at IS NULL
+  `).bind(companyId, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
 // ---- overhead_pool / overhead_allocation ----
 
 /** Every overhead_pool row for a company — the "driver map" (which pool uses

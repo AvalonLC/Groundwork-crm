@@ -596,6 +596,38 @@ describe("Posted time entries are immutable; corrections go through /adjust (fix
     const adjRes = await req(`/api/time/entries/te-fin5-07/adjust`, cookie, { method: "POST", body: JSON.stringify({}) });
     expect(adjRes.status).toBe(400);
   });
+
+  it("FIN5-08 a SECOND /adjust call against the same original entry is rejected with 409 and does not post a second reversal (regression: migration 0087 write-once guard)", async () => {
+    const companyId = "fin5-co-adj-double";
+    const repId = "fin5-rep-adj-double";
+    const { cookie } = await seedSession(companyId, repId);
+    const created = await req("/api/work-orders", cookie, { method: "POST", body: JSON.stringify({ title: "WO" }) });
+    const { id: woId } = await created.json() as { id: string };
+    await seedPostedEntry(companyId, repId, woId, "te-fin5-08");
+
+    const first = await req(`/api/time/entries/te-fin5-08/adjust`, cookie, {
+      method: "POST", body: JSON.stringify({ reason: "Entry logged in error" }),
+    });
+    expect(first.status).toBe(201);
+
+    // Before the fix, this second call against the SAME :id posted a
+    // second full reversal with no error, doubling the negative ledger
+    // impact -- not even a concurrency bug, just a repeat sequential call.
+    const second = await req(`/api/time/entries/te-fin5-08/adjust`, cookie, {
+      method: "POST", body: JSON.stringify({ reason: "trying to adjust it again" }),
+    });
+    expect(second.status).toBe(409);
+
+    // Exactly one adjustment row, one reversal's worth of negation --
+    // net ledger impact for the job is zero, not doubly negative.
+    const adjustments: any = await db().prepare(
+      `SELECT id FROM time_entry_adjustments WHERE original_entry_id=?`
+    ).bind("te-fin5-08").all();
+    expect(adjustments.results.length).toBe(1);
+
+    const net: any = await db().prepare(`SELECT SUM(amount_cents) AS total FROM job_cost_ledger WHERE job_id=?`).bind(woId).first();
+    expect(net.total).toBe(0); // would be -15000 (a second full reversal) if the guard didn't hold
+  });
 });
 
 describe("Stage 2 dual-write: proposals", () => {

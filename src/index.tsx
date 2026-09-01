@@ -43,7 +43,7 @@ import { financeUiRouter } from './ui/mount'
 import { cronTriggerRouter } from './api/cron-trigger'
 import {
   updateWorkOrderFinanceColumns, getTimeEntry, getJobCostLedgerLinesForTimeEntry,
-  insertReversalTimeEntry, insertTimeEntryAdjustment,
+  insertReversalTimeEntry, insertTimeEntryAdjustment, markTimeEntryAdjusted,
 } from './db/repos'
 import { postTimeEntryToLedger } from './api/posting'
 // ── Marketing OS — mounted sub-routers (see src/marketing/) ──────────────────
@@ -4453,6 +4453,14 @@ app.delete('/api/time/entries/:id', requireAuth, async (c) => {
 // postTimeEntryToLedger path. The original entry and its ledger lines are
 // never touched. A time_entry_adjustments row links original/reversal/
 // replacement together for audit trail.
+//
+// Write-once guard (migration 0087, Finance OS §9 Priority 2): a second
+// call against the same :id — sequential (double-click, retried request)
+// or concurrent — used to post a SECOND full reversal with no error,
+// silently doubling the negative ledger impact each time. markTimeEntryAdjusted's
+// `WHERE adjusted_at IS NULL` guard is checked and WON before any reversal
+// write happens, mirroring markReceiptPosted's proven-correct order (PR
+// #113) — a losing call never reaches insertReversalTimeEntry at all.
 app.post('/api/time/entries/:id/adjust', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const role      = c.var.role as string
@@ -4473,6 +4481,15 @@ app.post('/api/time/entries/:id/adjust', requireAuth, async (c) => {
     // atomically), but guard rather than post a reversal with nothing to
     // reverse.
     return err(c, 'Posted entry has no job_cost_ledger lines to reverse', 500)
+  }
+
+  // Write-once guard, checked and won BEFORE any reversal write. A second
+  // /adjust call against the same original entry — whether truly
+  // concurrent or just a sequential repeat — returns 409 here and never
+  // reaches insertReversalTimeEntry, so a second reversal can never post.
+  const wonGuard = await markTimeEntryAdjusted(c.env.DB, companyId, id)
+  if (!wonGuard) {
+    return err(c, 'This entry has already been adjusted. See its existing adjustment for the reversal/replacement.', 409)
   }
 
   const reversalId = 'te_' + uid()
