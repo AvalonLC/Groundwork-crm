@@ -1,19 +1,25 @@
 # ITEM 4 — Job-Level Cost/Completion/Recovery Formulas (Stage 1 design)
 
-Status: **DRAFT — awaiting Tyler's approval. No migration has been run, no
-code has been changed. This document is the complete Stage 1 deliverable
-required before Stage 2 (formula implementation) begins**, per Tyler's
-2026-08-25 decision doc: *"Before changing downstream behavior, provide:
-Existing versus proposed formula table, Migration design, Field/source
-mapping, One worked Landscape Design/Build example, One recurring
-Maintenance example, One Snow/event example, Tests covering change orders,
-credits, cost overruns, missing budgets, completion caps, and closed work
-orders."*
+Status: **Stage 1 — approved. Stage 2 (formula implementation) has landed
+and is substantially built**, per Tyler's 2026-08-25 decision doc, which
+requested this document as the Stage 1 deliverable (formula table,
+migration design, field/source mapping, worked examples, test plan) before
+Stage 2 began. That request is satisfied and Stage 2 is underway:
+`migrations/0085_job_budget_change_orders.sql`,
+`migrations/0086_backfill_manifest_execution.sql`, and
+`migrations/0087_time_entry_adjusted_guard.sql` are all written and applied
+(locally); `src/engines/job-progress.ts`, `src/engines/backfill-analysis.ts`,
+and `src/engines/backfill-write.ts` all exist, are wired into
+`src/ui/job-costing.tsx`, and are covered by tests. The **§3 scope decision
+below was resolved 2026-08-25 in favor of "full scope"** — see the note at
+the end of §3. The one part of Stage 2 that has *not* happened, and won't
+without separate explicit sign-off, is running the row-creating backfill
+script against production data — see §10's update for the current, accurate
+status of that specific piece.
 
-This document also carries one item that isn't pure schema design and needs
-an explicit decision before Stage 2 sizing is final — see **"Needs Tyler"**
-below. Everything else here is a decision, not a question, with the
-reasoning shown so it can be checked.
+This document is kept as the design record for the schema, formulas, and
+decisions below; treat the body of §1–§9 as historical design reasoning
+that has been implemented as described, not as a pending proposal.
 
 ---
 
@@ -116,6 +122,16 @@ Two ways to sequence this, and I want your call before Stage 2 starts:
 I've made every other decision below on the assumption that this gets
 answered before Stage 2 starts; the schema in §4 works either way (it holds
 all categories regardless of which posting pipelines exist yet).
+
+> **Resolved 2026-08-25 — (a) Full scope.** Tyler's 2026-08-25 autonomy
+> mandate decided this in favor of full scope: Stage 2 builds the
+> receipt-to-ledger posting pipeline in the same effort, not as a deferred
+> follow-up. See `migrations/0085_job_budget_change_orders.sql`'s own header
+> comment ("Tyler's 2026-08-25 autonomy mandate resolved §3 in favor of
+> building the posting pipeline in this same effort, not as a deferred
+> follow-up") and `docs/PUNCHLIST.md`'s "SUPERSEDED 2026-08-25 by Tyler's
+> final Item 4 formula decision" note. The two options above are kept as-is
+> for the historical reasoning; option (a) is the one that shipped.
 
 ---
 
@@ -565,26 +581,36 @@ reasons above, one additional implied failure mode
 guess" rule, `already_has_budget_version`, and 4 forward-compatibility
 buckets that are currently unreachable — see that file's own comments for
 the full reasoning). **This tool only ever issues `SELECT`s — it does not
-create any `job_budget_versions` rows.** Steps 1–5 above (the row-creating
-migration script itself) remain unimplemented and unscheduled, per this
-document's own "Nothing in Stage 2 starts until this document is
-approved" note below and the standing production restriction against any
-live backfill. Running that script against production data — as opposed
-to previewing what it would do — requires a separate, explicit approval
-and is out of scope for this analysis tool.
+create any `job_budget_versions` rows.**
+
+**Update: Steps 1–5 above (the row-creating migration script itself) are
+now also implemented** — `src/engines/backfill-write.ts` (Item 4 Stage 2,
+Phase 2: the guarded §10 writing-backfill package) builds, tests, and
+CLI-wraps exactly this script, with dry-run-by-default behavior, explicit
+tenant/`as_of` targeting, a deterministic manifest hash/schema-version/
+environment binding, expected-counts/staleness protection, transactional
+batched writes, and idempotency/duplicate-prevention guards. It has been
+smoke-tested against local D1 only. Per the standing production
+restriction against any live backfill, **it has never been run with
+`--remote --apply` against production, and will not be without separate,
+explicit human sign-off** — that constraint is what remains true today,
+not "unimplemented." See `docs/FINANCE-OS-COMPLETION-CHECKLIST.md` §2 for
+the authoritative status tracking of this package.
 
 ---
 
 ## 11. Implementation sequence (recap)
 
 1. **Stage 1 (this document)** — schema/migration design, completion-method
-   support, worked examples, test plan. **Awaiting approval.**
-2. **Stage 2 (blocked on Stage 1 approval + the §3 scope decision)** —
-   `migrations/0085_job_budget_change_orders.sql`, new
-   `src/engines/job-progress.ts`, new repo functions, rewritten
-   `gather-inputs.ts` fields (renamed per §6), new UI surfaces for
-   change-order entry/approval and budget-version review, full test suite
-   per §9, and (if §3 is answered "full scope") the receipt-to-ledger
-   posting pipeline.
-
-Nothing in Stage 2 starts until this document is approved.
+   support, worked examples, test plan. **Approved.**
+2. **Stage 2 (approved 2026-08-25, §3 resolved as "full scope")** —
+   `migrations/0085_job_budget_change_orders.sql`, `src/engines/job-progress.ts`,
+   repo functions, rewritten `gather-inputs.ts` fields (renamed per §6), the
+   receipt-to-ledger posting pipeline, and the full test suite per §9 have
+   all landed. New UI surfaces for change-order entry/approval and
+   budget-version review, and the guarded §10 writing-backfill package
+   (`src/engines/backfill-write.ts`), have also landed and are tested —
+   see `docs/FINANCE-OS-COMPLETION-CHECKLIST.md` for the authoritative,
+   up-to-date tracking of exactly which pieces are built versus still open,
+   and for the standing restriction on running any backfill against
+   production.
