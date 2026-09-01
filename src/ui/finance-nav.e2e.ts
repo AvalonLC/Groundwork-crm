@@ -62,3 +62,21 @@ test("UFN-06 non-owner roles without can_see_recovery don't see the related-page
   await page.goto(`/money-loop?tenant_id=${TENANT}&role=crew`);
   await expect(page.getByTestId("related-pages-link")).toHaveCount(0);
 });
+
+// Finance OS §9 Priority 4 (route-mount/nav audit): /post-receipts
+// (src/ui/receipt-posting.tsx) was mounted in src/ui/mount.ts and fully
+// tested on its own (PC-01..PC-11) but had no link anywhere in the finance
+// UI -- reachable only by typing the URL directly. Fixed by adding a
+// related-pages link from Documents, the page it marks itself active
+// under (active="finDocuments"), same pattern as UFN-03/UFN-04 above.
+test("UFN-07 Post Receipts is reachable from Documents, not top-level", async ({ page }) => {
+  await page.goto(`/documents?tenant_id=${TENANT}&role=owner`);
+  const link = page.getByTestId("related-pages-link");
+  await expect(link).toBeVisible();
+  await expect(link).toContainText("Post Receipts");
+});
+
+test("UFN-08 a role without can_manage_receipts never even reaches the Documents page to see that link (403)", async ({ request }) => {
+  const res = await request.get(`/documents?tenant_id=${TENANT}&role=crew`);
+  expect(res.status()).toBe(403);
+});
