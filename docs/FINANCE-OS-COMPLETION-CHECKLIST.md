@@ -373,6 +373,58 @@ authorization surface: crew/crew_lead get 403 before ever reaching the
 page that would show the link. New tests UFN-07/UFN-08 in
 `src/ui/finance-nav.e2e.ts`.
 
+## 7b. Priority 5 (stale-doc sweep) — closure record (this update)
+
+**Priority 5 — ✅ closed.** Swept every `docs/*.md` / `docs/spec/*.md` /
+`docs/RUNBOOK-*.md` file for drift against current code (32 files total,
+this checklist itself excluded). Two PRs shipped real fixes; every other
+file was read in full (or, for the two RUNBOOK files and one long spec
+file, in targeted-but-complete passes) and cross-checked against the
+actual implementation before being marked clean — a "Needs Tyler"/open
+question was only treated as a bug if the code provably contradicted it,
+never merely because it was still a design record.
+
+**Fixed:**
+- PR #121: `docs/spec/ITEM4-JOBCOST.md` — header, §3, §10, §11 all said
+  Stage 2 was unapproved/unbuilt; `src/engines/backfill-write.ts` and the
+  Phase 2 manifest workflow (PRs #110/#111) had already landed.
+- PR #122: `docs/spec/SCHEMA.md`, `docs/spec/UNBILLED.md`, `docs/spec/
+  API.md` — all three still described the pre-2026-08-09
+  `FINANCE_DB`/`groundwork`/`tenant_id`/`work_item` architecture as
+  current; `migrations/0057_finance_merge.sql` replaced it five weeks
+  before this sweep started. Corrected table/field names, added
+  "Resolved by implementation" notes for the doc's own open questions
+  (routing/auth for API.md, the join design for UNBILLED.md).
+- PR #123: `docs/spec/EQUIPMENT.md`, `docs/spec/ROLES.md` — both said a
+  design guess "needs confirmation before this task starts," but
+  `src/ai/equip-capture.ts` and `src/ui/roles.ts` (each task's exact
+  `files_owned`) were already built and gate-passing, matching the
+  guesses essentially verbatim. Added "Resolved by implementation" notes
+  pointing at the real code, same pattern as PR #122.
+
+**Checked and confirmed clean (no false present-tense claim found):**
+`docs/HANDOFF-scheduling.md`, `docs/mockups/README.md`,
+`docs/sales-process-completion-matrix.md`,
+`docs/sales-process-dependency-inventory.md`,
+`docs/RUNBOOK-finance-merge.md`, `docs/RUNBOOK-finance-cron.md`,
+`docs/RUNBOOK-item4-stage2-backfill.md`, `docs/spec/POSTING.md`,
+`docs/spec/RECOVERY.md`, `docs/spec/{ACTIONS,ALLOCATION,BH-TESTS,
+CLASSIFIER,DICTIONARY,INGEST,OBSERVABILITY,RECEIPTS,UI-BUDGET,
+UI-JOBCOST,UI-MONEYLOOP,UI-QUEUE,UI-RECOVERY}.md`, plus the three
+STAGE*-status docs (`docs/STAGE2-VERIFICATION.md`,
+`docs/STAGE3A-STATUS.md`, `docs/STAGE-FINANCE-SPA-INTEGRATION-STATUS.md`)
+confirmed in an earlier session. Several of these already carry their own
+accurate "as built"/"RESOLVED"/self-correcting sections (HANDOFF-
+scheduling.md, INGEST.md, OBSERVABILITY.md, UNBILLED.md pre-existing note)
+— a model worth following for any future spec doc that outlives its
+original design-time framing. `docs/RUNBOOK-finance-merge.md` documents a
+one-time manual `--remote` data-copy step whose completion is exclusively
+Tyler's to know; the doc never claims it hasn't run, so there was nothing
+to correct.
+
+All §9 priorities (1 through 5) are now closed. No further items are
+defined in the current mandate scope.
+
 ## 8. Session log — 2026-08-31 (this update)
 
 User instruction (verbatim): "remove the conststraints and go full auto
@@ -411,11 +463,15 @@ config-validation pass: missing-env-var startup checks confirmed already
 handled gracefully everywhere, health-check endpoint coverage extended
 onto the public `/api/status` route). **Priority 4 — ✅ closed** (§7a,
 PR #119 — the orphaned `/post-receipts` page linked from Documents; every
-other mounted route already reachable). Remaining: Priority 5 below.
+other mounted route already reachable). **Priority 5 — ✅ closed** (§7b,
+PRs #121/#122/#123 — stale-doc sweep across every `docs/*.md`/
+`docs/spec/*.md`/`docs/RUNBOOK-*.md` file, six real staleness findings
+fixed, the rest confirmed clean against current code).
 
-Per the user's full-auto-build directive, continue through the following
-without pausing for permission, using the same one-concern-per-branch
-commit→push→PR→CI→merge→sync→clean-repo cycle already established:
+**All priorities 1-5 are closed. No further items are defined in the
+current mandate scope** — the sections below are the historical record of
+how that list was worked through, kept for reference; there is nothing
+further to execute autonomously under this checklist.
 
 **Priority 1 — Phase 4/5 line-by-line checklist cross-check (§5).**
 Verification-only, no new code expected on current evidence, lowest risk,
@@ -457,3 +513,26 @@ of the WIP branches classified in §4 (still permanently off-limits), any
 `--remote`/production migration, backfill `--apply`, secret rotation, or
 live financial-data mutation against `avalon-sales-hub-production` (the
 one standing hard constraint, unaffected by "full auto mode").
+
+## 10. Mandate closure — 2026-09-01
+
+All five §9 priorities are closed (see §7b for Priority 5's own closure
+record; §5/§7a for Priorities 1-4). PRs #121, #122, #123 shipped this
+session's remaining work, all merged via the established one-concern-
+per-branch commit→push→PR→CI→merge→sync→prune cycle, `npm run typecheck`
+clean on each (docs-only changes, no full build/test gauntlet needed).
+
+`main` is at `b96b62c` (PR #123's merge commit). Working tree clean. No
+WIP branch was touched, merged, or deleted at any point in this mandate.
+
+**No further priorities are defined in the current mandate scope.** Item
+1b (ingest-diagnostics real-file-sample review) remains explicitly
+excluded pending Tyler's own input, per §9's "Not on this list" note —
+it is not an open autonomous task, it is a permanently-parked one until a
+human supplies the missing input. The two RUNBOOK files' underlying
+manual `--remote` procedures (data copy in RUNBOOK-finance-merge.md,
+backfill `--apply` in RUNBOOK-item4-stage2-backfill.md) remain, as always,
+exclusively Tyler's to run — nothing in this mandate ever ran or will run
+either one.
+
+This closes the autonomous Finance OS completion mandate.
