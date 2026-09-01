@@ -1,14 +1,31 @@
 # SCHEMA
 
 Derived from CLAUDE.md's architecture invariants, the BH-TESTS acceptance table,
-and fixtures/golden.json. Database: `FINANCE_DB` (D1, name `groundwork`),
-migrations in `migrations/finance/`, separate from the CRM's `DB` binding.
+and fixtures/golden.json. **Database, as originally designed here: `FINANCE_DB`
+(D1, name `groundwork`), migrations in `migrations/finance/`, separate from the
+CRM's `DB` binding.** That original design is superseded — see "Update
+(2026-08-09)" below; read the rest of this section as the historical design
+this repo has since moved on from, not the current architecture.
+
+**Update (2026-08-09):** `migrations/0057_finance_merge.sql` merged Finance
+OS's tables into the CRM's single `avalon-sales-hub-production` database
+(binding `DB`). There is no `FINANCE_DB` binding and no `groundwork` database
+today. `migrations/finance/` is kept only as a historical record of what was
+applied to the old, now-decommissioned database — it is not an active
+`migrations_dir`; every migration since 0057 lives in `/migrations` alongside
+the rest of the CRM's schema. The tenant column on every table is `company_id`
+(renamed from `tenant_id` during the merge — verified safe: production
+`tenant_id` values were already company ids in practice), not `tenant_id` as
+originally proposed below. See `src/db/repos.ts`'s own header comment and
+`docs/RUNBOOK-finance-merge.md` for the merge's full detail.
 
 ## Hard rules that shape every table
 - Every monetary column is `INTEGER` cents. Every rate column is `INTEGER`
   ten-thousandths (e.g. 42.1002 -> 421002). No `REAL`/`FLOAT`/`DOUBLE` for money, ever.
-- Every table carries `tenant_id TEXT NOT NULL` (multi-tenant CRM; omitting it fails
-  the W1-schema gate per tasks.json `forbidden`).
+- Every table carries a tenant column NOT NULL — `company_id` in the actual
+  schema (originally proposed as `tenant_id` below; renamed in the 2026-08-09
+  merge, see "Update" above). Omitting it fails the W1-schema gate per
+  tasks.json `forbidden`.
 - `*_rate_profile` tables are immutable + effective-dated: recalibration `INSERT`s a
   new row and sets `effective_to` on the prior row. Never `UPDATE` a rate row
   (enforced by W1-repos forbidden list and the pre-push hook's scope checks).
@@ -45,14 +62,23 @@ migrations in `migrations/finance/`, separate from the CRM's `DB` binding.
    Forbidden: "revenue driving more than 10% of total pool", "leaving any pool
    unallocated" (E2-allocation).
 
-6. **time_entry** — the event spine input. `employee_id`, `crew_id`, `job_id`,
-   `work_date`, `hours`, `ot_hours`, `resolved_rate` (ten-thousandths, INTEGER),
-   `applied_overhead_cents`. Both `resolved_rate` and `applied_overhead_cents` are
-   written ONCE at posting time and never recomputed on read (CLAUDE.md
-   "ARCHITECTURE INVARIANTS"; W3-posting forbidden: "recomputing resolved_rate on read").
+6. **time_entry** *(actual table: `time_entries`, plural — the CRM's own existing
+   table, extended with finance columns by the merge rather than a new
+   Finance-OS-only table)* — the event spine input. `employee_id`, `crew_id`,
+   `job_id`, `work_date`, `hours`, `ot_hours`, `resolved_rate` (ten-thousandths,
+   INTEGER), `applied_overhead_cents`. Both `resolved_rate` and
+   `applied_overhead_cents` are written ONCE at posting time and never
+   recomputed on read (CLAUDE.md "ARCHITECTURE INVARIANTS"; W3-posting
+   forbidden: "recomputing resolved_rate on read").
 
-7. **work_item** — completed/billable units of work, used by the unbilled-work
-   detector (E2-unbilled) to find completed items with no receivable.
+7. **work_item** — **does not exist as a separate table.** As originally
+   proposed, this held completed/billable units of work for the unbilled-work
+   detector (E2-unbilled) to check for a missing receivable. The merge folded
+   it into the CRM's own `work_orders` table instead (`estimate_cents`,
+   `finance_completed_at`, and a computed `open`/`complete` status derived
+   from `work_orders.status` — see `src/db/repos.ts`'s `getWorkItem`, which is
+   a thin view over `work_orders`, not a query against a `work_item` table).
+   UNBILLED.md's detector reads `work_orders` directly today.
 
 8. **job_cost_ledger** — two-line cost posting per time_entry (labor line + overhead
    line), immutable once posted.
@@ -96,3 +122,14 @@ since the BH acceptance table only exercises labor.
 **Needs Tyler:** none of the 12 tables were literally named in evidence, only implied
 by the 7 architecture layers and the fixture keys — worth a quick read-through before
 W1-schema starts, not a blocker.
+
+**Resolved by implementation (see "Update (2026-08-09)" above):** the table/column
+naming question above is settled by what actually got built and merged —
+`job_cost_ledger`, `classification_finding`, `action_item`, `receipt`,
+`recovery_snapshot`, `tenant_finance_policy`, `labor_rate_profile`,
+`equipment_rate_profile`, `overhead_pool`, and `overhead_allocation` all exist
+exactly as named here (`migrations/0057_finance_merge.sql`). The two
+exceptions: `work_item` doesn't exist (folded into `work_orders`, see #7
+above), and `time_entry` is the CRM's existing `time_entries` (plural, see #6
+above) rather than a new table. `require_rate_approval` did land on
+`labor_rate_profile`, confirming the labor-side guess.

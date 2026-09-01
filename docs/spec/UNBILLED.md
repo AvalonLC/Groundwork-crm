@@ -7,14 +7,19 @@ in tasks.json and no dedicated fixture key — it isn't gated by
 contract the way BH-TESTS.md or ALLOCATION.md are.
 
 ## What it detects
-Scans `work_item` rows (SCHEMA.md) marked complete with no corresponding receivable
-in the CRM's existing billing/invoicing data. This is a join across the Finance OS
-`FINANCE_DB` and the CRM's `DB` — the only place in the Finance OS design that reads
-from the existing production database rather than only `FINANCE_DB`. CLAUDE.md's
-"No write path to QuickBooks" rule (hard rule 1) applies by analogy here too: this
-detector proposes, it does not invoice — findings become `action_item` rows
-(`verb=collect`, per ACTIONS.md's inferred mapping) for a human to act on, never an
-automatic invoice.
+Scans completed work with no corresponding receivable in the CRM's existing
+billing/invoicing data. **As originally designed** (below), this was a join
+across the Finance OS `FINANCE_DB` and the CRM's `DB` — the only place in the
+Finance OS design that would read from the existing production database
+rather than only `FINANCE_DB`. **That framing is superseded**: per
+`migrations/0057_finance_merge.sql` (2026-08-09, see SCHEMA.md's "Update"
+note), there is no separate `FINANCE_DB`/`work_item` anymore — both this
+detector and the data it scans live in the one merged `DB`, reading
+`work_orders` directly (see "RESOLVED" below for the actual implementation).
+CLAUDE.md's "No write path to QuickBooks" rule (hard rule 1) applies by
+analogy here too: this detector proposes, it does not invoice — findings
+become `action_item` rows (`verb=collect`, per ACTIONS.md's inferred mapping)
+for a human to act on, never an automatic invoice.
 
 ## Output
 A `classification_finding` or direct `action_item` per detected gap, carrying the
