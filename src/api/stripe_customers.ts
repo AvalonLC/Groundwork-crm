@@ -105,3 +105,53 @@ export function applicationFeeCents(amountCents: number, feeBps: number): number
   const bps = Math.max(0, Math.trunc(Number(feeBps) || 0));
   return Math.round((amount * bps) / 10_000);
 }
+
+const IDEMPOTENCY_KEY_MAX = 255;
+
+/**
+ * FNV-1a, 32-bit. Deterministic and synchronous — used only to keep an
+ * unusually long id inside Stripe's 255-character key limit without letting
+ * two different ids truncate down to the same key.
+ */
+function shortHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/**
+ * The Idempotency-Key for a card charge, so a retry cannot take the money twice.
+ *
+ * There was none. A flaky response, a double-click, or a retry after a timeout
+ * would create a SECOND PaymentIntent and charge the customer again.
+ *
+ * Every component is load-bearing:
+ *   - invoice + amount identify the charge being attempted
+ *   - amount_paid_cents lets a legitimate SECOND payment through: a partial and
+ *     then the rest happens after amount_paid moved, so it gets a new key.
+ *     Keying on invoice+amount alone would block that for 24 hours, which is
+ *     how idempotency turns into a bug of its own.
+ *   - the payment method id means a card the customer REPLACED after a decline
+ *     is charged rather than replaying the stored decline for 24 hours. It is
+ *     a saved card's stored id (invoices.js reads it from a <select> of cards
+ *     on file), so it is stable across retries and a double-click still
+ *     produces one key.
+ */
+export function chargeIdempotencyKey(charge: {
+  invoiceId: string;
+  amountCents: number;
+  amountPaidCents: number | null | undefined;
+  pmId: string;
+}): string {
+  const amount = Math.trunc(Number(charge.amountCents) || 0);
+  const paid = Math.trunc(Number(charge.amountPaidCents) || 0);
+  const invoiceId = String(charge.invoiceId ?? '');
+  const pmId = String(charge.pmId ?? '');
+
+  const key = `chg_${invoiceId}_${amount}_${paid}_${pmId}`;
+  if (key.length <= IDEMPOTENCY_KEY_MAX) return key;
+  return `chg_${shortHash(invoiceId)}_${amount}_${paid}_${shortHash(pmId)}`;
+}
