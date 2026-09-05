@@ -4,10 +4,20 @@
 Hono + Cloudflare Pages/D1 · TypeScript · Vite · Vitest · Playwright
 Config: **wrangler.jsonc** (NOT wrangler.toml — do not create a .toml)
 Project: `groundwork-crm` · live at https://groundwork-crm.com
-Two D1 databases, do not cross them:
-  - `DB` (avalon-sales-hub-production) — the existing CRM. Migrations: numbered SQL in /migrations.
-  - `FINANCE_DB` (groundwork) — Finance OS, separate database. Migrations: numbered SQL in /migrations/finance, starting at 0001.
-Local: `wrangler d1 migrations apply groundwork --local` (finance) or `npm run db:migrate:local` (CRM)
+One D1 database, binding `DB` (`avalon-sales-hub-production`) — Finance OS and
+the CRM share it. Migrations: numbered SQL in /migrations.
+Local: `npm run db:migrate:local`
+
+**Update (2026-08-09):** Finance OS used to live in its own database
+(`groundwork`, binding `FINANCE_DB`, migrations in `/migrations/finance`
+starting at 0001). `migrations/0057_finance_merge.sql` merged it into this
+one — see `docs/RUNBOOK-finance-merge.md` for the data-copy step a schema
+migration alone couldn't do, and `docs/spec/SCHEMA.md` for the merged
+table list. `migrations/finance/` is kept only as a historical record of
+what was applied to the old database; there is no `groundwork` database
+and no `FINANCE_DB` binding to migrate anymore — `wrangler d1 migrations
+apply groundwork --local` will fail because that database no longer
+exists in this project.
 
 This repo already contains a working CRM with real feature history. You are ADDING
 a Finance OS layer inside it. Do not restructure existing directories, do not
