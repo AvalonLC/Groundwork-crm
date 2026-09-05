@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
-import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
 import { canInvoice } from './api/invoice-access'
 import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey } from './api/stripe_customers'
 import { decideFailureActions, clientFailureEmail } from './api/dunning'
