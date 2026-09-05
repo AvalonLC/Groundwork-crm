@@ -24192,40 +24192,150 @@ function playbooks(tab) {
 }
 
 // ── Financial ─────────────────────────────────────────────────────────────────
+/* ── Payments helpers (tested by tests/payments-page.test.mjs) ───────────── */
+// created_at is SQLite's datetime('now'): UTC, space-separated, no zone
+// designator. Read as local it lands up to 5h off, which is enough to file an
+// evening payment under the wrong calendar month. gwDateParse (public/js/
+// gw_date.js) has the same gap for this shape, but it is reached by the eight
+// scheduling screens that render through _p5FmtDate — correcting it there is a
+// wider change than this page, so it is left for its own commit and this keeps
+// Payments right in the meantime.
+function _payIso(d) {
+  const raw = String(d == null ? '' : d).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw))            return raw + 'T00:00:00';
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(raw)) return raw.replace(' ', 'T') + 'Z';
+  return raw;
+}
+// amount_cents is authoritative (migrations/0058_money_cents.sql). `amount` is
+// the legacy REAL column still kept in dual-write by all seven server paths and
+// must never reach the UI. Rows written before 0058 can have a null
+// amount_cents, so those convert once, here, rather than anywhere downstream.
+function _payAmountCents(row) {
+  const cents = row && row.amount_cents;
+  if (cents !== null && cents !== undefined && cents !== '') return Math.round(Number(cents) || 0);
+  return Math.round((Number(row && row.amount) || 0) * 100);
+}
+function _payNormalize(rows, clientsById) {
+  const byId = clientsById || {};
+  return (Array.isArray(rows) ? rows : []).map(r => ({
+    id:         r.id,
+    createdAt:  r.created_at || '',
+    clientName: byId[r.client_id] || '',
+    invoiceRef: r.invoice_number_display || '',
+    amountCents: _payAmountCents(r),
+    method:     r.payment_method || 'other',
+    status:     r.status || '',
+    note:       r.description || '',
+    source:     'server',
+  }));
+}
+function _payTotals(list, now) {
+  const ref = (now instanceof Date && Number.isFinite(now.getTime())) ? now : new Date();
+  const refMonth = ref.getFullYear() + '-' + String(ref.getMonth() + 1).padStart(2, '0');
+  let totalCents = 0, monthCents = 0, count = 0;
+  (Array.isArray(list) ? list : []).forEach(p => {
+    // localStorage rows are shown, but they are not the company record and
+    // never count toward a total that reads as money the business received.
+    if (!p || p.source !== 'server') return;
+    const cents = Math.round(Number(p.amountCents) || 0);
+    count += 1;
+    totalCents += cents;
+    const t = new Date(_payIso(p.createdAt));
+    if (!Number.isFinite(t.getTime())) return;
+    const ym = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0');
+    if (ym === refMonth) monthCents += cents;
+  });
+  return { count, totalCents, monthCents };
+}
+/* ── end Payments helpers ────────────────────────────────────────────────── */
+
+// Refunds are stored as negative amounts, so the sign has to lead the symbol:
+// "$-200.00" reads as a malformed figure, "-$200.00" reads as money going back.
+function _payMoneyCents(cents) {
+  const c = Math.round(Number(cents) || 0);
+  const n = Math.abs(c) / 100;
+  return (c < 0 ? '-$' : '$') + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function _payWhen(d) {
+  const t = new Date(_payIso(d));
+  if (!Number.isFinite(t.getTime())) return '—';
+  return t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function _payLegacyRows() {
+  try {
+    const a = JSON.parse(localStorage.getItem('avalonPayments') || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch (_) { return []; }
+}
+
+/**
+ * Payments — the real record, read from D1.
+ *
+ * This page used to render localStorage['avalonPayments'] and nothing else: no
+ * network call at all, while seven server paths wrote real rows into `payments`
+ * (invoice send-with-autopay, manual record-payment, staff card charge, two
+ * Stripe webhook branches, and two portal paths) and GET /api/payments already
+ * served them. Anything a customer actually paid was invisible here.
+ *
+ * Same honesty rule as src/ui/ledger.tsx: the pieces that are D1-backed are
+ * shown as the record, and anything that is only in this browser is said
+ * plainly rather than mixed in or quietly dropped.
+ */
 function payments() {
   window._currentView = 'payments';
   activateNav('payments');
-  const LS_KEY = 'avalonPayments';
-  let payments_data = [];
-  try { payments_data = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(_) {}
+  _payRender({ loading: true, rows: [] });
+  _payLoad();
+}
 
-  const opps    = state.opportunities || [];
-  const clients = state.clients || [];
-  const search  = (window._paySearch||'').toLowerCase();
+async function _payLoad() {
+  try {
+    const res = await fetch('/api/payments?limit=500', { credentials: 'include' });
+    if (!res.ok) throw new Error('fetch failed');
+    const body = await res.json();
+    const rows = Array.isArray(body) ? body : (body && body.data) || [];
+    const byId = {};
+    (state.clients || []).forEach(c => { if (c && c.id) byId[c.id] = c.name; });
+    _payRender({ loading: false, rows: _payNormalize(rows, byId) });
+  } catch (e) {
+    _payRender({ loading: false, rows: [], error: true });
+  }
+}
 
-  const filtered = payments_data.filter(p =>
+function _payRender(opts) {
+  const loading = !!opts.loading;
+  const error   = !!opts.error;
+  const rows    = opts.rows || [];
+  const search  = (window._paySearch || '').toLowerCase();
+  const legacy  = _payLegacyRows();
+
+  const filtered = rows.filter(p =>
     !search ||
-    (p.clientName||'').toLowerCase().includes(search) ||
-    (p.method||'').toLowerCase().includes(search) ||
-    (p.note||'').toLowerCase().includes(search)
+    (p.clientName || '').toLowerCase().includes(search) ||
+    (p.invoiceRef || '').toLowerCase().includes(search) ||
+    (p.method || '').toLowerCase().includes(search) ||
+    (p.note || '').toLowerCase().includes(search)
   );
-  const totalReceived = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
+  const totals = _payTotals(rows);
 
   const methodColor = { cash:'#2D7A55', check:'#5B7FA6', card:'#6B5EA8', ach:'#8B6914', other:'#6F7E6A' };
-  const rows = filtered.map(p => `
+  const body = filtered.map(p => `
     <tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:10px 14px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(p.date)}</td>
+      <td style="padding:10px 14px;font-size:12px;color:var(--gw-muted)">${_payWhen(p.createdAt)}</td>
       <td style="padding:10px 10px;font-weight:600;font-size:13px;color:var(--gds-ink)">${escapeHtml(p.clientName||'—')}</td>
       <td style="padding:10px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.invoiceRef||'—')}</td>
-      <td style="padding:10px 10px;text-align:right;font-weight:700;font-size:14px;color:#2D7A55">${_p5Money(p.amount)}</td>
+      <td style="padding:10px 10px;text-align:right;font-weight:700;font-size:14px;color:#2D7A55">${_payMoneyCents(p.amountCents)}</td>
       <td style="padding:10px 10px;text-align:center">
         <span style="padding:2px 9px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;background:${methodColor[p.method]||'#6F7E6A'}22;color:${methodColor[p.method]||'#6F7E6A'};border:1px solid ${methodColor[p.method]||'#6F7E6A'}44">${escapeHtml(p.method||'other')}</span>
       </td>
+      <td style="padding:10px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(p.status||'')}</td>
       <td style="padding:10px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(p.note||'')}</td>
-      <td style="padding:10px 10px;text-align:center">
-        <button onclick="window._payDelete('${p.id}')" style="background:none;border:none;color:#A05050;cursor:pointer;font-size:14px" title="Delete">×</button>
-      </td>
     </tr>`).join('');
+
+  const emptyCell = loading ? 'Loading payments…'
+    : error ? 'Could not load payments. Check your connection and try again.'
+    : search ? 'No matching payments.'
+    : 'No payments recorded yet.';
 
   view.innerHTML = `
   <div class="rp-shell gw-report-shell">
@@ -24233,25 +24343,31 @@ function payments() {
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
         <h1 class="rp-title">Payments</h1>
-        <p class="rp-subtitle">${payments_data.length} payment${payments_data.length!==1?'s':''} · ${_p5Money(totalReceived)} total received</p>
+        <p class="rp-subtitle">${loading ? 'Loading…' : `${totals.count} payment${totals.count!==1?'s':''} · ${_payMoneyCents(totals.totalCents)} received`}</p>
       </div>
       <div class="rp-header-actions">
-        <button class="rp-btn rp-btn--primary" onclick="window._payNew()">+ Record Payment</button>
+        <button class="rp-btn rp-btn--primary" onclick="window._payRecord()">+ Record Payment</button>
       </div>
     </header>
+
+    <div class="fin-note" style="margin-bottom:16px;font-size:12px;color:var(--gw-muted)">
+      Every payment recorded against an invoice — card charges, portal payments
+      and manually logged cash or cheques. Read directly from the company record;
+      corrections are made against the invoice, not here.
+    </div>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
       <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Received</div>
-        <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalReceived)}</div>
+        <div style="font-size:26px;font-weight:800;color:#2D7A55">${_payMoneyCents(totals.totalCents)}</div>
       </div>
       <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
-        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${_p5Money(payments_data.filter(p=>p.date&&p.date.slice(0,7)===todayISO().slice(0,7)).reduce((s,p)=>s+Number(p.amount||0),0))}</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${_payMoneyCents(totals.monthCents)}</div>
       </div>
       <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Transactions</div>
-        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${payments_data.length}</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${totals.count}</div>
       </div>
     </div>
 
@@ -24263,95 +24379,120 @@ function payments() {
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Date</th>
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Recorded</th>
             <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Client</th>
-            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Invoice Ref</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Invoice</th>
             <th style="text-align:right;padding:10px 10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Amount</th>
             <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Method</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Status</th>
             <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Note</th>
-            <th style="width:36px"></th>
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${search?'No matching payments.':'No payments recorded yet.'}</td></tr>`}
+          ${body || `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${emptyCell}</td></tr>`}
         </tbody>
       </table>
     </div>
 
-    <!-- Record Payment Modal -->
-    <div id="pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
-      <div style="background:var(--gw-card);border-radius:14px;width:100%;max-width:420px;padding:24px">
-        <h3 style="margin:0 0 16px;font-size:16px">Record Payment</h3>
-        <div style="display:grid;gap:10px;margin-bottom:16px">
-          <div>
-            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Client Name</label>
-            <input id="pay-f-client" list="pay-clients-list" type="text" placeholder="Client name"
-              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-            <datalist id="pay-clients-list">
-              ${(state.clients||[]).map(c=>`<option value="${escapeHtml(c.name)}">`).join('')}
-            </datalist>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div>
-              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Amount ($)</label>
-              <input id="pay-f-amount" type="number" min="0" step="0.01" placeholder="0.00"
-                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-            </div>
-            <div>
-              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Date</label>
-              <input id="pay-f-date" type="date" value="${todayISO()}"
-                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div>
-              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Method</label>
-              <select id="pay-f-method" style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-                <option value="check">Check</option><option value="cash">Cash</option>
-                <option value="card">Card</option><option value="ach">ACH</option><option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Invoice Ref</label>
-              <input id="pay-f-inv" type="text" placeholder="INV-001"
-                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Note (optional)</label>
-            <input id="pay-f-note" type="text" placeholder="e.g. Final payment for job #234"
-              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-          </div>
+    ${legacy.length ? _payLegacyPanel(legacy) : ''}
+  </div>`;
+}
+
+/**
+ * Rows that only ever existed in this browser.
+ *
+ * The old page wrote every "Record Payment" straight to
+ * localStorage['avalonPayments'] and never sent it anywhere, so whatever is
+ * there was typed by someone who reasonably believed they were recording a
+ * payment. It is not deleted and not imported: importing would fabricate
+ * financial records out of unvalidated browser input, which is exactly what
+ * this page is being fixed for. It is shown, exportable, and archivable.
+ */
+function _payLegacyPanel(legacy) {
+  const rows = legacy.map(p => `
+    <tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:8px 14px;font-size:12px;color:var(--gw-muted)">${_payWhen(p.date)}</td>
+      <td style="padding:8px 10px;font-size:13px;color:var(--gds-ink)">${escapeHtml(p.clientName||'—')}</td>
+      <td style="padding:8px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.invoiceRef||'—')}</td>
+      <td style="padding:8px 10px;text-align:right;font-size:13px;color:var(--gw-muted)">${_payMoneyCents(Math.round((Number(p.amount)||0)*100))}</td>
+      <td style="padding:8px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.method||'other')}</td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(p.note||'')}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="gw-report-card gw-report-panel" style="margin-top:20px;border:1px solid #8B691444">
+      <div style="padding:14px 14px 0">
+        <div style="font-size:13px;font-weight:800;color:#8B6914;margin-bottom:4px">
+          ${legacy.length} payment${legacy.length!==1?'s':''} saved in this browser only
         </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end">
-          <button class="secondary-btn" onclick="document.getElementById('pay-modal').style.display='none'">Cancel</button>
-          <button class="primary-btn" onclick="window._paySave()">Save</button>
+        <div style="font-size:12px;color:var(--gw-muted);margin-bottom:10px;max-width:70ch">
+          These were recorded before this page read the company record. They were
+          never sent to the server, are not counted in the totals above, and are
+          not visible to anyone else. Export them, then record any that are real
+          against their invoice so they become part of the record.
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="secondary-btn" onclick="window._payExportLegacy()">Export CSV</button>
+          <button class="secondary-btn" onclick="window._payArchiveLegacy()">Archive</button>
         </div>
       </div>
-    </div>
-  </div>`;
-
-  window._payNew  = ()=>{ document.getElementById('pay-modal').style.display='flex'; };
-  window._paySave = ()=>{
-    const amount = parseFloat(document.getElementById('pay-f-amount').value);
-    const client = document.getElementById('pay-f-client').value.trim();
-    if (!client||!amount) { showToast('Client and amount required'); return; }
-    const payRecord = { id:'pay_'+Date.now(), clientName:client, amount, date:document.getElementById('pay-f-date').value, method:document.getElementById('pay-f-method').value, invoiceRef:document.getElementById('pay-f-inv').value.trim(), note:document.getElementById('pay-f-note').value.trim() };
-    payments_data.push(payRecord);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(payments_data)); } catch(_) {}
-    document.getElementById('pay-modal').style.display='none';
-    // Phase 8: audit + workflow hook
-    if (typeof window.gwAudit === 'function') window.gwAudit({ type:'payment_recorded', entityType:'payment', entityId:payRecord.id, entityLabel:`Payment — ${client}`, meta:{ amount, method:payRecord.method, invoiceRef:payRecord.invoiceRef } });
-    if (typeof window.gwWorkflow === 'object') window.gwWorkflow.depositReceived({ entityType:'payment', entityId:payRecord.id, entityLabel:`Payment — ${client}`, client, amount, method:payRecord.method });
-    showToast(`Payment of ${_p5Money(amount)} recorded`);
-    payments();
-  };
-  window._payDelete = (id)=>{
-    payments_data = payments_data.filter(p=>p.id!==id);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(payments_data)); } catch(_) {}
-    payments();
-  };
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:8px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
+            <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
+            <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Invoice Ref</th>
+            <th style="text-align:right;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Amount</th>
+            <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Method</th>
+            <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Note</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
+
+/**
+ * Recording a payment goes through the invoice, because a payment with no
+ * invoice cannot move amount_paid_cents or balance_due_cents — it would be an
+ * orphan row that makes the books look right on this one screen and wrong on
+ * Collections, Ledger and the recovery numbers. _invPaymentPicker is the same
+ * entry point the +New menu and the client detail page already use, so there is
+ * one write path rather than two.
+ */
+window._payRecord = function() {
+  if (typeof window._gwNavThen === 'function') { window._gwNavThen('invoices', '_invPaymentPicker'); return; }
+  if (typeof show === 'function') { show('invoices'); return; }
+  showToast('Open Invoices to record a payment');
+};
+
+window._payExportLegacy = function() {
+  const legacy = _payLegacyRows();
+  if (!legacy.length) { showToast('Nothing to export'); return; }
+  const head = ['date','clientName','invoiceRef','amount','method','note'];
+  const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const csv = [head.join(',')].concat(legacy.map(p => head.map(k => esc(p[k])).join(','))).join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'browser-only-payments.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+};
+
+// Renames rather than deletes. The rows stay recoverable from devtools if
+// somebody archives before exporting, which on a financial record is the
+// difference between a tidy-up and data loss.
+window._payArchiveLegacy = function() {
+  const legacy = _payLegacyRows();
+  if (!legacy.length) return;
+  try {
+    localStorage.setItem('avalonPayments_archived_' + new Date().toISOString(), JSON.stringify(legacy));
+    localStorage.removeItem('avalonPayments');
+    showToast(`${legacy.length} browser-only payment${legacy.length!==1?'s':''} archived`);
+  } catch (_) { showToast('Could not archive'); return; }
+  payments();
+};
 
 function deposits() {
   window._currentView = 'deposits';
