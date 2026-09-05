@@ -9396,7 +9396,11 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
         if (apMaxAmountCents > 0 && owedCents > apMaxAmountCents) {
           autopay = { attempted: false, reason: `Balance exceeds the client's autopay cap of $${(apMaxAmountCents / 100)}` }
         } else {
-          const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
+          // charges_enabled and fee_bps are both read below — targetAccountFor
+          // treats charges_enabled as authoritative, and the fee is basis
+          // points since migration 0078. A column that is read but not selected
+          // comes back undefined, which is how autopay silently stopped firing.
+          const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled, stripe_platform_fee_bps FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
           // DIRECT charge on the connected account, not a destination charge.
           // The company is merchant of record: funds settle to them, and they
           // carry the processing fee, refunds, disputes and negative balances.
@@ -9622,8 +9626,12 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
   ).bind(invoiceId, companyId).first()
   if (!inv) return c.json({ error: 'Invoice not found' }, 404)
 
+  // charges_enabled and fee_bps are both read below. Selecting _pct instead
+  // left targetAccountFor seeing an undefined charges_enabled — so a properly
+  // connected company resolved to no target and the charge ran on the PLATFORM
+  // account, with no application fee and the merchant of record wrong.
   const company: any = await db.prepare(
-    `SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`
+    `SELECT stripe_account_id, stripe_onboarded, stripe_charges_enabled, stripe_platform_fee_bps FROM companies WHERE id=? LIMIT 1`
   ).bind(companyId).first()
 
   // Get client's Stripe customer ID
