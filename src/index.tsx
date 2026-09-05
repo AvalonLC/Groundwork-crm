@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
+import { canInvoice } from './api/invoice-access'
 import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey } from './api/stripe_customers'
 import { decideFailureActions, clientFailureEmail } from './api/dunning'
 import type { Context, Next } from 'hono'
@@ -9175,6 +9176,7 @@ app.put('/api/calendar/events/:id/link', requireAuth, async (c) => {
 
 // GET /api/invoices — list invoices with filters
 app.get('/api/invoices', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'read', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Not permitted', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   await db.prepare(`UPDATE invoices SET portal_token = lower(hex(randomblob(16))) WHERE company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(companyId).run().catch(() => {})
@@ -9202,6 +9204,7 @@ app.get('/api/invoices', requireAuth, async (c) => {
 
 // GET /api/invoices/:id — single invoice
 app.get('/api/invoices/:id', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'read', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Not permitted', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   await db.prepare(`UPDATE invoices SET portal_token = lower(hex(randomblob(16))) WHERE id=? AND company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(c.req.param('id'), companyId).run().catch(() => {})
@@ -9261,6 +9264,7 @@ app.get('/api/invoices/portal/:token', async (c) => {
 
 // POST /api/invoices — create invoice
 app.post('/api/invoices', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Creating invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const b: any = await c.req.json()
@@ -9325,6 +9329,7 @@ app.post('/api/invoices', requireAuth, async (c) => {
 
 // PUT /api/invoices/:id — update invoice
 app.put('/api/invoices/:id', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Editing invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const b: any = await c.req.json()
@@ -9366,6 +9371,7 @@ app.put('/api/invoices/:id', requireAuth, async (c) => {
 
 // DELETE /api/invoices/:id — delete invoice (draft only)
 app.delete('/api/invoices/:id', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Deleting invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   await db.prepare(`DELETE FROM invoices WHERE id=? AND company_id=? AND status='draft'`)
@@ -9377,6 +9383,7 @@ app.delete('/api/invoices/:id', requireAuth, async (c) => {
 // If the client enabled autopay in the portal, the open balance is charged to
 // their chosen saved payment method automatically (respecting max_amount cap).
 app.post('/api/invoices/:id/send', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'issue', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Sending invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const invoiceId = c.req.param('id')
@@ -9458,6 +9465,7 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
 
 // POST /api/invoices/:id/record-payment — record a manual payment
 app.post('/api/invoices/:id/record-payment', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'record_payment', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Not permitted', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const b: any = await c.req.json()
@@ -9495,6 +9503,7 @@ app.post('/api/invoices/:id/record-payment', requireAuth, async (c) => {
 
 // POST /api/invoices/from-estimate/:estimateId — convert estimate to invoice
 app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'create_from_estimate', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Not permitted', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const est: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=? LIMIT 1`)
@@ -9608,6 +9617,7 @@ app.get('/api/clients/:id/payment-methods', requireAuth, async (c) => {
 
 // POST /api/invoices/:id/charge — charge a saved Stripe payment method on file
 app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'charge_card', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Charging a card is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const stripeKey = (c.env as any).STRIPE_SECRET_KEY as string | undefined
