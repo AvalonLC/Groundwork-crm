@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents,
+  chargeIdempotencyKey,
 } from './stripe_customers';
 
 const ACCT = 'acct_connected';
@@ -109,5 +110,63 @@ describe('applicationFeeCents', () => {
     expect(applicationFeeCents(-5, 290)).toBe(0);
     expect(applicationFeeCents(50_000, NaN as any)).toBe(0);
     expect(applicationFeeCents('abc' as any, 290)).toBe(0);
+  });
+});
+
+describe('chargeIdempotencyKey', () => {
+  // The gap this closes: /api/invoices/:id/charge sent no Idempotency-Key at
+  // all, so a double-click, a flaky response, or a timeout retry created a
+  // SECOND PaymentIntent and took the money twice from a real customer card.
+  const KEY = (over: Partial<Parameters<typeof chargeIdempotencyKey>[0]> = {}) =>
+    chargeIdempotencyKey({
+      invoiceId: 'inv_1', amountCents: 25000, amountPaidCents: 0, pmId: 'pm_saved', ...over,
+    });
+
+  it('SC-16 a repeated attempt produces the SAME key — the double-click case', () => {
+    expect(KEY()).toBe(KEY());
+  });
+
+  it('SC-17 a genuine second payment gets a NEW key once amount_paid moved', () => {
+    // A partial, then the rest. Keying on invoice+amount alone would have
+    // blocked this for 24 hours, which is how idempotency becomes its own bug.
+    expect(KEY({ amountCents: 10000, amountPaidCents: 0 }))
+      .not.toBe(KEY({ amountCents: 15000, amountPaidCents: 10000 }));
+  });
+
+  it('SC-18 a retry of a FAILED charge on the SAME card replays instead of charging', () => {
+    // The charge failed, so amount_paid_cents never moved and the card is the
+    // same one. Same key: Stripe returns the original result.
+    expect(KEY({ amountPaidCents: 0 })).toBe(KEY({ amountPaidCents: 0 }));
+  });
+
+  it('SC-19 a DIFFERENT card on the same invoice and amount is allowed through', () => {
+    // Deliberate widening of the stranded fix. A declined card that the
+    // customer then replaces has unchanged invoice/amount/amount_paid, so
+    // without pmId in the key Stripe would replay the stored decline for 24
+    // hours and the corrected card could never be charged.
+    expect(KEY({ pmId: 'pm_declined' })).not.toBe(KEY({ pmId: 'pm_fixed' }));
+  });
+
+  it('SC-20 different invoices never collide', () => {
+    expect(KEY({ invoiceId: 'inv_1' })).not.toBe(KEY({ invoiceId: 'inv_2' }));
+  });
+
+  it('SC-21 the amount enters the key as integer cents, never a float', () => {
+    // Money is integer cents everywhere in this repo; a key carrying "250.5"
+    // would mean two spellings of one charge, and two PaymentIntents.
+    expect(KEY({ amountCents: 250.5 })).toBe(KEY({ amountCents: 250 }));
+    expect(KEY()).not.toMatch(/\./);
+  });
+
+  it('SC-22 is a valid Stripe idempotency key: ASCII, non-empty, <=255 chars', () => {
+    const k = KEY({ invoiceId: 'x'.repeat(400) });
+    expect(k.length).toBeGreaterThan(0);
+    expect(k.length).toBeLessThanOrEqual(255);
+    expect(k).toMatch(/^[\x20-\x7E]+$/);
+  });
+
+  it('SC-23 nulls and junk do not silently collapse two charges into one key', () => {
+    expect(KEY({ amountPaidCents: null as any })).toBe(KEY({ amountPaidCents: 0 }));
+    expect(KEY({ pmId: '' })).not.toBe(KEY({ pmId: 'pm_saved' }));
   });
 });
