@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
-import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents } from './api/stripe_customers'
+import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey } from './api/stripe_customers'
 import { decideFailureActions, clientFailureEmail } from './api/dunning'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -9664,6 +9664,18 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
       form.set('application_fee_amount', String(applicationFeeAmount))
       headers['Stripe-Account'] = targetAccount
     }
+
+    // Idempotency-Key, so a retry cannot take the money twice. There was none:
+    // a double-click, a flaky response, or a retry after a timeout created a
+    // SECOND PaymentIntent. See chargeIdempotencyKey for why each component of
+    // the key is there — in particular why a partial-then-rest payment and a
+    // customer-replaced card both still go through.
+    headers['Idempotency-Key'] = chargeIdempotencyKey({
+      invoiceId,
+      amountCents: amount,
+      amountPaidCents: inv.amount_paid_cents,
+      pmId: stripe_pm_id,
+    })
 
     const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
       method: 'POST', headers, body: form.toString()
