@@ -99,3 +99,66 @@ test('EH-03 the two reset helpers still cover the tables this rule assumes', () 
     );
   }
 });
+
+/**
+ * Every fixed row id a suite INSERTs into a CRM-only table, mapped to the
+ * suites that use it. Scans the text of each INSERT rather than the whole
+ * file so that page selectors and test ids — `post-receipt-posted-...` and
+ * friends, which share the same lowercase-hyphenated shape — cannot be
+ * mistaken for seeded rows.
+ */
+function sharedFixtureIds() {
+  const byId = new Map();
+  for (const file of suites) {
+    const src = read(file);
+    for (const table of CRM_ONLY_TABLES) {
+      const statements = src.match(new RegExp(`INSERT INTO ${table}\\b[\\s\\S]{0,600}`, 'g')) ?? [];
+      for (const statement of statements) {
+        for (const literal of statement.match(/["']([a-z][a-z0-9]*(?:-[a-z0-9]+)+)["']/g) ?? []) {
+          const id = literal.slice(1, -1);
+          if (!byId.has(id)) byId.set(id, new Set());
+          byId.get(id).add(file);
+        }
+      }
+    }
+  }
+  return [...byId].filter(([, files]) => files.size > 1).map(([id, files]) => [id, [...files]]);
+}
+
+test('EH-04 suites sharing a fixture id may not run in parallel against the one database', () => {
+  // There is a single dev server on :3100 bound to one local D1 file, and
+  // /test/reset-crm is a bare DELETE FROM — tenant-blind. So two suites that
+  // seed the same id are not merely racing to insert it; either one's reset
+  // sweeps the other's rows out from under a running test.
+  //
+  // Playwright's default is half the machine's cores, with the FILE as the
+  // unit of parallelism, so this is five suites at once on a 10-core laptop.
+  // It surfaced as three unrelated-looking failures — UNIQUE constraint failed
+  // on invoices.id, PC-11 counting 2 conflicts instead of 4, and ECONNREFUSED
+  // on every test after a worker died — none of which name the harness.
+  //
+  // CI never caught it: ubuntu-latest is 2-core, so Playwright already picks
+  // one worker there. It only bites locally, which is the worst place for it.
+  //
+  // This test retires itself. Give the suites unique ids and tenant-scoped
+  // resets and the shared list goes empty, at which point the pin is free to
+  // come off and parallelism can come back.
+  const shared = sharedFixtureIds();
+  if (shared.length === 0) return;
+
+  // Strip comments before matching. The first version of this assertion did
+  // not, so `// workers: 1,` satisfied it and the guard passed against the
+  // very mutation it exists to catch — the same way EH-01 once passed against
+  // a suite that imported resetCrmDb and never called it. A guard has to look
+  // at the setting, not at the text of a line about the setting.
+  const config = readFileSync(new URL('../playwright.config.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  assert.match(
+    config, /\bworkers:\s*1\b/,
+    `playwright.config.ts does not pin workers: 1, but these fixture ids are still ` +
+    `seeded by more than one suite against the single shared database:\n  ` +
+    shared.map(([id, files]) => `${id} — ${files.join(', ')}`).join('\n  ') + `\n` +
+    `Either restore the pin, or make the fixtures suite-independent first.`,
+  );
+});
