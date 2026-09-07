@@ -225,3 +225,151 @@ test('GD-18 gwSameDay compares calendar days, not instants', () => {
   assert.equal(gwSameDay('2026-08-11', '2026-08-12'), false);
   assert.equal(gwSameDay(null, null), false, 'two missing dates are not "the same day"');
 });
+
+// ── timestamps: the shapes this repo actually stores ─────────────────────────
+//
+// gwDateParse used to send everything that was not a bare YYYY-MM-DD to
+// `new Date(str)`. That is wrong for the two shapes we store most:
+//
+//   'YYYY-MM-DD HH:MM:SS'  SQLite datetime('now') — UTC, but says so nowhere.
+//                          The space makes it invalid ISO 8601, so parsing is
+//                          implementation-defined: V8 reads it as LOCAL, Safari
+//                          has rejected it outright. Read as local it lands on
+//                          the wrong calendar DAY west of Greenwich.
+//
+//   'YYYY-MM-DDTHH:MM'     a <input type="datetime-local"> value — genuinely
+//                          local, and near-identical to the shape above while
+//                          meaning the opposite.
+//
+// Both are now matched explicitly and built with arithmetic, so the answer no
+// longer depends on the browser.
+
+test('GD-19 a SQLite timestamp is read as UTC, not as local time', () => {
+  // 01:30 UTC on Sep 1 is 21:30 on Aug 31 in New York. Before the fix this
+  // rendered as September 1st on every screen that formats a created_at.
+  inZone(EAST_COAST, () => {
+    assert.equal(gwDateISO('2026-09-01 01:30:00'), '2026-08-31');
+    assert.equal(gwDateFormat('2026-09-01 01:30:00'), 'Aug 31, 2026');
+  });
+});
+
+test('GD-20 the same instant is the NEXT day east of Greenwich', () => {
+  // Same stored value, opposite sign: 01:30 UTC is 13:30 on Sep 1 in Auckland.
+  // Proves the value is being treated as an instant rather than shifted by a
+  // hardcoded assumption about which way the offset runs.
+  inZone(NEW_ZEALAND, () => {
+    assert.equal(gwDateISO('2026-09-01 01:30:00'), '2026-09-01');
+  });
+});
+
+test('GD-21 a SQLite timestamp away from any boundary is the same day everywhere', () => {
+  // The control for GD-19/GD-20. Note 12:00 UTC would NOT work here: Auckland
+  // is UTC+12, so midday UTC is exactly its midnight — the worst case, not a
+  // safe one. Only 04:00-10:59 UTC is the same calendar day in both zones
+  // (New York needs >= 04:00, Auckland needs < 12:00), so this sits at 08:00.
+  inZone(EAST_COAST, () => assert.equal(gwDateISO('2026-09-01 08:00:00'), '2026-09-01'));
+  inZone(NEW_ZEALAND, () => assert.equal(gwDateISO('2026-09-01 08:00:00'), '2026-09-01'));
+});
+
+test('GD-22 a datetime-local value stays LOCAL and is not shifted to UTC', () => {
+  // The trap: this looks like the SQLite shape with a T. Treating it as UTC
+  // would move a 00:30 appointment the user typed back to the previous day.
+  inZone(EAST_COAST, () => {
+    assert.equal(gwDateISO('2026-09-01T00:30'), '2026-09-01');
+    assert.equal(gwDateISO('2026-09-01T00:30:00'), '2026-09-01');
+  });
+});
+
+test('GD-23 a timestamp that states its zone is honoured as written', () => {
+  inZone(EAST_COAST, () => {
+    assert.equal(gwDateISO('2026-09-01T01:30:00Z'), '2026-08-31');
+    assert.equal(gwDateISO('2026-09-01T01:30:00.000Z'), '2026-08-31');
+    // An explicit offset, not just Z.
+    assert.equal(gwDateISO('2026-09-01T01:30:00+00:00'), '2026-08-31');
+  });
+});
+
+test('GD-24 a date-only value is still timezone-free in both hemispheres', () => {
+  // The original contract, unchanged: a calendar date has no zone.
+  for (const zone of [EAST_COAST, NEW_ZEALAND]) {
+    inZone(zone, () => {
+      assert.equal(gwDateISO('2026-09-01'), '2026-09-01');
+      assert.equal(gwDateFormat('2026-09-01'), 'Sep 1, 2026');
+    });
+  }
+});
+
+test('GD-25 SQLite timestamps survive a full day-boundary sweep, both zones', () => {
+  // Every hour of a stored UTC day, checked against what that instant really is
+  // locally. Catches an off-by-one that only bites in part of the day.
+  for (const zone of [EAST_COAST, NEW_ZEALAND]) {
+    inZone(zone, () => {
+      for (let h = 0; h < 24; h++) {
+        const hh = String(h).padStart(2, '0');
+        const stored = `2026-09-01 ${hh}:30:00`;
+        const truth = new Date(Date.UTC(2026, 8, 1, h, 30, 0));
+        const expected = `${truth.getFullYear()}-${String(truth.getMonth() + 1).padStart(2, '0')}-${String(truth.getDate()).padStart(2, '0')}`;
+        assert.equal(gwDateISO(stored), expected, `${zone} ${stored}`);
+      }
+    });
+  }
+});
+
+test('GD-26 seconds are optional and fractional seconds are tolerated', () => {
+  inZone(EAST_COAST, () => {
+    assert.equal(gwDateISO('2026-09-01 01:30'), '2026-08-31');
+    assert.equal(gwDateISO('2026-09-01 01:30:00.123'), '2026-08-31');
+  });
+});
+
+test('GD-27 an impossible date is rejected rather than silently rolled over', () => {
+  // new Date(2026, 1, 30) quietly becomes March 2nd. A date that cannot exist
+  // should read as unusable, so gwDateFormat shows the raw value instead of
+  // confidently rendering a different day.
+  assert.equal(gwDateParse('2026-02-30'), null);
+  assert.equal(gwDateParse('2026-13-01'), null);
+  assert.equal(gwDateParse('2026-00-10'), null);
+  assert.equal(gwDateParse('2026-09-01 25:00:00'), null);
+  assert.equal(gwDateFormat('2026-02-30'), '2026-02-30', 'falls back to the raw value');
+});
+
+test('GD-28 a leap day is accepted in a leap year and rejected otherwise', () => {
+  assert.notEqual(gwDateParse('2028-02-29'), null);
+  assert.equal(gwDateParse('2026-02-29'), null);
+});
+
+test('GD-29 junk and empty values return null, not the epoch', () => {
+  for (const bad of ['', '   ', 'not a date', null, undefined, {}, NaN]) {
+    assert.equal(gwDateParse(bad), null, `expected null for ${JSON.stringify(bad)}`);
+  }
+  assert.equal(gwDateParse(new Date('nonsense')), null, 'an Invalid Date is null');
+});
+
+test('GD-29b a partial ISO date names no day, so it is refused', () => {
+  // '2026' and '2026-09' are valid ISO 8601, so `new Date()` accepts them and
+  // fills the gaps at UTC midnight. West of Greenwich that lands in the
+  // PREVIOUS period: in New York new Date('2026') is Dec 31, 2025. A value too
+  // vague to name a day must not render as a confident, wrong one.
+  inZone(EAST_COAST, () => {
+    assert.equal(gwDateParse('2026'), null);
+    assert.equal(gwDateParse('2026-09'), null);
+    assert.equal(gwDateFormat('2026'), '2026', 'falls back to the raw value');
+  });
+});
+
+test('GD-30 surrounding whitespace does not change the answer', () => {
+  inZone(EAST_COAST, () => {
+    assert.equal(gwDateISO('  2026-09-01  '), '2026-09-01');
+    assert.equal(gwDateISO(' 2026-09-01 01:30:00 '), '2026-08-31');
+  });
+});
+
+test('GD-31 gwSameDay and gwDateAddDays agree with the new timestamp handling', () => {
+  inZone(EAST_COAST, () => {
+    // The stored UTC instant IS Aug 31 locally, so it is the same day as the
+    // date-only value for Aug 31 — the property every calendar grid relies on.
+    assert.equal(gwSameDay('2026-09-01 01:30:00', '2026-08-31'), true);
+    assert.equal(gwSameDay('2026-09-01 01:30:00', '2026-09-01'), false);
+    assert.equal(gwDateAddDays('2026-09-01 01:30:00', 1), '2026-09-01');
+  });
+});

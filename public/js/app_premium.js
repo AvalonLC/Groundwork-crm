@@ -24193,18 +24193,27 @@ function playbooks(tab) {
 
 // ── Financial ─────────────────────────────────────────────────────────────────
 /* ── Payments helpers (tested by tests/payments-page.test.mjs) ───────────── */
-// created_at is SQLite's datetime('now'): UTC, space-separated, no zone
-// designator. Read as local it lands up to 5h off, which is enough to file an
-// evening payment under the wrong calendar month. gwDateParse (public/js/
-// gw_date.js) has the same gap for this shape, but it is reached by the eight
-// scheduling screens that render through _p5FmtDate — correcting it there is a
-// wider change than this page, so it is left for its own commit and this keeps
-// Payments right in the meantime.
-function _payIso(d) {
-  const raw = String(d == null ? '' : d).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw))            return raw + 'T00:00:00';
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(raw)) return raw.replace(' ', 'T') + 'Z';
-  return raw;
+// created_at is SQLite's datetime('now'): UTC, space-separated, carrying no
+// zone designator to say so. Read as local it lands up to 5h off, which is
+// enough to file an evening payment under the wrong calendar month.
+//
+// This page used to carry its own copy of that rule, because gwDateParse did
+// not handle the shape and fixing it there reached the eight scheduling screens
+// too. gwDateParse handles it now (public/js/gw_date.js), so the rule lives in
+// one place and the two copies can no longer drift apart.
+function _payDate(d) {
+  // gw_date.js is a separate <script>. If it has not run yet, no date is
+  // better than a wrong one — every caller already renders a placeholder.
+  if (typeof gwDateParse !== 'function') return null;
+  return gwDateParse(d);
+}
+// Renders the date cell for every payment row. This lived below the block the
+// tests evaluate, so the one function that puts a date on screen was the one
+// function they could not see; it sits with _payDate now.
+function _payWhen(d) {
+  const t = _payDate(d);
+  if (!t) return '—';
+  return t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 // amount_cents is authoritative (migrations/0058_money_cents.sql). `amount` is
 // the legacy REAL column still kept in dual-write by all seven server paths and
@@ -24240,8 +24249,8 @@ function _payTotals(list, now) {
     const cents = Math.round(Number(p.amountCents) || 0);
     count += 1;
     totalCents += cents;
-    const t = new Date(_payIso(p.createdAt));
-    if (!Number.isFinite(t.getTime())) return;
+    const t = _payDate(p.createdAt);
+    if (!t) return;
     const ym = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0');
     if (ym === refMonth) monthCents += cents;
   });
@@ -24255,11 +24264,6 @@ function _payMoneyCents(cents) {
   const c = Math.round(Number(cents) || 0);
   const n = Math.abs(c) / 100;
   return (c < 0 ? '-$' : '$') + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function _payWhen(d) {
-  const t = new Date(_payIso(d));
-  if (!Number.isFinite(t.getTime())) return '—';
-  return t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 function _payLegacyRows() {
   try {

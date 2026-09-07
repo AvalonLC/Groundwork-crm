@@ -14,6 +14,8 @@
  *   Dates. created_at is SQLite datetime('now') — UTC, space-separated, no
  *   zone designator. Read as local it lands up to 5h off, which puts an
  *   evening-UTC payment in the wrong calendar month for the "This Month" tile.
+ *   That rule now lives in gwDateParse rather than in a copy on this page, so
+ *   these run against the real parser (see the harness below).
  *
  * Runs under node:test at TZ=America/New_York rather than vitest, because the
  * vitest pool is workerd and workerd is pinned to UTC — the month-boundary
@@ -34,10 +36,20 @@ function sourceBlock(startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+// The helpers read dates through gwDateParse, which the page gets from a
+// separate <script>. Load the real public/js/gw_date.js and hand it in, rather
+// than a stub: a stub would let the two drift apart again, which is exactly the
+// duplication collapsing _payIso was meant to end.
+const gwSource = readFileSync(new URL('../public/js/gw_date.js', import.meta.url), 'utf8');
+const gwWindow = {};
+new Function('window', `${gwSource}\nreturn window.gwDate;`)(gwWindow);
+const { gwDateParse } = gwWindow.gwDate;
+
 const helpers = sourceBlock('/* ── Payments helpers', '/* ── end Payments helpers');
-const { _payNormalize, _payTotals, _payAmountCents } = new Function(
-  `${helpers}\nreturn { _payNormalize, _payTotals, _payAmountCents };`,
-)();
+const { _payNormalize, _payTotals, _payAmountCents, _payWhen } = new Function(
+  'gwDateParse',
+  `${helpers}\nreturn { _payNormalize, _payTotals, _payAmountCents, _payWhen };`,
+)(gwDateParse);
 
 const EAST_COAST = 'America/New_York';
 
@@ -110,4 +122,46 @@ test('PP-07 the client name is resolved from the id, since payments has no name 
     { c1: 'Acme Client' },
   );
   assert.equal(row.clientName, 'Acme Client');
+});
+
+test('PP-08 the page does not re-grow its own copy of the SQLite timestamp rule', () => {
+  // _payIso used to translate 'YYYY-MM-DD HH:MM:SS' into a UTC instant here,
+  // duplicating what gwDateParse now does. Two copies of one rule is how the
+  // Payments page stayed right while eight scheduling screens stayed wrong, so
+  // this fails if a space-separated-timestamp pattern reappears in the block.
+  assert.doesNotMatch(
+    helpers,
+    /\\d\{4\}-\\d\{2\}-\\d\{2\} /,
+    'parse SQLite timestamps via gwDateParse, not a second copy on this page',
+  );
+  assert.doesNotMatch(helpers, /_payIso/, '_payIso was replaced by _payDate');
+});
+
+test('PP-09 payment dates are read as UTC, so an evening payment keeps its own month', () => {
+  // 2026-09-01 01:30 UTC is Aug 31, 21:30 in New York. Read as local it would
+  // land in September and inflate the "This Month" tile by a payment that
+  // belongs to August.
+  const rows = _payNormalize([{ id: 'p1', amount_cents: 25000, created_at: '2026-09-01 01:30:00' }]);
+  const august = _payTotals(rows, new Date(2026, 7, 15, 12));
+  const september = _payTotals(rows, new Date(2026, 8, 15, 12));
+  assert.equal(august.monthCents, 25000, 'belongs to August in Eastern');
+  assert.equal(september.monthCents, 0, 'must not also count as September');
+});
+
+test('PP-10 the date cell renders the local calendar day of a UTC payment', () => {
+  // _payWhen is what puts a date on screen. It used to sit below the block
+  // these tests evaluate, so it was the one function they could not reach.
+  assert.equal(_payWhen('2026-09-01 01:30:00'), 'Aug 31, 2026', '21:30 Aug 31 in Eastern');
+  assert.equal(_payWhen('2026-08-20 00:58:23'), 'Aug 19, 2026', '20:58 Aug 19 in Eastern');
+  assert.equal(_payWhen('2026-09-01 15:00:00'), 'Sep 1, 2026', 'midday UTC stays put');
+});
+
+test('PP-11 a missing or unusable date renders a placeholder, never a wrong day', () => {
+  assert.equal(_payWhen(null), '—');
+  assert.equal(_payWhen(''), '—');
+  assert.equal(_payWhen(undefined), '—');
+  // '2026' is valid ISO 8601 for a year, so new Date() would make it Dec 31,
+  // 2025 in Eastern — a date the row never had, in the wrong year.
+  assert.equal(_payWhen('2026'), '—');
+  assert.equal(_payWhen('not a date'), '—');
 });
