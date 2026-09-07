@@ -1,12 +1,26 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { resetFinanceDb, exec } from "./test-seed";
+import { resetFinanceDb, resetCrmDb, exec } from "./test-seed";
 
 const TENANT = "t-e2e-post-receipts";
 const OTHER_TENANT = "t-e2e-post-receipts-other";
 
 test.beforeEach(async ({ request }) => {
+  // Finance first, then CRM. /test/reset only clears FINANCE_TABLES, which does
+  // not include work_orders or crews — dev-server.ts says so explicitly, and
+  // expects suites seeding those to call resetCrmDb too. This one seeds both
+  // via seedJob() and did not, so every run left its work_orders behind and the
+  // next run died on UNIQUE constraint failed: work_orders.id. The suite passed
+  // exactly once per database, and its nine failures then looked like a
+  // regression in whatever unrelated change happened to be in flight.
+  //
+  // The order matters and is the same discipline job-costing.e2e.ts follows:
+  // job_cost_ledger.job_id is a real FK into work_orders since
+  // migrations/0057_finance_merge.sql, and posting a receipt writes a ledger
+  // line, so the finance children have to go before the CRM parents.
   await resetFinanceDb(request, TENANT);
   await resetFinanceDb(request, OTHER_TENANT);
+  await resetCrmDb(request, TENANT);
+  await resetCrmDb(request, OTHER_TENANT);
 });
 
 /** exec() (test-seed.ts) only confirms ok()/throws — it never hands back

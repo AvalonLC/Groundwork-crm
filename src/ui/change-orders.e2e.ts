@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { resetFinanceDb, exec } from "./test-seed";
+import { resetFinanceDb, resetCrmDb, exec } from "./test-seed";
 
 /**
  * PR D end-to-end coverage for the change-order / budget-version-review /
@@ -19,8 +19,15 @@ const TENANT = "t-e2e-change-orders";
 const OTHER_TENANT = "t-e2e-change-orders-other";
 
 test.beforeEach(async ({ request }) => {
+  // See receipt-posting.e2e.ts for the full reasoning: /test/reset does not
+  // clear work_orders or crews, so a suite that seeds them must also call
+  // resetCrmDb, finance first. This one accumulated 161 stale work orders in a
+  // local database before anyone noticed — it survived only because its ids are
+  // unique per run, so it leaked silently instead of failing.
   await resetFinanceDb(request, TENANT);
   await resetFinanceDb(request, OTHER_TENANT);
+  await resetCrmDb(request, TENANT);
+  await resetCrmDb(request, OTHER_TENANT);
 });
 
 async function querySql<T = Record<string, unknown>>(
