@@ -578,7 +578,19 @@
     // a milestone dueDate of '2026-08-11' rendered as Aug 10 west of Greenwich.
     // Keeps returning '' rather than an em dash for no date — this one sits
     // inline in a timeline row where a dash would read as a real value.
-    const fmtDate = d => (d ? gwDateFormat(d) : '');
+    // gwDateFormat falls back to the raw stored value when it cannot parse, and
+    // this result is interpolated into innerHTML below, so an unparseable
+    // milestone date would be echoed verbatim. Same exposure as _p5FmtDate in
+    // app_premium.js. escapeHtml is defined there and this file loads first, so
+    // it is read off window at call time, the way integrations.js does it.
+    const escHtml = s => (window.escapeHtml ? window.escapeHtml(String(s)) : String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+    const fmtDate = d => {
+      if (!d) return '';
+      const out = gwDateFormat(d);
+      return (typeof gwDateParse === 'function' && gwDateParse(d)) ? out : escHtml(out);
+    };
     if (!milestones.length) {
       return `<div class="fin-sum-card">
         <div class="fin-sum-title">Payment Schedule</div>
