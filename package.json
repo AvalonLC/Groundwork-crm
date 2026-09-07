@@ -10,7 +10,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
     "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production",
-    "test": "vitest run && npm run test:browser-js",
+    "test": "vitest run && npm run test:browser-js && npm run test:sales-process-static",
     "test:watch": "vitest",
     "//test:browser-js": "Plain browser scripts under public/js. Separate from vitest because that suite runs in the Cloudflare workers pool, and workerd is pinned to UTC — it ignores TZ, so the date bugs these cover are invisible there. Chained onto `test` so CI still gates on them.",
     "test:browser-js": "TZ=America/New_York node --test tests/gw-date.test.mjs tests/invoice-dates.test.mjs tests/injection-contexts.test.mjs tests/date-render-escaping.test.mjs tests/invoice-bulk-actions.test.mjs tests/payments-page.test.mjs tests/stripe-charge-columns.test.mjs tests/invoice-route-gates.test.mjs tests/pipeline-totals.test.mjs tests/no-shadow-assets.test.mjs tests/backfill-cli-args.test.mjs tests/e2e-fixture-hygiene.test.mjs tests/test-runner-integrity.test.mjs tests/deploy-workflow-gate.test.mjs tests/mobile-nav-tabs.test.mjs",
@@ -24,7 +24,9 @@
     "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs",
     "test:sales-process-transitions": "vite build && node --test tests/sales-process-transitions.integration.test.mjs",
     "test:sales-process-adoption": "vite build && node --test tests/sales-process-template-adoption.integration.test.mjs",
-    "test:sales-process-ui": "node --test tests/sales-process-admin-ui.test.mjs"
+    "test:sales-process-ui": "node --test tests/sales-process-admin-ui.test.mjs",
+    "//test:sales-process-static": "Source-level guarantees for the sales-process feature: the migration is additive, the shared resolver is rename-invariant, and the runtime never reads platform leads across tenants. Pure text and vm checks, no build and no database, so they are chained onto `test` alongside test:browser-js rather than kept behind their own command like the integration suites above.",
+    "test:sales-process-static": "node --test tests/sales-process-platform.test.mjs tests/sales-process-safety.test.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
