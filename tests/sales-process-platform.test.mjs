@@ -12,6 +12,24 @@ const resolverSource = readFileSync(new URL('../public/js/sales-process.js', imp
 const recordPageSource = readFileSync(new URL('../public/js/record-page.js', import.meta.url), 'utf8');
 const migrationsDirectory = new URL('../migrations/', import.meta.url);
 
+/**
+ * The source text between two anchors, with a LOUD failure when the first
+ * anchor is missing.
+ *
+ * String.indexOf returns -1 for a marker that is gone, and slice(-1) then
+ * yields the last character or an empty string — so every assert.match against
+ * it fails with "did not match ''", naming the pattern instead of the anchor,
+ * and every assert.doesNotMatch PASSES. Half the guarantees in this file are
+ * doesNotMatch, which means a rename could have quietly disarmed them.
+ */
+function region(source, startMarker, endMarker, label) {
+  const start = source.indexOf(startMarker);
+  assert.ok(start >= 0, `anchor "${startMarker}" is gone — ${label} needs repointing, not deleting`);
+  const from = start + startMarker.length;
+  const end = endMarker ? source.indexOf(endMarker, from) : -1;
+  return source.slice(start, end > start ? end : undefined);
+}
+
 function browserResolver(process = null) {
   const context = { window: { _gwSalesProcess: process } };
   vm.runInNewContext(resolverSource, context);
@@ -70,16 +88,27 @@ test('semantic metrics are rename invariant and exclude Needs Restaging from sta
 
 test('reporting and financial consumers use normalized semantics instead of operational labels', () => {
   const frontend = readFileSync(new URL('../public/js/app_premium.js', import.meta.url), 'utf8');
-  const reportStart = frontend.indexOf('function salesReports()');
-  const reportEnd = frontend.indexOf('\nfunction ', reportStart + 20);
-  const report = frontend.slice(reportStart, reportEnd > reportStart ? reportEnd : undefined);
-  assert.match(report, /GWSalesProcess\.isWon/);
-  assert.match(report, /GWSalesProcess\.isProposal/);
-  assert.doesNotMatch(report, /WON_STATUSES|LOST_STATUSES|Proposal \/ Estimate Sent|Presentation & SOW Pitch/);
 
-  const divisionStart = frontend.indexOf('function buildDivisionPipeline()');
-  const divisionEnd = frontend.indexOf('\nfunction ', divisionStart + 20);
-  const division = frontend.slice(divisionStart, divisionEnd > divisionStart ? divisionEnd : undefined);
+  // This used to read function salesReports(). That page was deleted in 90f4ac2
+  // ("Command Center rebuild: single canonical layout, delete report pages"),
+  // and the rep table it contained was migrated into the Command Center's Rep
+  // Leaderboard widget — whose own comment says so. The guarantee did not go
+  // away with the page: whatever ranks reps must still ask GWSalesProcess
+  // whether an opportunity is won, rather than string-matching a stage label a
+  // tenant is free to rename.
+  const leaderboard = region(
+    frontend, 'const _repLeaderboardHtml', '\n  const ',
+    'the rep ranking that replaced the old Sales Performance report',
+  );
+  assert.match(leaderboard, /GWSalesProcess\.isWon/);
+  assert.match(leaderboard, /GWSalesProcess\.isOpen/);
+  assert.match(leaderboard, /GWSalesProcess\.isLost/);
+  assert.doesNotMatch(leaderboard, /WON_STATUSES|LOST_STATUSES|Proposal \/ Estimate Sent|Presentation & SOW Pitch/);
+
+  const division = region(
+    frontend, 'function buildDivisionPipeline()', '\nfunction ',
+    'the division pipeline forecast',
+  );
   assert.match(division, /GWSalesProcess\.forecastProbability/);
   assert.match(division, /GWSalesProcess\.hasOpenEstimate/);
   assert.doesNotMatch(division, /POTS_STAGES|STAGE_WIN_PROB/);
@@ -88,9 +117,10 @@ test('reporting and financial consumers use normalized semantics instead of oper
 test('Builder preview renders lifecycle impact gates and responsive surfaces', () => {
   const frontend = readFileSync(new URL('../public/js/app_premium.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../public/js/premium.css', import.meta.url), 'utf8');
-  const start = frontend.indexOf('window.gwPreviewSalesProcess=');
-  const end = frontend.indexOf('window.gwAdoptGroundworkTemplate=', start);
-  const block = frontend.slice(start, end);
+  const block = region(
+    frontend, 'window.gwPreviewSalesProcess=', 'window.gwAdoptGroundworkTemplate=',
+    'the Builder preview',
+  );
   for (const label of ['Opportunities affected','Value affected','Automatic mappings','Manual mappings','Unknown mappings','Sample transitions','Preview surfaces','Impact changes']) assert.match(block, new RegExp(label));
   assert.match(block, /DB\.salesProcess\.readiness/);
   assert.match(block, /gwPublishSalesProcess/);
@@ -118,9 +148,10 @@ test('StageTracker follows published stage IDs and renamed display order', () =>
 });
 
 test('canonical server resolver is tenant scoped and never reads platform leads', () => {
-  const start = server.indexOf('async function resolveSalesOpportunityStage');
-  const end = server.indexOf("app.get('/api/sales-process/templates'", start);
-  const block = server.slice(start, end);
+  const block = region(
+    server, 'async function resolveSalesOpportunityStage', "app.get('/api/sales-process/templates'",
+    'the canonical server resolver',
+  );
   assert.ok(block.length > 1000);
   assert.doesNotMatch(block, /gw_leads/);
   assert.match(block, /opportunities WHERE id=\? AND company_id=\?/);
@@ -166,9 +197,10 @@ test('every immutable catalog template has a usable stage outcome and transition
 });
 
 test('template adoption remaps outcomes transitions and academy associations', () => {
-  const start = server.indexOf("app.post('/api/sales-process/drafts/from-template'");
-  const end = server.indexOf("app.put('/api/sales-process/drafts/:versionId/stages'", start);
-  const block = server.slice(start, end);
+  const block = region(
+    server, "app.post('/api/sales-process/drafts/from-template'", "app.put('/api/sales-process/drafts/:versionId/stages'",
+    'template adoption',
+  );
   assert.match(block, /stageIdByTemplateId\.get\(outcome\.stage_id\)/);
   assert.match(block, /stageIdByTemplateId\.get\(transition\.from_stage_id\)/);
   assert.match(block, /stageIdByTemplateId\.get\(transition\.to_stage_id\)/);
