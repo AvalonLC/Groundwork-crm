@@ -163,19 +163,34 @@ test('PP-09 payment dates are read as UTC, so an evening payment keeps its own m
   // 2026-09-01 01:30 UTC is Aug 31, 21:30 in New York. Read as local it would
   // land in September and inflate the "This Month" tile by a payment that
   // belongs to August.
-  const rows = _payNormalize([{ id: 'p1', amount_cents: 25000, created_at: '2026-09-01 01:30:00' }]);
-  const august = _payTotals(rows, new Date(2026, 7, 15, 12));
-  const september = _payTotals(rows, new Date(2026, 8, 15, 12));
-  assert.equal(august.monthCents, 25000, 'belongs to August in Eastern');
-  assert.equal(september.monthCents, 0, 'must not also count as September');
+  //
+  // Pinned to Eastern rather than inherited from the ambient TZ. The npm script
+  // sets America/New_York, so this passed there and failed anywhere east of
+  // Greenwich — where 01:30 UTC genuinely IS September and the assertion was
+  // simply wrong about the zone it was in. A date test that only holds in the
+  // zone its runner happens to set is not portable, and reads as a real bug the
+  // first time someone runs the file bare.
+  inZone(EAST_COAST, () => {
+    const rows = _payNormalize([{ id: 'p1', amount_cents: 25000, created_at: '2026-09-01 01:30:00' }]);
+    const august = _payTotals(rows, new Date(2026, 7, 15, 12));
+    const september = _payTotals(rows, new Date(2026, 8, 15, 12));
+    assert.equal(august.monthCents, 25000, 'belongs to August in Eastern');
+    assert.equal(september.monthCents, 0, 'must not also count as September');
+  });
 });
 
 test('PP-10 the date cell renders the local calendar day of a UTC payment', () => {
   // _payWhen is what puts a date on screen. It used to sit below the block
   // these tests evaluate, so it was the one function they could not reach.
-  assert.equal(_payWhen('2026-09-01 01:30:00'), 'Aug 31, 2026', '21:30 Aug 31 in Eastern');
-  assert.equal(_payWhen('2026-08-20 00:58:23'), 'Aug 19, 2026', '20:58 Aug 19 in Eastern');
-  assert.equal(_payWhen('2026-09-01 15:00:00'), 'Sep 1, 2026', 'midday UTC stays put');
+  //
+  // Eastern is pinned here for the same reason as PP-09: these expectations are
+  // statements about what a UTC instant looks like in ONE zone, so that zone
+  // has to be named rather than assumed.
+  inZone(EAST_COAST, () => {
+    assert.equal(_payWhen('2026-09-01 01:30:00'), 'Aug 31, 2026', '21:30 Aug 31 in Eastern');
+    assert.equal(_payWhen('2026-08-20 00:58:23'), 'Aug 19, 2026', '20:58 Aug 19 in Eastern');
+    assert.equal(_payWhen('2026-09-01 15:00:00'), 'Sep 1, 2026', 'midday UTC stays put');
+  });
 });
 
 test('PP-11 a missing or unusable date renders a placeholder, never a wrong day', () => {
