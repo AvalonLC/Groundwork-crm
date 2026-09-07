@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents,
-  chargeIdempotencyKey,
+  chargeIdempotencyKey, cardOnFileDecision, autopayCapCents,
 } from './stripe_customers';
 
 const ACCT = 'acct_connected';
@@ -168,5 +168,83 @@ describe('chargeIdempotencyKey', () => {
   it('SC-23 nulls and junk do not silently collapse two charges into one key', () => {
     expect(KEY({ amountPaidCents: null as any })).toBe(KEY({ amountPaidCents: 0 }));
     expect(KEY({ pmId: '' })).not.toBe(KEY({ pmId: 'pm_saved' }));
+  });
+});
+
+describe('cardOnFileDecision', () => {
+  // A bulk charge has no card dropdown, so the saved card is resolved
+  // server-side. These are the guards the dropdown used to imply.
+  const good = {
+    enabled: 1,
+    stripe_pm_id: 'pm_saved',
+    stripe_account_id: ACCT,
+    max_amount_cents: 50000,
+  };
+  const on = { amountCents: 25000, chargeTarget: ACCT };
+
+  it('SC-24 returns the saved card when every guard passes', () => {
+    expect(cardOnFileDecision(good, on)).toEqual({ ok: true, pmId: 'pm_saved' });
+  });
+
+  it('SC-25 a missing row, or a row with no card, is refused', () => {
+    expect(cardOnFileDecision(null, on).ok).toBe(false);
+    expect(cardOnFileDecision(undefined, on).ok).toBe(false);
+    expect(cardOnFileDecision({ ...good, stripe_pm_id: '' }, on).ok).toBe(false);
+    expect(cardOnFileDecision({ ...good, stripe_pm_id: '   ' }, on).ok).toBe(false);
+  });
+
+  it('SC-26 a card the client never authorised is refused, and says so', () => {
+    // enabled=0 means a card is stored but autopay consent was not given or was
+    // withdrawn. Having the token is not permission to use it.
+    const out = cardOnFileDecision({ ...good, enabled: 0 }, on);
+    expect(out.ok).toBe(false);
+    expect(out.ok === false && out.error).toMatch(/authoris/i);
+  });
+
+  it('SC-27 the per-charge cap the client set is enforced', () => {
+    // 600.00 against a 500.00 ceiling.
+    const out = cardOnFileDecision(good, { ...on, amountCents: 60000 });
+    expect(out.ok).toBe(false);
+    expect(out.ok === false && out.error).toContain('$500.00');
+  });
+
+  it('SC-28 a charge exactly at the cap is allowed', () => {
+    expect(cardOnFileDecision(good, { ...on, amountCents: 50000 }).ok).toBe(true);
+  });
+
+  it('SC-29 a zero cap means no cap, not "nothing may be charged"', () => {
+    // 0 is the column default from migration 0044 and means the client set no
+    // limit. Reading it as a ceiling would refuse every charge.
+    expect(cardOnFileDecision({ ...good, max_amount_cents: 0 }, { ...on, amountCents: 999999 }).ok).toBe(true);
+  });
+
+  it('SC-30 a card on a different Stripe account is refused, not attempted', () => {
+    // Saved before migration 0080, so attached to the platform while charges
+    // now run on the connected account. Stripe would answer "No such payment
+    // method", which in a bulk run reads like a decline and invites a retry.
+    const out = cardOnFileDecision({ ...good, stripe_account_id: '' }, on);
+    expect(out.ok).toBe(false);
+    expect(out.ok === false && out.error).toMatch(/different Stripe account/);
+  });
+
+  it('SC-31 consent is checked before the account, so the message is the real reason', () => {
+    // Both are wrong here. The client not having authorised the card is the
+    // fact someone needs to act on; "re-enter your card" would be misleading.
+    const out = cardOnFileDecision({ ...good, enabled: 0, stripe_account_id: '' }, on);
+    expect(out.ok === false && out.error).toMatch(/authoris/i);
+  });
+});
+
+describe('autopayCapCents', () => {
+  it('SC-32 reads the authoritative cents column, never the legacy float', () => {
+    // The REAL column is deliberately wrong here, so anything reading it fails.
+    expect(autopayCapCents({ max_amount: 999999, max_amount_cents: 50000 })).toBe(50000);
+  });
+
+  it('SC-33 a pre-0058 row falls back to the REAL dollars without producing NaN', () => {
+    expect(autopayCapCents({ max_amount: 500, max_amount_cents: null })).toBe(50000);
+    expect(autopayCapCents({ max_amount: 12.345 })).toBe(1235);
+    expect(autopayCapCents({})).toBe(0);
+    expect(Number.isInteger(autopayCapCents({ max_amount: 0.1 }))).toBe(true);
   });
 });

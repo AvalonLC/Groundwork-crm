@@ -99,3 +99,71 @@ test('SF-03 the fee is read as basis points, never as the legacy REAL percentage
     );
   }
 });
+
+/* ── The card on file, when the caller names no card ─────────────────────────
+ *
+ * A bulk charge has no dropdown to pick a payment method from, so the charge
+ * route resolves the client's own saved card. That path is where the guards the
+ * dropdown used to imply have to be enforced explicitly, and both of the ones
+ * below are the kind that fail silently rather than loudly.
+ */
+
+/** The body of the route that starts at `signature`, up to the next app.<verb>. */
+function routeBody(signature) {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `route ${signature} is no longer in src/index.tsx`);
+  const rest = source.slice(start + signature.length);
+  const end = rest.search(/\napp\.(get|post|put|delete|patch)\(/);
+  return rest.slice(0, end === -1 ? rest.length : end);
+}
+
+test('SF-04 the autopay cap is read in cents, never as the legacy REAL dollars', () => {
+  // max_amount is REAL dollars from migration 0044; max_amount_cents is the
+  // authoritative INTEGER added by 0058 and dual-written since. Comparing a
+  // cents amount against the float — `amount > Math.round(cap * 100)` — puts
+  // float rounding back on the path that decides whether a customer is charged
+  // more than they consented to. The legacy column may still be READ, but only
+  // behind the cents one, for rows written before 0058.
+  lines.forEach((line, i) => {
+    if (!/\bmax_amount\b/.test(line)) return;          // _cents does not match \bmax_amount\b
+    if (/^\s*(\/\/|\*|--)/.test(line.trim())) return;  // prose about the columns
+    if (/SELECT|FROM/.test(line)) return;              // naming it in a column list is fine
+    const preceding = lines.slice(Math.max(0, i - 6), i + 1).join('\n');
+    assert.match(
+      preceding, /max_amount_cents/,
+      `src/index.tsx:${i + 1} reads the legacy REAL max_amount with no ` +
+      `max_amount_cents above it:\n  ${line.trim()}`,
+    );
+  });
+});
+
+test('SF-05 a resolved card goes through cardOnFileDecision, not an inline copy', () => {
+  // The guards on a saved card — the client authorised it, it is within the
+  // per-charge cap they set, and it is attached to the account this charge will
+  // run on — live in one tested function (SC-24..SC-33 in
+  // src/api/stripe_customers.test.ts). Writing them out again in the route is
+  // how the bulk path and the single path drift, and the bulk path is the one
+  // that would then let something through.
+  const charge = routeBody("app.post('/api/invoices/:id/charge'");
+  if (!/client_autopay/.test(charge)) return; // no card-on-file path to guard
+
+  assert.match(
+    charge, /cardOnFileDecision\(/,
+    'the charge route reads client_autopay but does not run it through ' +
+    'cardOnFileDecision — see src/api/stripe_customers.ts',
+  );
+  assert.match(
+    charge, /if \(!decision\.ok\) return/,
+    'the charge route ignores a refusal from cardOnFileDecision',
+  );
+  // The columns the decision reads must be SELECTed, for the same reason SF-01
+  // exists: D1 returns only what was asked for, and a missing column reads as
+  // undefined rather than failing.
+  const select = charge.slice(charge.indexOf('SELECT'), charge.indexOf('FROM client_autopay'));
+  for (const column of ['enabled', 'stripe_pm_id', 'stripe_account_id', 'max_amount_cents']) {
+    assert.match(
+      select, new RegExp(`\\b${column}\\b`),
+      `the client_autopay SELECT omits ${column}, which cardOnFileDecision reads`,
+    );
+  }
+});

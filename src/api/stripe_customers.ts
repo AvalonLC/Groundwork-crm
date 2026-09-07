@@ -155,3 +155,78 @@ export function chargeIdempotencyKey(charge: {
   if (key.length <= IDEMPOTENCY_KEY_MAX) return key;
   return `chg_${shortHash(invoiceId)}_${amount}_${paid}_${shortHash(pmId)}`;
 }
+
+/** A saved-card row from client_autopay, as the charge path reads it. */
+export interface StoredCard {
+  enabled?: number | boolean | null;
+  stripe_pm_id?: string | null;
+  stripe_account_id?: string | null;
+  /** Authoritative INTEGER cents (migration 0058). */
+  max_amount_cents?: number | null;
+  /** Legacy REAL dollars (migration 0044), still dual-written. */
+  max_amount?: number | null;
+}
+
+export type CardOnFileDecision =
+  | { ok: true; pmId: string }
+  | { ok: false; error: string };
+
+/**
+ * The per-charge ceiling the client agreed to, in cents. 0 means no cap.
+ *
+ * max_amount_cents is authoritative since migration 0058; max_amount is the
+ * legacy REAL dollars column, still dual-written and still the only value on
+ * rows written before it. Read in that order — taking the float first puts the
+ * rounding 0058 exists to remove back onto the path that decides whether a
+ * customer is charged more than they consented to.
+ */
+export function autopayCapCents(card: StoredCard): number {
+  if (card?.max_amount_cents !== null && card?.max_amount_cents !== undefined) {
+    return Math.round(Number(card.max_amount_cents) || 0);
+  }
+  return Math.round((Number(card?.max_amount) || 0) * 100);
+}
+
+/**
+ * May this client's saved card be charged this amount, on this account?
+ *
+ * The single-invoice UI picks a card from a dropdown. A bulk run has no
+ * dropdown, so the card is resolved server-side from the client's own autopay
+ * row — the browser gets to ask for "the saved card", never to name a card id.
+ *
+ * Every refusal says which guard stopped it, and that matters more here than it
+ * looks: across a bulk run, a bare "charge failed" makes a consent problem or a
+ * wrong-account card look like a decline, and declines get retried.
+ */
+export function cardOnFileDecision(
+  card: StoredCard | null | undefined,
+  opts: { amountCents: number; chargeTarget: TargetAccount },
+): CardOnFileDecision {
+  const pmId = String(card?.stripe_pm_id || '').trim();
+  if (!card || !pmId) return { ok: false, error: 'No card on file for this client' };
+
+  if (Number(card.enabled ?? 0) !== 1) {
+    return { ok: false, error: 'This client has not authorised charges to their saved card' };
+  }
+
+  const capCents = autopayCapCents(card);
+  if (capCents > 0 && opts.amountCents > capCents) {
+    return {
+      ok: false,
+      error: `Charge exceeds the $${(capCents / 100).toFixed(2)} per-payment limit this client set`,
+    };
+  }
+
+  // A card saved before migration 0080 is attached to the PLATFORM account
+  // while charges now run on the connected one, and Stripe refuses it. Saying
+  // so here beats surfacing "No such payment method" from a call that should
+  // never have been made.
+  if (!paymentMethodUsable(card.stripe_account_id, opts.chargeTarget)) {
+    return {
+      ok: false,
+      error: 'The saved card is attached to a different Stripe account and must be re-entered by the client',
+    };
+  }
+
+  return { ok: true, pmId };
+}

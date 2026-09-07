@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
 import { canInvoice } from './api/invoice-access'
-import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey } from './api/stripe_customers'
+import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey, cardOnFileDecision } from './api/stripe_customers'
 import { decideFailureActions, clientFailureEmail } from './api/dunning'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -9625,9 +9625,12 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
 
   const invoiceId = c.req.param('id')
   const body = await c.req.json() as any
-  const { stripe_pm_id, amount } = body  // amount in cents
+  const { amount } = body  // amount in cents
+  // Not const: when the caller names no card, the one on file is resolved
+  // below and assigned here. The single-invoice UI picks from a dropdown and
+  // still sends one; a bulk run has no dropdown to pick from.
+  let stripe_pm_id: string = String(body.stripe_pm_id || '')
 
-  if (!stripe_pm_id) return c.json({ error: 'Payment method required' }, 400)
   if (!amount || amount < 50) return c.json({ error: 'Minimum charge is $0.50' }, 400)
 
   // Load invoice + company
@@ -9649,6 +9652,24 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
   // stored id from the platform is unusable on a connected account, so this
   // creates a fresh one there rather than failing with "No such customer".
   const chargeTarget = targetAccountFor(company)
+
+  // No card named, so use the one on file. The browser does not get to name a
+  // card id; it only gets to ask for the saved one, and every guard that card
+  // carries — consent, the client's own per-charge cap, and the Stripe account
+  // it is attached to — is enforced in cardOnFileDecision, which says which one
+  // stopped it. Across a bulk run a bare "charge failed" makes a consent
+  // problem look like a decline, and declines get retried.
+  if (!stripe_pm_id) {
+    if (!inv.client_id) return c.json({ error: 'No client on this invoice, so there is no card on file' }, 400)
+    const card: any = await db.prepare(
+      `SELECT enabled, stripe_pm_id, stripe_account_id, max_amount, max_amount_cents
+         FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`
+    ).bind(inv.client_id, companyId).first().catch(() => null)
+    const decision = cardOnFileDecision(card, { amountCents: amount, chargeTarget })
+    if (!decision.ok) return c.json({ error: decision.error }, 400)
+    stripe_pm_id = decision.pmId
+  }
+
   const customerId = inv.client_id
     ? await resolveStripeCustomer(db, stripeKey, companyId, inv.client_id, chargeTarget)
     : null
