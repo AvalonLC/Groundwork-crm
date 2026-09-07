@@ -839,7 +839,25 @@ const _gwWsNameToId = {
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
   Sales:       ['pipeline','lead','clients','estimates','communications'],
-  Financial:   ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments'],
+  // Two entries, because Financial is the only workspace with TWO tab sets and
+  // this list filters whichever one is on screen. The 2026-08-06 consolidation
+  // made _GW_FIN_NAV_TABS the Financial strip, but the older
+  // Overview/Invoices/Payments views are still live and still navigated to from
+  // about fifteen places, including the Command Center — and whenever one of
+  // them is open, _wsTabDefs.Financial is what renders.
+  //
+  // Listing only the Finance OS ids meant the intersection with that older set
+  // was EMPTY, so on a phone, tapping Invoices from the Command Center produced
+  // a tab strip with nothing in it: no error, no console message, just an empty
+  // nav bar and no way back into Financial short of the browser's back button.
+  // tests/mobile-nav-tabs.test.mjs MN-01 pins that a filter never empties a
+  // strip it is applied to.
+  //
+  // Only the three legacy views worth having in the field are added — Deposits
+  // and Statements are localStorage-only (see gwFinancial()'s note) — so the
+  // list stays short, as the comment above asks.
+  Financial:   ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments',
+                'financialHub','invoices','payments'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Marketing:   ['marketingCampaigns'],
   Learning:    ['academy'],
