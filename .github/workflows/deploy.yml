@@ -1,49 +1,184 @@
-name: Deploy to Cloudflare Pages
+# Production deployment — MANUAL ONLY.
+#
+# This workflow used to run on `push: branches: [main]`, which meant every
+# routine merge applied remote D1 migrations and published to
+# groundwork-crm.com. On 2026-09-07 three engineering PRs were merged twenty
+# seconds apart and produced three production deployments in under a minute;
+# nothing was wrong with them, but nobody chose to deploy three times.
+#
+# Merging and deploying are now separate decisions:
+#
+#   ci.yml            runs on every pull request AND on push to main, so a merge
+#                     is still fully verified. It just does not ship.
+#   deploy.yml (here) runs only when a human dispatches it, against a named ref,
+#                     behind protected environments that require approval.
+#
+# Ordering is explicit: verify -> migrate -> deploy. Migrations go first because
+# the Worker that lands next expects the schema to already be there; deploying
+# first would serve code against an older database for the length of the
+# migration run.
+#
+# Rollback and smoke checks: docs/RUNBOOK-deploy.md.
+
+name: Deploy to production
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or branch to deploy (a SHA is safer — a branch can move between approval and run)"
+        required: true
+        default: main
+      run_migrations:
+        description: "Apply remote D1 migrations before deploying"
+        required: true
+        default: "yes"
+        type: choice
+        options: ["yes", "no"]
+      confirm:
+        description: 'Type DEPLOY to confirm this ships to groundwork-crm.com'
+        required: true
+        default: ""
+
+# One production deployment at a time. cancel-in-progress is deliberately FALSE:
+# cancelling a half-finished `d1 migrations apply --remote` is worse than
+# queueing behind it.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build & Deploy
+  # ── 1. Refuse obvious mistakes before anything touches production ──────────
+  preflight:
+    name: Preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      migrations: ${{ steps.resolve.outputs.migrations }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Confirmation phrase
+        if: inputs.confirm != 'DEPLOY'
+        run: |
+          echo "::error::confirm must be exactly DEPLOY. Got: '${{ inputs.confirm }}'"
+          exit 1
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Resolve the exact commit and migration set
+        id: resolve
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          # Recorded so the run itself says what schema it shipped against,
+          # rather than requiring someone to reconstruct it from the ref later.
+          COUNT="$(find migrations -maxdepth 1 -name '*.sql' | wc -l | tr -d ' ')"
+          LATEST="$(find migrations -maxdepth 1 -name '*.sql' | sort | tail -1)"
+          echo "migrations=$COUNT files, latest $(basename "$LATEST")" >> "$GITHUB_OUTPUT"
 
-      - name: Build
-        run: npm run build
+  # ── 2. Re-run the gate on the exact ref being shipped ──────────────────────
+  # ci.yml already gates the PR and the merge, but a dispatch can name any ref,
+  # including one that never went through a PR. This makes "it passed CI" true
+  # of the artifact actually being deployed.
+  verify:
+    name: Verify
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.preflight.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install chromium
+      - run: npm run db:migrate:local
+      - run: npm run e2e
+      - run: npm run build
 
-      - name: Apply CRM D1 migrations
+  # ── 3. Migrations, behind their own approval ───────────────────────────────
+  migrate:
+    name: Apply remote D1 migrations
+    needs: [preflight, verify]
+    if: inputs.run_migrations == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A SECOND protected environment, separate from `production`. Publishing a
+    # Worker is reversible by redeploying the previous build; a migration is
+    # not, so it gets its own reviewer prompt rather than riding along on the
+    # deployment approval.
+    environment: production-database
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.preflight.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+
+      - name: Show what would be applied
         uses: cloudflare/wrangler-action@v3
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: d1 migrations list avalon-sales-hub-production --remote
+
+      - name: Apply
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: d1 migrations apply avalon-sales-hub-production --remote
 
-      - name: Deploy to Cloudflare Pages
+  # ── 4. Publish, behind its own approval ────────────────────────────────────
+  deploy:
+    name: Deploy to Cloudflare Pages
+    needs: [preflight, verify, migrate]
+    # `migrate` is skipped when run_migrations=no, and a skipped dependency
+    # would otherwise skip this job too. always() keeps it reachable, and the
+    # explicit result check keeps a FAILED migration from shipping code that
+    # expects the new schema.
+    if: always() && needs.verify.result == 'success' && needs.migrate.result != 'failure' && needs.migrate.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.preflight.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+
+      - name: Publish
         uses: cloudflare/wrangler-action@v3
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: pages deploy dist --project-name groundwork-crm
 
+      - name: Smoke check
+        run: |
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 --retry 3 --retry-delay 10 https://groundwork-crm.com/)"
+          echo "https://groundwork-crm.com/ -> $CODE"
+          test "$CODE" = "200"
+
+      - name: Record what shipped
+        if: always()
+        run: |
+          {
+            echo "## Production deployment"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ needs.preflight.outputs.sha }}\` |"
+            echo "| requested ref | \`${{ inputs.ref }}\` |"
+            echo "| migrations applied | ${{ inputs.run_migrations }} (${{ needs.preflight.outputs.migrations }}) |"
+            echo "| dispatched by | @${{ github.actor }} |"
+            echo ""
+            echo "Rollback and smoke checks: \`docs/RUNBOOK-deploy.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
