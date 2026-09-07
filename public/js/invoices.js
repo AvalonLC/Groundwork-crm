@@ -1545,8 +1545,22 @@ function _invPicked() {
  * A voided invoice is not collectable, and a settled one has nothing left to
  * take: charging it is not a no-op, it is a second payment.
  */
+/** Statuses that represent an invoice the client has actually been given. */
+const INV_PAYABLE_STATUSES = ['sent', 'viewed', 'partial', 'overdue'];
+
 function _invChargeable(list) {
-  return list.filter(inv => Number(inv.balance_due || 0) > 0 && inv.status !== 'void');
+  return list.filter(inv => {
+    // Cents, not float dollars. The run refuses anything under 50 cents, so
+    // counting with `> 0` let a 25-cent residual into the total the operator was
+    // asked to approve and then failed it mid-run.
+    const cents = Math.round(Number(inv.balance_due_cents ?? (Number(inv.balance_due || 0) * 100)) || 0);
+    // An invoice the client has never been sent must not be charged. `!== 'void'`
+    // admitted `draft` and `written_off`: select-all on an unfiltered list
+    // includes next month's drafts, and the server is no backstop — /charge
+    // never reads inv.status. Every other charge control in this file already
+    // gates on this list (see the detail modal's canPay).
+    return cents >= 50 && INV_PAYABLE_STATUSES.includes(String(inv.status || ''));
+  });
 }
 
 function _invRenderBulkBar() {
@@ -1588,7 +1602,16 @@ function _invRenderBulkBar() {
  * to go and deal with, so every result is kept and shown.
  */
 async function _invBulkRun(label, items, fn) {
-  const overlay = _invCreateOverlay('inv-bulk-overlay');
+  // Deliberately NOT _invCreateOverlay: that wires backdrop-click-to-dismiss,
+  // which is wrong for a run that is charging cards. There is no Close button
+  // until the run finishes, so the dimmed backdrop is the only thing that looks
+  // clickable — and clicking it detached the modal while the loop kept going,
+  // losing the per-invoice ledger this function exists to produce and leaving
+  // the bulk bar live for a second concurrent run over the same selection.
+  document.getElementById('inv-bulk-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'inv-bulk-overlay';
+  overlay.className = 'inv-overlay';
   const rows = () => results.map(r =>
     `<div class="inv-bulk-line inv-bulk-line--${r.ok ? 'ok' : 'bad'}">
        <span class="inv-bulk-tick">${r.ok ? '✓' : '✗'}</span>
@@ -1635,17 +1658,44 @@ async function _invErr(res, fallback) {
 }
 
 window._invBulkSend = async function() {
-  const picked = _invPicked().filter(i => i.status !== 'void');
-  if (!picked.length) return showToast('Nothing selected that can be sent', 'error');
+  // Never re-send something already settled. /send sets status='sent' and
+  // overwrites sent_at unconditionally, so including a paid invoice regressed it
+  // out of the Paid KPI, back into every collections list, and destroyed the
+  // real send date. Drafts are excluded for the opposite reason: issuing a batch
+  // of drafts sight-unseen is not what this button is for.
+  const picked = _invPicked().filter(i => INV_PAYABLE_STATUSES.includes(String(i.status || '')));
+  if (!picked.length) return showToast('Nothing selected is an issued, unpaid invoice', 'error');
   const noEmail = picked.filter(i => !String(i.client_email || '').trim()).length;
-  if (!confirm(`Email ${picked.length} invoice${picked.length === 1 ? '' : 's'} to their clients?`
-    + (noEmail ? `\n\n${noEmail} of them ${noEmail === 1 ? 'has' : 'have'} no email address on file and will be skipped.` : ''))) return;
+
+  // Sending is a MONEY action. POST /:id/send carries the autopay branch, so any
+  // client with a saved card and autopay on is charged their balance off_session
+  // by this button. src/api/invoice-access.ts says so in as many words: "As
+  // privileged as charging, and easy to misread as 'just email'." The dialog
+  // used to say only "Email N invoices to their clients?", which is exactly the
+  // misreading that comment warns about.
+  const autopayTotal = picked.reduce((n, i) => n + Math.round(Number(i.balance_due || 0) * 100), 0);
+  if (!confirm(
+    `Send ${picked.length} invoice${picked.length === 1 ? '' : 's'}?\n\n`
+    + `Any client with autopay switched on will be CHARGED their balance automatically.\n`
+    + `Up to ${_invFmt(autopayTotal / 100)} could be taken from saved cards.\n\n`
+    + (noEmail ? `${noEmail} of them ${noEmail === 1 ? 'has' : 'have'} no email address on file and will be skipped.\n\n` : '')
+    + `This cannot be undone from here — refunds go through Stripe.`
+  )) return;
 
   await _invBulkRun('Sending invoices', picked, async (inv) => {
     if (!String(inv.client_email || '').trim()) return { ok: false, msg: 'no email address on file' };
     const res = await fetch(`/api/invoices/${inv.id}/send`, { method: 'POST', credentials: 'include' });
-    return res.ok ? { ok: true, msg: `sent to ${inv.client_email}` }
-                  : { ok: false, msg: await _invErr(res, 'send failed') };
+    if (!res.ok) return { ok: false, msg: await _invErr(res, 'send failed') };
+    // The 200 body carries the autopay outcome. Reporting a bare "sent" hid
+    // declines and cap refusals behind a green tick, and hid successful charges
+    // entirely, so a run could not be reconciled against Stripe.
+    let body = null;
+    try { body = await res.json(); } catch (_) { /* older shape, treat as send-only */ }
+    const ap = body && body.autopay;
+    if (ap && ap.attempted && ap.paid) return { ok: true, msg: `sent, and card charged` };
+    if (ap && ap.attempted && !ap.paid) return { ok: false, msg: `sent, but the charge failed: ${ap.reason || 'declined'}` };
+    if (ap && !ap.attempted && ap.reason) return { ok: true, msg: `sent (not charged: ${ap.reason})` };
+    return { ok: true, msg: `sent to ${inv.client_email}` };
   });
 };
 

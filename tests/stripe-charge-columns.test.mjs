@@ -117,24 +117,31 @@ function routeBody(signature) {
   return rest.slice(0, end === -1 ? rest.length : end);
 }
 
-test('SF-04 the autopay cap is read in cents, never as the legacy REAL dollars', () => {
-  // max_amount is REAL dollars from migration 0044; max_amount_cents is the
-  // authoritative INTEGER added by 0058 and dual-written since. Comparing a
-  // cents amount against the float — `amount > Math.round(cap * 100)` — puts
-  // float rounding back on the path that decides whether a customer is charged
-  // more than they consented to. The legacy column may still be READ, but only
-  // behind the cents one, for rows written before 0058.
-  lines.forEach((line, i) => {
-    if (!/\bmax_amount\b/.test(line)) return;          // _cents does not match \bmax_amount\b
-    if (/^\s*(\/\/|\*|--)/.test(line.trim())) return;  // prose about the columns
-    if (/SELECT|FROM/.test(line)) return;              // naming it in a column list is fine
-    const preceding = lines.slice(Math.max(0, i - 6), i + 1).join('\n');
-    assert.match(
-      preceding, /max_amount_cents/,
-      `src/index.tsx:${i + 1} reads the legacy REAL max_amount with no ` +
-      `max_amount_cents above it:\n  ${line.trim()}`,
+test('SF-04 one definition of the client autopay cap, shared by both charge paths', () => {
+  // The previous version of this test scanned src/index.tsx line by line for
+  // `max_amount` and skipped any line matching SELECT|FROM. Both of the only two
+  // matching lines were skipped — one by that guard, one by the comment guard —
+  // so it executed ZERO assertions and was green because it never ran. It read
+  // as coverage for a rule nothing checked.
+  //
+  // The rule that actually matters now: the cap is computed in exactly one
+  // place. autopayCapCents prefers max_amount_cents (authoritative since 0058)
+  // and falls back to the legacy REAL dollars, so neither caller can drift onto
+  // the float and reintroduce the rounding 0058 removed.
+  const helper = readFileSync(new URL('../src/api/stripe_customers.ts', import.meta.url), 'utf8');
+  assert.match(helper, /export function autopayCapCents/, 'the shared cap helper is gone');
+
+  for (const route of [
+    "app.post('/api/invoices/:id/send'",
+    "app.post('/api/invoices/:id/charge'",
+  ]) {
+    const body = routeBody(route);
+    if (!/client_autopay|autopayCapCents|cardOnFileDecision/.test(body)) continue;
+    assert.doesNotMatch(
+      body, /Number\(\s*ap\??\.?\??\.max_amount_cents/,
+      `${route} computes the autopay cap inline instead of calling autopayCapCents`,
     );
-  });
+  }
 });
 
 test('SF-05 a resolved card goes through cardOnFileDecision, not an inline copy', () => {
@@ -159,11 +166,58 @@ test('SF-05 a resolved card goes through cardOnFileDecision, not an inline copy'
   // The columns the decision reads must be SELECTed, for the same reason SF-01
   // exists: D1 returns only what was asked for, and a missing column reads as
   // undefined rather than failing.
-  const select = charge.slice(charge.indexOf('SELECT'), charge.indexOf('FROM client_autopay'));
-  for (const column of ['enabled', 'stripe_pm_id', 'stripe_account_id', 'max_amount_cents']) {
+  // lastIndexOf, not indexOf: starting at the FIRST SELECT in the route body
+  // spanned the invoices and companies SELECTs plus the `if (!stripe_pm_id)`
+  // line, so dropping stripe_pm_id or stripe_account_id from the client_autopay
+  // column list still matched elsewhere and went uncaught — the two whose
+  // absence matters most, since an undefined stripe_account_id makes
+  // paymentMethodUsable compare '' against the target and wave the card through.
+  const fromAt = charge.indexOf('FROM client_autopay');
+  const select = charge.slice(charge.lastIndexOf('SELECT', fromAt), fromAt);
+  for (const column of ['enabled', 'stripe_pm_id', 'stripe_account_id', 'max_amount_cents', 'max_amount']) {
     assert.match(
       select, new RegExp(`\\b${column}\\b`),
       `the client_autopay SELECT omits ${column}, which cardOnFileDecision reads`,
     );
   }
+});
+
+test('SF-06 a charge is bounded by what the invoice still owes', () => {
+  // This route was the only money path in the file that trusted a client-supplied
+  // amount. /send's autopay branch derives owedCents itself and the portal pay
+  // route reads its amount from the database (RG-05); here `amount` came off the
+  // request body with only a $0.50 floor.
+  //
+  // A bulk run makes that reachable without anyone doing anything wrong: the
+  // browser posts a balance from a list it fetched earlier, and if the client
+  // pays through the portal in between, the card is charged the FULL balance on
+  // top of what was already collected. The write-back then clamps balance to 0,
+  // so the overcharge exists only in Stripe.
+  const charge = routeBody("app.post('/api/invoices/:id/charge'");
+  assert.match(
+    charge, /const owedNowCents = Math\.max\(0, Number\(inv\.total_cents \|\| 0\) - Number\(inv\.amount_paid_cents \|\| 0\)\)/,
+    'the charge route no longer recomputes what is owed from the stored row',
+  );
+  assert.match(charge, /if \(amount > owedNowCents\)/, 'the charge amount is unbounded again');
+  // Recomputed from the row, never from the request body.
+  const bound = charge.slice(charge.indexOf('owedNowCents'));
+  assert.doesNotMatch(
+    bound.slice(0, bound.indexOf('cardOnFileDecision')),
+    /body\.(amount|balance)/,
+    'the bound is taken from the request instead of the database',
+  );
+});
+
+test('SF-07 deleting an invoice reports whether anything was deleted', () => {
+  // The statement result used to be discarded and {ok:true} returned
+  // unconditionally, so deleting a sent or paid invoice reported success and did
+  // nothing — a bulk run printed a column of green ticks for rows that then
+  // reappeared on the next refresh. Eight other routes in this file already
+  // check meta.changes.
+  const del = routeBody("app.delete('/api/invoices/:id'");
+  assert.match(del, /meta\.changes/, 'the DELETE result is discarded again');
+  assert.doesNotMatch(
+    del, /\.run\(\)\s*\n\s*return c\.json\(\{ ok: true \}\)/,
+    'the DELETE returns ok:true without checking what happened',
+  );
 });
