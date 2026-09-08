@@ -36,7 +36,15 @@ const { gwDateParse, gwDateISO, gwDateAddDays, gwDateFormat, gwDateWeekday, gwSa
 function inZone(zone, fn) {
   const previous = process.env.TZ;
   process.env.TZ = zone;
-  try { fn(); } finally { process.env.TZ = previous; }
+  try {
+    fn();
+  } finally {
+    // `process.env.TZ = undefined` stores the STRING "undefined", which resolves
+    // to UTC — so on a machine with TZ unset, the first inZone call silently
+    // pinned the whole process to UTC for every assertion after it. Deleting the
+    // key restores the real ambient zone.
+    if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
 }
 
 const EAST_COAST = 'America/New_York'; // UTC-4/-5 — where Avalon actually is

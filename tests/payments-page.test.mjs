@@ -51,12 +51,34 @@ const { _payNormalize, _payTotals, _payAmountCents, _payWhen } = new Function(
   `${helpers}\nreturn { _payNormalize, _payTotals, _payAmountCents, _payWhen };`,
 )(gwDateParse);
 
+/**
+ * The same block evaluated with NO gwDateParse in scope — the page as it
+ * behaves if /js/gw_date.js 404s on a partial deploy.
+ *
+ * The normal harness above injects gwDateParse as a `new Function` PARAMETER,
+ * which means the identifier is always a bound local and the production
+ * `typeof gwDateParse !== 'function'` branch can never be reached. That branch
+ * decides what a money tile prints, so it needs a harness that can actually
+ * enter it.
+ */
+const withoutParser = new Function(
+  `${helpers}\nreturn { _payTotals, _payWhen };`,
+)();
+
 const EAST_COAST = 'America/New_York';
 
 function inZone(zone, fn) {
   const previous = process.env.TZ;
   process.env.TZ = zone;
-  try { fn(); } finally { process.env.TZ = previous; }
+  try {
+    fn();
+  } finally {
+    // `process.env.TZ = undefined` stores the STRING "undefined", which resolves
+    // to UTC — so on a machine with TZ unset, the first inZone call silently
+    // pinned the whole process to UTC for every assertion after it. Deleting the
+    // key restores the real ambient zone.
+    if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
 }
 
 test('PP-01 the amount comes from amount_cents, never the legacy float', () => {
@@ -164,4 +186,49 @@ test('PP-11 a missing or unusable date renders a placeholder, never a wrong day'
   // 2025 in Eastern — a date the row never had, in the wrong year.
   assert.equal(_payWhen('2026'), '—');
   assert.equal(_payWhen('not a date'), '—');
+});
+
+test('PP-12 with no date parser the month tile reports nothing, not zero', () => {
+  // "This Month $0.00" beside a correct lifetime total reads as a month with no
+  // collections. It is a fabricated figure: the page cannot tell which month
+  // anything belongs to, so it must say so. null renders as '—' in _payRender.
+  const rows = _payNormalize([
+    { id: 'p1', amount_cents: 25000, created_at: '2026-09-05 12:00:00' },
+    { id: 'p2', amount_cents: 10000, created_at: '2026-09-06 12:00:00' },
+  ]);
+  const totals = withoutParser._payTotals(rows, new Date(2026, 8, 7, 12));
+  assert.equal(totals.count, 2, 'the rows are still counted');
+  assert.equal(totals.totalCents, 35000, 'the lifetime total is still correct');
+  assert.equal(totals.monthCents, null, 'the month must be unavailable, never 0');
+});
+
+test('PP-13 with no date parser every date cell is a placeholder', () => {
+  assert.equal(withoutParser._payWhen('2026-09-05 12:00:00'), '—');
+});
+
+test('PP-14 a single unparseable row does not blank the whole month', () => {
+  // The distinction PP-12 rests on: no parser means "cannot tell" (null); one
+  // bad row is a data problem and the month is still real for everything else.
+  inZone(EAST_COAST, () => {
+    const rows = _payNormalize([
+      { id: 'p1', amount_cents: 25000, created_at: '2026-09-05 12:00:00' },
+      { id: 'p2', amount_cents: 10000, created_at: 'not a date at all' },
+    ]);
+    const totals = _payTotals(rows, new Date(2026, 8, 7, 12));
+    assert.equal(totals.monthCents, 25000);
+  });
+});
+
+test('PP-15 inZone restores an unset TZ instead of storing the string "undefined"', () => {
+  // `process.env.TZ = undefined` stores "undefined", which resolves to UTC — so
+  // the first inZone call used to pin the process to UTC for everything after
+  // it, on any machine where TZ is not exported.
+  const previous = process.env.TZ;
+  delete process.env.TZ;
+  try {
+    inZone(EAST_COAST, () => {});
+    assert.equal('TZ' in process.env, false, 'TZ must be unset again, not "undefined"');
+  } finally {
+    if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
 });

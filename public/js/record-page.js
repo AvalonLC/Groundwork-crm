@@ -578,7 +578,26 @@
     // a milestone dueDate of '2026-08-11' rendered as Aug 10 west of Greenwich.
     // Keeps returning '' rather than an em dash for no date — this one sits
     // inline in a timeline row where a dash would read as a real value.
-    const fmtDate = d => (d ? gwDateFormat(d) : '');
+    // gwDateFormat falls back to the raw stored value when it cannot parse, and
+    // this result is interpolated into innerHTML below. Detected by comparing
+    // against the input rather than re-parsing: gwDateFormat has two raw
+    // returns (parse failure, and the catch around toLocaleDateString) and
+    // both produce String(value) exactly.
+    //
+    // Escaped with this file's own `esc` (line 35), not a new helper and not
+    // window.escapeHtml from app_premium.js — that global is declared by three
+    // different scripts which disagree on the apostrophe entity, so which one
+    // wins is decided by <script> order.
+    //
+    // gwDateFormat is guarded, not gwDateParse: it is the one actually called,
+    // and this IIFE is strict-mode, so a missing gw_date.js throws here rather
+    // than falling through.
+    const fmtDate = d => {
+      if (!d) return '';
+      if (typeof gwDateFormat !== 'function') return esc(String(d));
+      const out = gwDateFormat(d);
+      return out === String(d) ? esc(out) : out;
+    };
     if (!milestones.length) {
       return `<div class="fin-sum-card">
         <div class="fin-sum-title">Payment Schedule</div>

@@ -16263,7 +16263,11 @@ async function superAdmin() {
   // Same UTC-midnight defect as _p5FmtDate had. This one also drops a hardcoded
   // 'en-US' and now follows the browser locale, like every other date in the app
   // — a deliberate change, and the reason it is called out rather than silent.
-  const dateStr = d => d ? gwDateFormat(d, {month:'short',day:'numeric',year:'numeric'}) : '—';
+  // Escaped for the same reason as _p5FmtDate: gwDateFormat echoes an
+  // unparseable value verbatim and this is interpolated into innerHTML at
+  // :16285. Every other direct gwDateFormat call site already wraps in
+  // escapeHtml; this was the last one that did not.
+  const dateStr = d => d ? escapeHtml(gwDateFormat(d, {month:'short',day:'numeric',year:'numeric'})) : '—';
   const planBadge = p => {
     const colors = { trial:'#8B6914', starter:'#1A4740', pro:'#4D8A86', enterprise:'#2D7A55' };
     const c = colors[p] || '#6F7E6A';
@@ -17117,9 +17121,38 @@ function _p5Money(v){
 // date field sitting right beside it. Eight scheduling screens render dates
 // through this one function, so they are all fixed by delegating to gwDateFormat.
 function _p5FmtDate(d){
-  return (typeof gwDateFormat === 'function')
-    ? gwDateFormat(d)
-    : (d ? String(d) : '—'); // gw_date.js not loaded yet — show the raw value, never a wrong day
+  // gwDateFormat falls back to the RAW STORED VALUE for anything it cannot
+  // parse — "a malformed date should show as itself, not blank out the row it
+  // is in". 40 call sites interpolate the result into innerHTML, and 38 of them
+  // do not escape. `clients.since` is a free-text input (app_premium.js:5462,
+  // placeholder "Jan 2025"), stored as TEXT by migrations/0019, so that fallback
+  // is attacker-controlled.
+  //
+  // The raw path is detected by comparing against the input, NOT by re-parsing.
+  // gwDateFormat has TWO raw returns — the parse failure AND the catch around
+  // toLocaleDateString — and an earlier version of this asked gwDateParse a
+  // second time, which only saw the first: on the catch path `parsed` was
+  // truthy and the raw value went out unescaped, reopening the hole this exists
+  // to close. `out === String(d)` is true for both, and parses once.
+  if (typeof gwDateFormat !== 'function') return d ? escapeHtml(String(d)) : '—';
+  const out = gwDateFormat(d);
+  return out === String(d) ? escapeHtml(out) : out;
+}
+
+/**
+ * The same date, NOT escaped — for callers that escape their own output.
+ *
+ * _pqRow and _listRow both run escapeHtml over the `sub` argument they are
+ * handed. Feeding them the escaped form double-escapes, and it does so on
+ * exactly the values that carry special characters: an unparseable date like
+ * "Q3 '25" reached the mobile Financial Hub as the literal text "Q3 &#039;25".
+ * The original comment here claimed escaping only the fallback AVOIDED that.
+ * It was backwards — the fallback is the only branch that ever reaches those
+ * two with anything to escape.
+ */
+function _p5FmtDateText(d){
+  if (typeof gwDateFormat !== 'function') return d ? String(d) : '—';
+  return gwDateFormat(d);
 }
 function _p5Initials(name){
   return (name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -17892,7 +17925,7 @@ function financialHub(){
       const overdue = !!(o.nextFollowUp && _todayISO && o.nextFollowUp < _todayISO);
       return _pqRow(overdue ? 'urgent' : 'warn',
         `${o.client||'Unnamed Lead'} — ${o.serviceLine||o.project||'—'}`,
-        o.nextFollowUp ? `Follow-up due ${_p5FmtDate(o.nextFollowUp)}${overdue?' (overdue)':''}` : 'No follow-up set',
+        o.nextFollowUp ? `Follow-up due ${_p5FmtDateText(o.nextFollowUp)}${overdue?' (overdue)':''}` : 'No follow-up set',
         _p5Money(o.jobValue), overdue ? 'Overdue' : 'Due Soon', `show('pipeline','${o.id}')`);
     }).join('') : `<div class="gwm-pq-empty">No outstanding items</div>`;
 
@@ -17955,7 +17988,7 @@ function financialHub(){
       <div class="gwm-section-label">Recent Closed Deals <button class="gwm-section-link" onclick="show('pipeline')">See all</button></div>
       <div class="gwm-list-card">
         ${recentSold.length ? recentSold.map(o=>_listRow(
-          o.client||'—', `${o.serviceLine||o.project||'—'} · Closed ${_p5FmtDate(o.closedDate||o.createdAt)}`,
+          o.client||'—', `${o.serviceLine||o.project||'—'} · Closed ${_p5FmtDateText(o.closedDate||o.createdAt)}`,
           _p5Money(o.jobValue), 'var(--gw-pine-600)', `show('pipeline','${o.id}')`
         )).join('') : `<div class="gwm-pq-empty">No closed deals yet</div>`}
       </div>
@@ -24203,10 +24236,16 @@ function playbooks(tab) {
 // one place and the two copies can no longer drift apart.
 function _payDate(d) {
   // gw_date.js is a separate <script>. If it has not run yet, no date is
-  // better than a wrong one — every caller already renders a placeholder.
+  // better than a wrong one — _payWhen renders '—', and _payTotals reports the
+  // month as unavailable rather than as zero. (An earlier version of this
+  // comment claimed "every caller already renders a placeholder"; that was
+  // false for _payTotals, which counted the row into the total while silently
+  // dropping it from the month.)
   if (typeof gwDateParse !== 'function') return null;
   return gwDateParse(d);
 }
+/** Can we work out which month a payment belongs to at all? */
+function _payCanDate() { return typeof gwDateParse === 'function'; }
 // Renders the date cell for every payment row. This lived below the block the
 // tests evaluate, so the one function that puts a date on screen was the one
 // function they could not see; it sits with _payDate now.
@@ -24241,6 +24280,11 @@ function _payNormalize(rows, clientsById) {
 function _payTotals(list, now) {
   const ref = (now instanceof Date && Number.isFinite(now.getTime())) ? now : new Date();
   const refMonth = ref.getFullYear() + '-' + String(ref.getMonth() + 1).padStart(2, '0');
+  // null, not 0, when there is no parser: "This Month $0.00" beside a correct
+  // lifetime total reads as a month with no collections, which is a fabricated
+  // money figure. '—' says we cannot tell. A single unparseable ROW still just
+  // drops out of the month — that is a data problem, not a broken page.
+  const canDate = _payCanDate();
   let totalCents = 0, monthCents = 0, count = 0;
   (Array.isArray(list) ? list : []).forEach(p => {
     // localStorage rows are shown, but they are not the company record and
@@ -24254,7 +24298,7 @@ function _payTotals(list, now) {
     const ym = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0');
     if (ym === refMonth) monthCents += cents;
   });
-  return { count, totalCents, monthCents };
+  return { count, totalCents, monthCents: canDate ? monthCents : null };
 }
 /* ── end Payments helpers ────────────────────────────────────────────────── */
 
@@ -24367,7 +24411,7 @@ function _payRender(opts) {
       </div>
       <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
-        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${_payMoneyCents(totals.monthCents)}</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${totals.monthCents === null ? '—' : _payMoneyCents(totals.monthCents)}</div>
       </div>
       <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Transactions</div>
