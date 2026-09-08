@@ -29,7 +29,17 @@ function _invDate(d) {
     const t = new Date(_invIso(d));
     // toLocaleDateString does not throw on an Invalid Date, it returns the
     // literal string "Invalid Date" — which is what the column was showing.
-    if (!Number.isFinite(t.getTime())) return String(d);
+    // The raw stored value is echoed when it will not parse, and all eight
+    // interpolation sites for this function put the result straight into
+    // innerHTML with no escaping — the same shape as _p5FmtDate in
+    // app_premium.js. due_date is bound from the request body unvalidated, so
+    // the fallback is attacker-controlled.
+    //
+    // Escaped here rather than at the eight call sites: a formatted date is
+    // Intl output with nothing to escape, so this is a no-op on the normal
+    // path, and none of the eight escape their own output (verified: zero are
+    // wrapped in _invEsc), so there is no double-escape to create.
+    if (!Number.isFinite(t.getTime())) return _invEsc(String(d));
     return t.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
   }
   catch(e) { return d; }
@@ -524,7 +534,7 @@ function _invPaymentHistory(inv) {
           <span class="inv-pay-hist-icon">${gwIcon('status-accepted',12,'#2D7A55')}</span>
           <div>
             <div class="inv-pay-hist-amt">${_invFmt(p.amount)}</div>
-            <div class="inv-pay-hist-meta">${_invDate(p.date||p.paid_at)} · ${p.method||'Manual'} ${p.note ? '· '+_invEsc(p.note) : ''}</div>
+            <div class="inv-pay-hist-meta">${_invDate(p.date||p.paid_at)} · ${_invEsc(p.method||'Manual')} ${p.note ? '· '+_invEsc(p.note) : ''}</div>
           </div>
         </div>
         <div class="inv-pay-hist-right">${_invFmt(p.amount)}</div>
