@@ -12,6 +12,22 @@ deployments and three `d1 migrations apply --remote` runs in under a minute.
 Nothing was wrong with the changes; nobody chose to deploy three times. A
 routine merge should not be able to ship.
 
+## One-time setup — REQUIRED, and not yet done
+
+The two protected environments do not exist. A workflow that references a
+missing environment causes GitHub to create it **with no protection rules**, so
+until this is done the approvals are decorative and a dispatch runs straight
+through to production. `preflight` now refuses to start unless both exist with
+required reviewers, so this is a hard prerequisite, not advice.
+
+**Settings → Environments → New environment**, twice:
+
+1. Name it `production` → **Required reviewers** → add yourself → Save.
+2. Name it `production-database` → **Required reviewers** → add yourself → Save.
+
+Verify: `gh api repos/AvalonLC/Groundwork-crm/environments --jq '.environments[].name'`
+should list both.
+
 ## Deploying
 
 Actions → **Deploy to production** → Run workflow.
@@ -19,13 +35,14 @@ Actions → **Deploy to production** → Run workflow.
 | input | notes |
 |---|---|
 | `ref` | Prefer a **commit SHA**. A branch name can move between approving the run and the run reaching the deploy job. |
-| `run_migrations` | `no` when the release contains no files under `migrations/`. Check with `git diff --name-only <last-deployed-sha> <ref> -- migrations/`. |
 | `confirm` | Must be exactly `DEPLOY`. |
+
+Migrations always run. `d1 migrations apply` is a no-op that exits 0 when
+nothing is pending, so there is no flag to get wrong.
 
 The run then stops twice for approval:
 
-1. **`production-database`** — before `d1 migrations apply --remote`. Skipped
-   entirely when `run_migrations: no`.
+1. **`production-database`** — before `d1 migrations apply --remote`.
 2. **`production`** — before `pages deploy`.
 
 Order is `verify → migrate → deploy`. Migrations go first because the Worker
@@ -63,9 +80,10 @@ Do these after the deploy job goes green. **None of them move money.**
 Application code, no schema change:
 
 ```
-# Re-dispatch Deploy to production with:
-#   ref            = the previous good SHA
-#   run_migrations = no
+# Re-dispatch Deploy to production with ref = the previous good SHA.
+# Cancel any run parked on an approval FIRST — a waiting run holds the
+# production-deploy concurrency group, so a rollback queues behind it, and a
+# second rollback dispatch silently cancels the first pending one.
 ```
 
 That republishes the earlier build. It is the fastest path and needs no git
@@ -82,11 +100,16 @@ git push origin main            # runs ci.yml only — does NOT deploy
 **Migrations do not roll back.** D1 has no down-migrations here, and
 `d1 migrations apply` is forward-only. If a migration is the problem, the fix is
 a new forward migration that corrects it, written and reviewed like any other.
-Re-deploying older application code against a newer schema is usually safe —
-the migrations in this repo are additive by policy, and `ci.yml` enforces that
-for `migrations/finance/` — but confirm the specific change before relying on it.
+Re-deploying older application code against a newer schema is **not** checked by
+anything. Migrations here are additive by convention only: `ci.yml`'s guard over
+`migrations/finance/` rejects REAL/FLOAT/DOUBLE money columns and says nothing
+about additivity — and that directory is a historical record which is never
+applied, so it does not even cover the 87 files that ship. Read the specific
+migration before rolling code back past it.
 
 ## What is deliberately not automated
 
-Nothing here reads or writes `DB_PROD` outside the migration step, and no step
-queries Stripe. Those stay manual, per `CLAUDE.md`.
+Two steps touch the production database, both inside the `migrate` job and both
+behind the `production-database` approval: `d1 migrations list --remote` and
+`d1 migrations apply --remote`. No step queries Stripe, reads tenant data, or
+runs a backfill. Those stay manual, per `CLAUDE.md`.

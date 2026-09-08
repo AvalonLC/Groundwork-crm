@@ -19,7 +19,11 @@ Groundwork CRM — a multi-tenant SaaS CRM for field-service companies
 ## Hard rules
 
 1. **NO emojis** — not in code, UI strings, commit messages, or replies to the user.
-2. **NEVER modify `.github/workflows/deploy.yml`.**
+2. **Do not change what `.github/workflows/deploy.yml` DEPLOYS or when.**
+   It no longer runs on push. Production is reached only by dispatching
+   "Deploy to production" by hand, behind two protected environments — see
+   `docs/RUNBOOK-deploy.md`. Hardening that gate is fine; re-coupling it to a
+   merge, or adding another path to production, is not.
 3. Frontend JS lives in `public/js/`. `public/static/` is a legacy mirror —
    never edit `public/static/` directly; it is synced by copy (see workflow below).
 4. Production HTML loads scripts from the `/js/` path. When verifying production,
@@ -48,7 +52,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000   # expect 200
 # 4. Syntax check any edited JS
 node --check public/js/app_premium.js
 
-# 5. Commit and push — push to main IS the production deploy
+# 5. Commit and push. This runs CI. It does NOT deploy — see RUNBOOK-deploy.md
 git add -A && git commit -m "message" && git push origin main
 
 # 6. GitHub Actions builds and deploys to Cloudflare Pages (~100 s).
@@ -65,7 +69,7 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
 - Local dev uses `--local` (SQLite under `.wrangler/state/`), no credentials needed.
 - Schema changes: add a new numbered file in `migrations/` (never edit old ones).
   - Local:  `npx wrangler d1 migrations apply avalon-sales-hub-production --local`
-  - Production: applied AUTOMATICALLY by the deploy workflow on push to main
+  - Production: applied ONLY by a manual "Deploy to production" dispatch,
     (the "Apply D1 migrations" step runs before the Pages deploy). No manual
     step needed — just make sure new migrations are additive and safe to run
     against live data (use IF NOT EXISTS, never drop or rewrite existing
@@ -77,8 +81,9 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
 
 - GitHub repo: `AvalonLC/Groundwork-crm`, branch `main`.
 - `.github/workflows/deploy.yml` deploys `dist` to Cloudflare Pages project
-  `groundwork-crm` on every push to main, using repo secrets `CF_API_TOKEN`
-  and `CF_ACCOUNT_ID`. Do not add other deploy paths.
+  `groundwork-crm` on a MANUAL dispatch only, using repo secrets
+  `CF_API_TOKEN` and `CF_ACCOUNT_ID`. Do not add other deploy paths.
+  Procedure, rollback and smoke checks: `docs/RUNBOOK-deploy.md`.
 
 ## Groundwork Finance OS (module)
 

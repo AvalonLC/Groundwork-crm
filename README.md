@@ -56,7 +56,8 @@ This runs:
 
 ## Automatic deploys via GitHub Actions
 
-Every push to `main` automatically builds and deploys to `groundwork-crm.com`.
+Pushing to `main` runs CI. It does **not** deploy. Production is reached only
+by dispatching the workflow by hand — see `docs/RUNBOOK-deploy.md`.
 
 **One-time setup** (already done — but needed if you fork or recreate):
 
@@ -68,9 +69,11 @@ Every push to `main` automatically builds and deploys to `groundwork-crm.com`.
 | `CF_API_TOKEN`  | Your Cloudflare API token (Pages:Edit + D1:Edit + Account Settings:Read) |
 | `CF_ACCOUNT_ID` | `9cc88e60ca3b4d57d9f6461fc8100577` |
 
-3. Push anything to `main` — the workflow in `.github/workflows/deploy.yml` fires automatically.
+3. Push to `main` — CI runs. To ship, dispatch the deploy workflow (below).
 
-You can also trigger a deploy manually: **GitHub → Actions → Deploy to Cloudflare Pages → Run workflow**.
+To deploy: **GitHub → Actions → Deploy to production → Run workflow**, then
+supply the ref and type `DEPLOY` to confirm. Two approvals follow — one for the
+database, one for the publish. Full procedure: `docs/RUNBOOK-deploy.md`.
 
 ---
 
@@ -96,7 +99,7 @@ groundwork-crm/
 │   └── bump-version.js    # Auto-increments ?v= cache-bust version on build
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml     # GitHub Actions: push to main → auto-deploy
+│       └── deploy.yml     # GitHub Actions: MANUAL dispatch only
 ├── wrangler.jsonc         # Cloudflare config (project name, D1 binding)
 ├── package.json           # npm scripts
 └── vite.config.ts         # Vite build config
