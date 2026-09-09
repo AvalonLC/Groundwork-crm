@@ -1,49 +1,261 @@
-name: Deploy to Cloudflare Pages
+# Production deployment — MANUAL ONLY.
+#
+# This workflow used to run on `push: branches: [main]`, which meant every
+# routine merge applied remote D1 migrations and published to
+# groundwork-crm.com. On 2026-09-07 three engineering PRs were merged twenty
+# seconds apart and produced three production deployments in under a minute;
+# nothing was wrong with them, but nobody chose to deploy three times.
+#
+# Merging and deploying are now separate decisions:
+#
+#   ci.yml            runs on every pull request AND on push to main, so a merge
+#                     is still fully verified. It just does not ship.
+#   deploy.yml (here) runs only when a human dispatches it, against a named ref,
+#                     behind protected environments that require approval.
+#
+# Ordering is explicit: verify -> migrate -> deploy. Migrations go first because
+# the Worker that lands next expects the schema to already be there; deploying
+# first would serve code against an older database for the length of the
+# migration run.
+#
+# Rollback and smoke checks: docs/RUNBOOK-deploy.md.
+
+name: Deploy to production
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or branch to deploy (a SHA is safer — a branch can move between approval and run)"
+        required: true
+        default: main
+      confirm:
+        description: 'Type DEPLOY to confirm this ships to groundwork-crm.com'
+        required: true
+        default: ""
+
+# One production deployment at a time. cancel-in-progress is deliberately FALSE:
+# cancelling a half-finished `d1 migrations apply --remote` is worse than
+# queueing behind it.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build & Deploy
+  # ── 1. Refuse obvious mistakes before anything touches production ──────────
+  preflight:
+    name: Preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      migrations: ${{ steps.resolve.outputs.migrations }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Apply CRM D1 migrations
-        uses: cloudflare/wrangler-action@v3
+      # The value is passed through env, never interpolated into the script.
+      # Interpolating it let the input disable its own gate: confirm =
+      # `x"; exit 0; #` closed the echo's quote, ran `exit 0`, and the `exit 1`
+      # below was never reached — so the run proceeded without anyone typing
+      # DEPLOY, and any payload also executed as bash on the runner.
+      #
+      # Compared in the shell, not in an Actions expression: GitHub's `==`/`!=`
+      # ignore case, so `if: inputs.confirm != 'DEPLOY'` accepted `deploy` and
+      # `Deploy` while three places promised "exactly DEPLOY".
+      - name: Confirmation phrase
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "DEPLOY" ]; then
+            echo "::error::confirm must be exactly DEPLOY (case-sensitive)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      # An environment that does not exist is auto-created by GitHub with NO
+      # protection rules, so a missing one fails OPEN and both "approvals"
+      # become decorative while this file, the runbook and the tests all assert
+      # otherwise. Verified real: at the time this was written `gh api
+      # repos/:owner/:repo/environments` returned total_count 0. Protection is
+      # settings-side state a workflow cannot declare, so it is asserted here.
+      - name: Environments must actually be protected
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for ENV in production production-database; do
+            RULES="$(gh api "repos/${{ github.repository }}/environments/$ENV" \
+              --jq '[.protection_rules[].type] | join(",")' 2>/dev/null || echo MISSING)"
+            echo "$ENV -> ${RULES:-none}"
+            case "$RULES" in
+              *required_reviewers*) ;;
+              *) echo "::error::environment '$ENV' has no required reviewers — see docs/RUNBOOK-deploy.md"; exit 1 ;;
+            esac
+          done
+
+      - name: Resolve the exact commit and migration set
+        id: resolve
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          # Recorded so the run itself says what schema it shipped against,
+          # rather than requiring someone to reconstruct it from the ref later.
+          COUNT="$(find migrations -maxdepth 1 -name '*.sql' | wc -l | tr -d ' ')"
+          LATEST="$(find migrations -maxdepth 1 -name '*.sql' | sort | tail -1)"
+          echo "migrations=$COUNT files, latest $(basename "$LATEST")" >> "$GITHUB_OUTPUT"
+
+  # ── 2. Re-run the gate on the exact ref being shipped ──────────────────────
+  # ci.yml already gates the PR and the merge, but a dispatch can name any ref,
+  # including one that never went through a PR. This makes "it passed CI" true
+  # of the artifact actually being deployed.
+  verify:
+    name: Verify
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.preflight.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+
+      # ci.yml's gate runs these before typecheck/test. An earlier version of
+      # this job omitted every one of them while claiming to make "it passed CI"
+      # true of the deployed artifact — false exactly for the ref class this job
+      # exists for, since a dispatch can name a branch that never had a PR.
+      - name: validate task graph
+        run: node scripts/validate-tasks.js
+      - name: validate finance config files
+        run: npm run validate:finance-config
+      # The pattern is assembled from parts on purpose: .githooks/pre-push
+      # blocks any pushed line containing wrangler followed by the remote flag,
+      # and this guard's own text would otherwise trip the hook it agrees with.
+      - name: guard - no remote wrangler calls in source
+        run: |
+          FLAG='--re''mote'
+          ! grep -rnE "wrangler.*$FLAG" src/ scripts/ 2>/dev/null || exit 1
+      - name: guard - no production-DB binding in source
+        run: |
+          BINDING='DB_''PROD'
+          ! grep -rn "$BINDING" src/ scripts/ 2>/dev/null || exit 1
+      # The known-bad figure is assembled, for the same reason as the two guards
+      # above: .githooks/pre-push blocks it as a literal, and this guard exists
+      # to assert the test still REJECTS it.
+      - name: guard - BH-13 intact
+        run: |
+          BAD='39.''49'
+          grep -q 'BH-13' src/engines/burden.test.ts
+          grep -q '40.62' src/engines/burden.test.ts
+          grep -q "not.toBe($BAD)" src/engines/burden.test.ts
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install chromium
+      - run: npm run db:migrate:local
+      - run: npm run e2e
+      - run: npm run build
+
+  # ── 3. Migrations, behind their own approval ───────────────────────────────
+  # There is deliberately no "should I run migrations?" input. `d1 migrations
+  # apply` is already a no-op that exits 0 with "No migrations to apply!" when
+  # nothing is pending, so the flag added no capability — only a way to get it
+  # wrong, and asymmetrically: a needless yes costs one approval click, while a
+  # no on a release that DOES carry a migration publishes the Worker against the
+  # old schema, the exact failure this ordering exists to prevent. The operator
+  # also had to derive the answer from a last-deployed SHA recorded nowhere
+  # machine-readable, and the rollback recipe named `no` as the default.
+  migrate:
+    name: Apply remote D1 migrations
+    needs: [preflight, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A SECOND protected environment, separate from `production`. Publishing a
+    # Worker is reversible by redeploying the previous build; a migration is
+    # not, so it gets its own reviewer prompt rather than riding along on the
+    # deployment approval.
+    environment: production-database
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.preflight.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+
+      - name: Show what would be applied
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: d1 migrations list avalon-sales-hub-production --remote
+
+      - name: Apply
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: d1 migrations apply avalon-sales-hub-production --remote
 
-      - name: Deploy to Cloudflare Pages
+  # ── 4. Publish, behind its own approval ────────────────────────────────────
+  deploy:
+    name: Deploy to Cloudflare Pages
+    needs: [preflight, verify, migrate]
+    # migrate never skips now that the run_migrations input is gone, so this
+    # only has to express "everything before me succeeded and nobody cancelled".
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.preflight.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+
+      - name: Publish
         uses: cloudflare/wrangler-action@v3
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: pages deploy dist --project-name groundwork-crm
+          # --branch main is REQUIRED. Every job checks out a resolved 40-hex
+          # SHA, which leaves the runner in detached HEAD, and wrangler infers
+          # the branch with `git rev-parse --abbrev-ref HEAD` when none is
+          # given — that returns the literal "HEAD", which is not the project's
+          # production branch, so Cloudflare files the deployment as a PREVIEW.
+          # wrangler still exits 0 and the smoke check still sees 200 from the
+          # OLD build, so the run goes green having shipped nothing.
+          command: pages deploy dist --project-name groundwork-crm --branch main
 
+      - name: Smoke check
+        run: |
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 --retry 3 --retry-delay 10 https://groundwork-crm.com/)"
+          echo "https://groundwork-crm.com/ -> $CODE"
+          test "$CODE" = "200"
+
+      - name: Record what shipped
+        # Not always(): on a failed publish this used to print a completed
+        # deployment that never happened, and the summary is the only record of
+        # what shipped.
+        if: success()
+        env:
+          # Never interpolated into the script: git permits backticks and $() in
+          # branch names, so `${{ inputs.ref }}` inline was command execution in
+          # the job holding the Cloudflare token.
+          REQUESTED_REF: ${{ inputs.ref }}
+          DISPATCHER: ${{ github.actor }}
+        run: |
+          {
+            echo "## Production deployment"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ needs.preflight.outputs.sha }}\` |"
+            echo "| requested ref | \`$REQUESTED_REF\` |"
+            echo "| migrations in ref | ${{ needs.preflight.outputs.migrations }} |"
+            echo "| dispatched by | @$DISPATCHER |"
+            echo ""
+            echo "Rollback and smoke checks: \`docs/RUNBOOK-deploy.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
