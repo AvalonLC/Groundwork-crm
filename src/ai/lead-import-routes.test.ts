@@ -745,3 +745,168 @@ describe("POST /api/lead-import/:id/confirm", () => {
     expect(j.error).toBe("rate_limited");
   });
 });
+
+/**
+ * Puts a real PDF's bytes into the MEDIA R2 bucket under a given key, then
+ * inserts a matching lead_import_document row pointing at that key — the
+ * same "R2 object then D1 row" ordering POST /upload itself uses, just
+ * skipping the HTTP round-trip so these tests can start from an exact,
+ * known r2_key/company_id pairing.
+ */
+async function insertDocumentWithR2Object(
+  companyId: string,
+  overrides: Partial<{ id: string; r2Key: string; safeFilename: string; mimeType: string; bytes: ArrayBuffer }> = {},
+) {
+  const id = overrides.id || `lidoc_${Math.random().toString(36).slice(2, 10)}`;
+  const r2Key = overrides.r2Key || `leads/${companyId}/${id}.pdf`;
+  const safeFilename = overrides.safeFilename ?? "proposal.pdf";
+  const mimeType = overrides.mimeType ?? "application/pdf";
+  const bytes = overrides.bytes ?? (await makePdfBytes("Document link test fixture"));
+  await (env.MEDIA as R2Bucket).put(r2Key, bytes, { httpMetadata: { contentType: mimeType } });
+  await db().prepare(
+    `INSERT INTO lead_import_document (id, company_id, original_filename, safe_filename, r2_key, mime_type, byte_size, sha256_hash, status)
+     VALUES (?,?,?,?,?,?,?,?, 'uploaded')`
+  ).bind(id, companyId, "Original Upload.pdf", safeFilename, r2Key, mimeType, (bytes as ArrayBuffer).byteLength, `hash_${id}`).run();
+  return { id, r2Key, safeFilename, mimeType, bytes };
+}
+
+describe("GET /api/lead-import/document/:documentId", () => {
+  it("LID-01 streams the original PDF bytes for a document owned by the caller's tenant", async () => {
+    const { id, bytes, mimeType } = await insertDocumentWithR2Object(TENANT);
+    const res = await authedAs(TENANT).request(`/document/${id}`, {}, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe(mimeType);
+    const body = await res.arrayBuffer();
+    expect(body.byteLength).toBe((bytes as ArrayBuffer).byteLength);
+  });
+
+  it("LID-02 sets Content-Disposition to the sanitized safe_filename, not the raw original_filename", async () => {
+    const { id } = await insertDocumentWithR2Object(TENANT, { safeFilename: "avalon_proposal_123.pdf" });
+    const res = await authedAs(TENANT).request(`/document/${id}`, {}, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("avalon_proposal_123.pdf");
+    expect(res.headers.get("content-disposition")).not.toContain("Original Upload");
+  });
+
+  it("LID-03 404s for an unknown document id", async () => {
+    const res = await authedAs(TENANT).request(`/document/lidoc_does_not_exist`, {}, env);
+    expect(res.status).toBe(404);
+  });
+
+  it("LID-04 404s (never 403) for a document belonging to another tenant", async () => {
+    const { id } = await insertDocumentWithR2Object(TENANT);
+    const res = await authedAs(TENANT_2).request(`/document/${id}`, {}, env);
+    expect(res.status).toBe(404);
+  });
+
+  it("LID-05 404s if the D1 row exists but the R2 object is missing (storage-layer edge case, not a 500)", async () => {
+    const id = `lidoc_${Math.random().toString(36).slice(2, 10)}`;
+    // Deliberately skip the R2.put() this time — row exists, object doesn't.
+    await db().prepare(
+      `INSERT INTO lead_import_document (id, company_id, original_filename, safe_filename, r2_key, mime_type, byte_size, sha256_hash, status)
+       VALUES (?,?,?,?,?,?,?,?, 'uploaded')`
+    ).bind(id, TENANT, "x.pdf", "x.pdf", `leads/${TENANT}/${id}.pdf`, "application/pdf", 10, `hash_${id}`).run();
+    const res = await authedAs(TENANT).request(`/document/${id}`, {}, env);
+    expect(res.status).toBe(404);
+  });
+});
+
+// Dedicated tenant ids for the entity-links suite below, distinct from
+// TENANT/TENANT_2. LIC-14 above deliberately exhausts TENANT's
+// `lead_import_confirm_${companyId}` rate-limit budget (20/300s) as part of
+// testing that limiter — since D1 state (including the rate-limit counter
+// row in `settings`) is reset only once per test FILE, not per test,
+// reusing TENANT here for further postConfirm() calls would themselves get
+// 429'd by that already-exhausted budget. Fresh tenant ids sidestep that
+// entirely, the same way a genuinely different company would in production.
+const TENANT_LINKS = "t-lead-import-links";
+const TENANT_LINKS_2 = "t-lead-import-links-2";
+
+describe("GET /api/lead-import/entity-links/:entityType/:entityId", () => {
+  it("LIL-01 returns the linked document for an opportunity created via confirm", async () => {
+    await insertRep("test-rep");
+    const { importId, draft } = await insertImportFixture(TENANT_LINKS);
+    const confirmed: any = await (await postConfirm(TENANT_LINKS, importId, { approved: draft })).json();
+    const oppId = confirmed.data.result_opportunity_ids[0];
+
+    const res = await authedAs(TENANT_LINKS).request(`/entity-links/opportunity/${oppId}`, {}, env);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.length).toBe(1);
+    expect(j.data[0].document_id).toBeTruthy();
+    expect(j.data[0].download_url).toBe(`/api/lead-import/document/${j.data[0].document_id}`);
+  });
+
+  it("LIL-02 returns the linked document for the client created via the same confirm", async () => {
+    await insertRep("test-rep");
+    const { importId, draft } = await insertImportFixture(TENANT_LINKS);
+    const confirmed: any = await (await postConfirm(TENANT_LINKS, importId, { approved: draft })).json();
+
+    const res = await authedAs(TENANT_LINKS).request(`/entity-links/client/${confirmed.data.result_client_id}`, {}, env);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.length).toBe(1);
+    expect(j.data[0].document_id).toBeTruthy();
+  });
+
+  it("LIL-03 returns an empty array (not 404) for an entity with no linked documents", async () => {
+    const res = await authedAs(TENANT_LINKS).request(`/entity-links/opportunity/opp_never_imported`, {}, env);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data).toEqual([]);
+  });
+
+  it("LIL-04 rejects an unknown entity_type with 400", async () => {
+    const res = await authedAs(TENANT_LINKS).request(`/entity-links/invoice/inv_123`, {}, env);
+    expect(res.status).toBe(400);
+    const j: any = await res.json();
+    expect(j.error).toBe("bad_request");
+  });
+
+  it("LIL-05 is tenant-scoped: another tenant's request for the same entity_id sees no links", async () => {
+    await insertRep("test-rep");
+    const { importId, draft } = await insertImportFixture(TENANT_LINKS);
+    const confirmed: any = await (await postConfirm(TENANT_LINKS, importId, { approved: draft })).json();
+    const oppId = confirmed.data.result_opportunity_ids[0];
+
+    const res = await authedAs(TENANT_LINKS_2).request(`/entity-links/opportunity/${oppId}`, {}, env);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data).toEqual([]);
+  });
+
+  it("LIL-06 a multi-property import links the SAME document to every resulting opportunity plus the client", async () => {
+    await insertRep("test-rep");
+    const draft = {
+      contact: { person_name: "Multi Site Owner", company_name: "", phone: "(555) 999-1111", email: "multi@example.com" },
+      client_type: "Residential",
+      properties: [
+        { label: "North Lot", address: "1 North Rd, Springfield, IL 62704", notes: "" },
+        { label: "South Lot", address: "2 South Rd, Springfield, IL 62704", notes: "" },
+      ],
+      project: "Tree removal", urgency: "", contract_hint: "unknown", summary_note: "", pricing_options: [],
+      division_suggestion: { label: "Landscape", rationale: "" },
+    };
+    const { importId } = await insertImportFixture(TENANT_LINKS, { proposedJson: draft });
+    const confirmed: any = await (await postConfirm(TENANT_LINKS, importId, { approved: draft })).json();
+    expect(confirmed.data.result_opportunity_ids.length).toBe(2);
+
+    for (const oppId of confirmed.data.result_opportunity_ids) {
+      const res = await authedAs(TENANT_LINKS).request(`/entity-links/opportunity/${oppId}`, {}, env);
+      const j: any = await res.json();
+      expect(j.data.length).toBe(1);
+      expect(j.data[0].document_id).toBeTruthy();
+    }
+
+    const [linkA, linkB] = await Promise.all(
+      confirmed.data.result_opportunity_ids.map(async (oppId: string) => {
+        const res = await authedAs(TENANT_LINKS).request(`/entity-links/opportunity/${oppId}`, {}, env);
+        const j: any = await res.json();
+        return j.data[0].document_id;
+      }),
+    );
+    expect(linkA).toBe(linkB); // one PDF, one document row, linked to both resulting opportunities
+  });
+});

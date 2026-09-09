@@ -860,3 +860,103 @@ leadImportRouter.post("/:id/confirm", async (c) => {
     return c.json({ ok: false, error: "create_error", message: "Could not create the lead. Please try again." }, 500);
   }
 });
+
+// ── GET /api/lead-import/document/:documentId — stream the original PDF ────
+//
+// Satisfies the spec's "document access from every resulting record"
+// requirement together with the /entity-links route below: the confirm
+// route above writes one lead_import_document_link row per client/
+// opportunity/property it creates or links; a frontend viewing any of those
+// records calls GET /entity-links/:entityType/:entityId to discover the
+// linked document_id(s), then this route to actually stream one.
+//
+// Tenant-scoped exactly like src/portal.tsx's GET /api/portal/media/:id and
+// GET /api/admin/portal/media/:id: a document that exists but belongs to a
+// different company_id returns 404, never 403 (never confirms existence to
+// an attacker) — same convention loadOwnedImport() above already follows.
+//
+// Streams the ORIGINAL PDF bytes only. Per the spec's storage rules, this
+// document row is never replaced by a derivative (e.g. an OCR'd or
+// rasterized copy) — r2_key always points at exactly the bytes that were
+// hashed at upload time, so this route can never serve anything other than
+// the tenant's own original upload.
+leadImportRouter.get("/document/:documentId", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const documentId = c.req.param("documentId");
+
+  const doc: any = await db.prepare(
+    `SELECT r2_key, mime_type, safe_filename, company_id FROM lead_import_document WHERE id=? LIMIT 1`
+  ).bind(documentId).first();
+
+  if (!doc || doc.company_id !== companyId) {
+    return c.json({ ok: false, error: "not_found", message: "Document not found" }, 404);
+  }
+
+  const obj = await (c.env.MEDIA as R2Bucket).get(doc.r2_key);
+  if (!obj) {
+    // Row exists but the R2 object doesn't (should never happen outside a
+    // storage-layer incident) — surface as not_found rather than a 500,
+    // since from the caller's point of view the document is unavailable
+    // either way and there is nothing they can retry.
+    return c.json({ ok: false, error: "not_found", message: "Document file not found" }, 404);
+  }
+
+  const filename = String(doc.safe_filename || "document.pdf").replace(/[^\w.\- ]/g, "");
+  return new Response(obj.body as any, {
+    headers: {
+      "Content-Type": doc.mime_type || "application/pdf",
+      "Cache-Control": "private, max-age=3600",
+      "Content-Disposition": `inline; filename="${filename}"`,
+    },
+  });
+});
+
+// ── GET /api/lead-import/entity-links/:entityType/:entityId — find the ─────
+//    source document(s) linked to a CRM record.
+//
+// entity_type is constrained to the same three values as the
+// lead_import_document_link table's own CHECK constraint (client,
+// opportunity, property) — an out-of-range value can never match a row, but
+// is still explicitly validated here so a typo'd entity_type gives a clear
+// 400 rather than a silently-empty 200.
+//
+// Returns document metadata (never the raw bytes — GET /document/:id above
+// is the separate download step), tenant-scoped by company_id on the link
+// table, which is itself always written with the same company_id as the
+// entity it links (see POST /:id/confirm above).
+const LINKABLE_ENTITY_TYPES = new Set(["client", "opportunity", "property"]);
+
+leadImportRouter.get("/entity-links/:entityType/:entityId", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const entityType = c.req.param("entityType");
+  const entityId = c.req.param("entityId");
+
+  if (!LINKABLE_ENTITY_TYPES.has(entityType)) {
+    return c.json({ ok: false, error: "bad_request", message: "Unknown entity_type" }, 400);
+  }
+
+  const rows = await db.prepare(
+    `SELECT lidl.document_id, lidl.import_id, lidl.created_at,
+            lid.original_filename, lid.safe_filename, lid.mime_type, lid.byte_size
+     FROM lead_import_document_link lidl
+     JOIN lead_import_document lid ON lid.id = lidl.document_id
+     WHERE lidl.company_id=? AND lidl.entity_type=? AND lidl.entity_id=?
+     ORDER BY lidl.created_at DESC`
+  ).bind(companyId, entityType, entityId).all();
+
+  return c.json({
+    ok: true,
+    data: (rows.results || []).map((r: any) => ({
+      document_id: r.document_id,
+      import_id: r.import_id,
+      linked_at: r.created_at,
+      original_filename: r.original_filename,
+      safe_filename: r.safe_filename,
+      mime_type: r.mime_type,
+      byte_size: r.byte_size,
+      download_url: `/api/lead-import/document/${r.document_id}`,
+    })),
+  });
+});
