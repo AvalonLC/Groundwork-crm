@@ -517,11 +517,18 @@
       ? cfg.estimateStatus.charAt(0).toUpperCase() + cfg.estimateStatus.slice(1)
       : 'No Estimate';
     const fillClass = pct >= 100 ? '' : (pct >= 50 ? '' : (cfg.balanceDue > 0 ? 'fin-sum-progress-fill--warn' : ''));
+    // data attributes, not onclick. An id interpolated into
+    // onclick="show('invoices','ID')" sits inside a JS STRING inside an HTML
+    // ATTRIBUTE: an apostrophe closes the string and everything after it is
+    // executed. HTML-escaping cannot make that safe — &#39; is decoded back to
+    // ' by the parser BEFORE the JS is compiled, so the quote returns intact.
+    // The only reliable fix is to stop generating code: getAttribute() hands
+    // the value back as data and it never reaches a parser.
     const linkEst = cfg.estimateId
-      ? `<span class="fin-sum-title-link" onclick="show('estimates','${cfg.estimateId}')">View Estimate →</span>`
+      ? `<span class="fin-sum-title-link" data-gw-show="estimates" data-gw-id="${esc(cfg.estimateId)}">View Estimate →</span>`
       : '';
     const linkInv = cfg.invoiceId
-      ? `<span class="fin-sum-title-link" onclick="show('invoices','${cfg.invoiceId}')">View Invoice →</span>`
+      ? `<span class="fin-sum-title-link" data-gw-show="invoices" data-gw-id="${esc(cfg.invoiceId)}">View Invoice →</span>`
       : '';
     return `
     <div class="fin-sum-card">
@@ -630,11 +637,11 @@
         </div>
         <div class="pay-tl-content">
           <div class="pay-tl-head">
-            <div class="pay-tl-name">${m.name || 'Payment ' + (i+1)}</div>
+            <div class="pay-tl-name">${esc(m.name || 'Payment ' + (i + 1))}</div>
             <div class="pay-tl-amount">${fmt(m.amount)}</div>
           </div>
           <div class="pay-tl-meta">${dateLabel}</div>
-          <span class="pay-tl-badge ${badgeClass(m.status)}">${statusLabel}</span>
+          <span class="pay-tl-badge ${badgeClass(m.status)}">${esc(statusLabel)}</span>
         </div>
       </div>`;
     }).join('');
@@ -642,7 +649,7 @@
     <div class="fin-sum-card">
       <div class="fin-sum-title">
         <span>Payment Schedule</span>
-        ${cfg.invoiceId ? `<span class="fin-sum-title-link" onclick="show('invoices','${cfg.invoiceId}')">Full Invoice →</span>` : ''}
+        ${cfg.invoiceId ? `<span class="fin-sum-title-link" data-gw-show="invoices" data-gw-id="${esc(cfg.invoiceId)}">Full Invoice →</span>` : ''}
       </div>
       <div class="pay-tl-wrap">${rows}</div>
     </div>`;
@@ -697,11 +704,12 @@
     if (!stats || !stats.length) return '';
     const cells = stats.map((s, i) => {
       const valClass = s.accent ? ` ops-sum-val--${s.accent}` : '';
-      return `<div class="ops-sum-stat" data-filter="${s.filter||''}"
-                   onclick="window._opsFilterActive='${s.filter||''}';
-                            document.querySelectorAll('.ops-sum-stat').forEach(el=>el.classList.remove('is-active'));
-                            this.classList.add('is-active');
-                            window._opsRenderFilter&&window._opsRenderFilter('${s.filter||''}')">
+      // Same treatment as the data-gw-show links: the filter value was
+      // interpolated into a JS string literal inside an onclick three times, so
+      // a value containing an apostrophe closed the string. The element already
+      // carried data-filter; the behaviour now hangs off that via delegation,
+      // and the value is read with getAttribute instead of being compiled.
+      return `<div class="ops-sum-stat" data-filter="${esc(s.filter || '')}">
         <div class="ops-sum-val${valClass}">${s.val}</div>
         <div class="ops-sum-label">${s.label}</div>
         ${s.delta ? `<div class="ops-sum-delta">${s.delta}</div>` : ''}
@@ -727,7 +735,7 @@
     const visible = crew.slice(0, 3);
     const overflow = crew.length > 3 ? crew.length - 3 : 0;
     const avatars = visible.map(c =>
-      `<div class="ops-assign-avatar" title="${c.name||''}">${c.initials||'?'}</div>`
+      `<div class="ops-assign-avatar" title="${esc(c.name||'')}">${c.initials||'?'}</div>`
     ).join('') + (overflow ? `<div class="ops-assign-overflow">+${overflow}</div>` : '');
     return `<div class="ops-assign-row">
       <div class="ops-assign-avatars">${avatars}</div>
@@ -821,6 +829,30 @@
     });
     if (!isOpen) menu.style.display = 'block';
   };
+
+  // Ops status-bar filtering. Replaces the three-statement inline onclick that
+  // R.OpsStatusBar used to emit; the filter value reaches _opsRenderFilter as
+  // data, never as source text.
+  document.addEventListener('click', e => {
+    const cell = e.target && e.target.closest && e.target.closest('.ops-sum-stat[data-filter]');
+    if (!cell) return;
+    const filter = cell.getAttribute('data-filter') || '';
+    window._opsFilterActive = filter;
+    document.querySelectorAll('.ops-sum-stat').forEach(el => el.classList.remove('is-active'));
+    cell.classList.add('is-active');
+    if (typeof window._opsRenderFilter === 'function') window._opsRenderFilter(filter);
+  });
+
+  // Navigation for the data-gw-show links above. Replaces the inline onclick
+  // handlers those used to carry; the id arrives through getAttribute as data,
+  // so nothing it contains is ever parsed as JavaScript.
+  document.addEventListener('click', e => {
+    const el = e.target && e.target.closest && e.target.closest('[data-gw-show]');
+    if (!el) return;
+    const view = el.getAttribute('data-gw-show');
+    const id = el.getAttribute('data-gw-id') || '';
+    if (typeof window.show === 'function') window.show(view, id);
+  });
 
   // Close menus on outside click
   document.addEventListener('click', e => {
