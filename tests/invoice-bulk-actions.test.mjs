@@ -61,10 +61,18 @@ function evaluate(invoices, selectedIds) {
 }
 
 const LIST = [
-  { id: 'a', invoice_number: 'INV-0001', status: 'sent',  balance_due: 250.00 },
-  { id: 'b', invoice_number: 'INV-0002', status: 'paid',  balance_due: 0 },
-  { id: 'c', invoice_number: 'INV-0003', status: 'void',  balance_due: 400.00 },
-  { id: 'd', invoice_number: 'INV-0004', status: 'draft', balance_due: 75.50 },
+  { id: 'a', invoice_number: 'INV-0001', status: 'sent',    balance_due: 250.00 },
+  { id: 'b', invoice_number: 'INV-0002', status: 'paid',    balance_due: 0 },
+  { id: 'c', invoice_number: 'INV-0003', status: 'void',    balance_due: 400.00 },
+  { id: 'd', invoice_number: 'INV-0004', status: 'draft',   balance_due: 75.50 },
+  { id: 'e', invoice_number: 'INV-0005', status: 'overdue', balance_due: 120.00 },
+  // status='paid' WITH a live balance is the normal production shape, not a
+  // corner case: bulk edit's "Mark paid" PUTs {status:'paid'} alone, and PUT
+  // only dual-writes a *_cents twin for keys present in the body, so the
+  // balance is left untouched. The previous 'paid' fixture had balance_due 0,
+  // so the cents floor excluded it before the status rule was consulted and
+  // adding 'paid' to INV_PAYABLE_STATUSES would have left IB-02 green.
+  { id: 'f', invoice_number: 'INV-0006', status: 'paid',    balance_due: 2400.00 },
 ];
 
 test('IB-01 the selection is intersected with the list, not trusted on its own', () => {
@@ -79,7 +87,7 @@ test('IB-02 a settled invoice is never in a bulk charge', () => {
   // Charging a paid invoice is not a no-op. It is a second payment against a
   // real customer card, and no server route can tell it apart from a wanted one.
   const { _invChargeable } = evaluate(LIST, []);
-  assert.deepEqual(_invChargeable(LIST).map(i => i.id), ['a', 'd']);
+  assert.deepEqual(_invChargeable(LIST).map(i => i.id), ['a', 'e']);
 });
 
 test('IB-03 a voided invoice is never in a bulk charge, balance or not', () => {
@@ -106,6 +114,36 @@ test('IB-04 missing, null and string balances do not slip into a charge', () => 
   assert.deepEqual(_invChargeable(odd).map(i => i.id), ['n7']);
 });
 
+test('IB-04b a draft is never charged — the client has not been sent it', () => {
+  // `!== 'void'` admitted draft and written_off. Select-all on an unfiltered
+  // list includes next month's drafts, and the server is no backstop: /charge
+  // never reads inv.status. The portal hides drafts entirely, so the client
+  // could not even look up what they were billed for.
+  const { _invChargeable } = evaluate(LIST, []);
+  const ids = _invChargeable(LIST).map(i => i.id);
+  assert.equal(ids.includes('d'), false, 'a draft invoice was chargeable');
+  assert.deepEqual(
+    _invChargeable([{ id: 'w', status: 'written_off', balance_due: 500 }]), [],
+    'a written-off invoice was chargeable',
+  );
+});
+
+test('IB-04c the button counts in cents, so a sub-minimum residual is excluded', () => {
+  // The bar counted with `balance_due > 0` while the run refuses under 50 cents,
+  // so a 25-cent residual from a partial payment was included in the total the
+  // operator approved and then failed mid-run.
+  const { _invChargeable } = evaluate(LIST, []);
+  assert.deepEqual(_invChargeable([{ id: 'r', status: 'partial', balance_due: 0.25 }]), []);
+  assert.equal(_invChargeable([{ id: 'r', status: 'partial', balance_due: 0.50 }]).length, 1);
+});
+
+test('IB-04d balance_due_cents is preferred over the legacy float', () => {
+  const { _invChargeable } = evaluate(LIST, []);
+  // The float is deliberately wrong, so anything reading it fails.
+  const rows = [{ id: 'x', status: 'sent', balance_due: 999999, balance_due_cents: 0 }];
+  assert.deepEqual(_invChargeable(rows), []);
+});
+
 test('IB-05 the bar and the run agree on what is chargeable', () => {
   // These were two separate copies of the same filter — one sizing the button,
   // one deciding what to bill. Drift does not throw; the button says 3 and
@@ -115,8 +153,8 @@ test('IB-05 the bar and the run agree on what is chargeable', () => {
   assert.match(code, bar, 'the bulk bar no longer sizes itself with _invChargeable');
   assert.match(code, run, 'the bulk charge no longer selects with _invChargeable');
   assert.equal(
-    (code.match(/balance_due \|\| 0\) > 0/g) || []).length, 1,
-    'the balance rule is written out more than once again — keep it in _invChargeable alone',
+    (code.match(/INV_PAYABLE_STATUSES\.includes/g) || []).length, 2,
+    'the payable-status rule should appear exactly twice: _invChargeable and _invBulkSend',
   );
 });
 
@@ -172,4 +210,42 @@ test('IB-10 charges run one at a time, so a failure names its own invoice', () =
   // Stripe halfway through and be left unsure which ones went out.
   assert.match(code, /for \(const inv of items\) \{/);
   assert.doesNotMatch(code, /Promise\.all/);
+});
+
+test('IB-11 bulk Send says it can charge cards, because it can', () => {
+  // POST /:id/send carries the autopay branch, so this button takes money off
+  // saved cards. src/api/invoice-access.ts: "As privileged as charging, and easy
+  // to misread as 'just email'." The dialog used to say only "Email N invoices
+  // to their clients?" — the exact misreading that comment warns about.
+  const send = code.slice(code.indexOf('window._invBulkSend'), code.indexOf('window._invBulkDelete'));
+  assert.match(send, /CHARGED/, 'the send confirmation does not mention charging');
+  assert.match(send, /cannot be undone/i);
+  assert.doesNotMatch(send, /confirm\(`Email \$\{picked\.length\}/, 'the email-only wording is back');
+});
+
+test('IB-12 bulk Send reports the autopay outcome, not a bare "sent"', () => {
+  // The 200 body carries {autopay:{attempted,paid,reason}}. Checking only res.ok
+  // rendered a decline and a successful charge identically as a green tick.
+  const send = code.slice(code.indexOf('window._invBulkSend'), code.indexOf('window._invBulkDelete'));
+  assert.match(send, /ap\.attempted && ap\.paid/);
+  assert.match(send, /ap\.attempted && !ap\.paid/);
+});
+
+test('IB-13 bulk Send never re-sends a settled invoice', () => {
+  // /send sets status='sent' and overwrites sent_at unconditionally, so a paid
+  // invoice caught in a select-all was regressed out of the Paid KPI and its
+  // real send date destroyed.
+  const send = code.slice(code.indexOf('window._invBulkSend'), code.indexOf('window._invBulkDelete'));
+  assert.match(send, /INV_PAYABLE_STATUSES\.includes/);
+  assert.doesNotMatch(send, /filter\(i => i\.status !== 'void'\)/);
+});
+
+test('IB-14 the run overlay cannot be dismissed while it is charging', () => {
+  // _invCreateOverlay wires backdrop-click-to-dismiss. There is no Close button
+  // until the run finishes, so the backdrop was the only clickable-looking
+  // thing — and clicking it detached the modal while the loop kept charging,
+  // leaving the bar live for a second concurrent run over the same selection.
+  const run = code.slice(code.indexOf('async function _invBulkRun'), code.indexOf('async function _invErr'));
+  assert.doesNotMatch(run, /_invCreateOverlay/, 'the run overlay is dismissable again');
+  assert.match(run, /createElement\('div'\)/);
 });

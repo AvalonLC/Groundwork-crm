@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
 import { canInvoice } from './api/invoice-access'
-import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey, cardOnFileDecision } from './api/stripe_customers'
+import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey, cardOnFileDecision, autopayCapCents } from './api/stripe_customers'
 import { decideFailureActions, clientFailureEmail } from './api/dunning'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -9374,8 +9374,16 @@ app.delete('/api/invoices/:id', requireAuth, async (c) => {
   if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Deleting invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  await db.prepare(`DELETE FROM invoices WHERE id=? AND company_id=? AND status='draft'`)
+  // Only drafts are deletable. The result used to be discarded and {ok:true}
+  // returned unconditionally, so deleting a sent or paid invoice reported
+  // success and did nothing — and a bulk run printed a column of green ticks
+  // for rows that then reappeared on the next refresh. Eight other routes in
+  // this file already check meta.changes; this one now does too.
+  const res = await db.prepare(`DELETE FROM invoices WHERE id=? AND company_id=? AND status='draft'`)
     .bind(c.req.param('id'), companyId).run()
+  if (!res.meta.changes) {
+    return c.json({ error: 'Only draft invoices can be deleted. Void it instead.' }, 409)
+  }
   return c.json({ ok: true })
 })
 
@@ -9398,7 +9406,12 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
     if (stripeKey && inv?.client_id) {
       const ap: any = await db.prepare(`SELECT * FROM client_autopay WHERE client_id=? AND company_id=? AND enabled=1 LIMIT 1`).bind(inv.client_id, companyId).first()
       const owedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
-      const apMaxAmountCents = Number(ap?.max_amount_cents || 0)
+      // One definition of the client's cap, shared with the /charge path.
+      // 0058 backfilled max_amount_cents for every existing row and the only
+      // INSERT (src/portal.tsx:1033) dual-writes, so the inline read this
+      // replaces was correct today — but two implementations of a consent
+      // ceiling is one too many, and the fallback costs nothing.
+      const apMaxAmountCents = autopayCapCents(ap || {})
       if (ap?.stripe_pm_id && owedCents >= 50) {
         if (apMaxAmountCents > 0 && owedCents > apMaxAmountCents) {
           autopay = { attempted: false, reason: `Balance exceeds the client's autopay cap of $${(apMaxAmountCents / 100)}` }
@@ -9638,6 +9651,48 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
     `SELECT * FROM invoices WHERE id=? AND company_id=? LIMIT 1`
   ).bind(invoiceId, companyId).first()
   if (!inv) return c.json({ error: 'Invoice not found' }, 404)
+
+  // The caller may not charge more than the invoice still owes.
+  //
+  // This route was the only money path in the file that trusted a client-supplied
+  // amount: /send's autopay branch derives owedCents itself, and the portal pay
+  // route reads its amount from the database (pinned by RG-05). Here `amount`
+  // came straight off the request body with only a $0.50 floor.
+  //
+  // A bulk run makes that reachable without anyone doing anything wrong. The
+  // browser sends Math.round(balance_due * 100) out of a list it fetched
+  // earlier; if the client pays through the portal in between, the stale figure
+  // is still posted and the card is charged the FULL balance on top of what was
+  // already collected. The write-back below then clamps balance to 0, so the
+  // overcharge exists only in Stripe and is invisible in D1.
+  //
+  // Recomputed from the row we just read, in cents, not from the request.
+  // The MINIMUM of every measure of what is owed, not just the derived one.
+  //
+  // PUT /api/invoices/:id allows `total`, `amount_paid` AND `balance_due`
+  // independently (see its allowlist), and dual-writes each *_cents twin only
+  // for keys actually present in the body. So a write-down posting
+  // {balance_due: 0} on a $1,000 invoice leaves total_cents=100000,
+  // amount_paid_cents=0, balance_due_cents=0: the list, the portal and
+  // collections all gate on balance_due_cents and show it settled, while
+  // total - paid still says $1,000 is chargeable.
+  //
+  // Whichever column claims LESS is owed wins. An authorisation ceiling should
+  // fail toward refusing, and no legitimate charge is blocked by it — the two
+  // agree on every invoice the normal write paths produce.
+  const derivedOwedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
+  const storedOwedCents = (inv.balance_due_cents !== null && inv.balance_due_cents !== undefined)
+    ? Math.max(0, Math.round(Number(inv.balance_due_cents) || 0))
+    : derivedOwedCents
+  const owedNowCents = Math.min(derivedOwedCents, storedOwedCents)
+  if (owedNowCents <= 0) {
+    return c.json({ error: 'This invoice has nothing left to collect' }, 400)
+  }
+  if (amount > owedNowCents) {
+    return c.json({
+      error: `Charge exceeds the $${(owedNowCents / 100).toFixed(2)} still owed on this invoice — it may have been paid since this page loaded`,
+    }, 400)
+  }
 
   // charges_enabled and fee_bps are both read below. Selecting _pct instead
   // left targetAccountFor seeing an undefined charges_enabled — so a properly
