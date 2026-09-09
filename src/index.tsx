@@ -9667,7 +9667,24 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
   // overcharge exists only in Stripe and is invisible in D1.
   //
   // Recomputed from the row we just read, in cents, not from the request.
-  const owedNowCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
+  // The MINIMUM of every measure of what is owed, not just the derived one.
+  //
+  // PUT /api/invoices/:id allows `total`, `amount_paid` AND `balance_due`
+  // independently (see its allowlist), and dual-writes each *_cents twin only
+  // for keys actually present in the body. So a write-down posting
+  // {balance_due: 0} on a $1,000 invoice leaves total_cents=100000,
+  // amount_paid_cents=0, balance_due_cents=0: the list, the portal and
+  // collections all gate on balance_due_cents and show it settled, while
+  // total - paid still says $1,000 is chargeable.
+  //
+  // Whichever column claims LESS is owed wins. An authorisation ceiling should
+  // fail toward refusing, and no legitimate charge is blocked by it — the two
+  // agree on every invoice the normal write paths produce.
+  const derivedOwedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
+  const storedOwedCents = (inv.balance_due_cents !== null && inv.balance_due_cents !== undefined)
+    ? Math.max(0, Math.round(Number(inv.balance_due_cents) || 0))
+    : derivedOwedCents
+  const owedNowCents = Math.min(derivedOwedCents, storedOwedCents)
   if (owedNowCents <= 0) {
     return c.json({ error: 'This invoice has nothing left to collect' }, 400)
   }

@@ -174,7 +174,10 @@ test('SF-05 a resolved card goes through cardOnFileDecision, not an inline copy'
   // paymentMethodUsable compare '' against the target and wave the card through.
   const fromAt = charge.indexOf('FROM client_autopay');
   const select = charge.slice(charge.lastIndexOf('SELECT', fromAt), fromAt);
-  for (const column of ['enabled', 'stripe_pm_id', 'stripe_account_id', 'max_amount_cents', 'max_amount']) {
+  // max_amount is deliberately NOT required: autopayCapCents reads it only as a
+  // fallback for pre-0058 rows, and requiring it here would block the obvious
+  // cleanup of dropping the legacy REAL column once every row is backfilled.
+  for (const column of ['enabled', 'stripe_pm_id', 'stripe_account_id', 'max_amount_cents']) {
     assert.match(
       select, new RegExp(`\\b${column}\\b`),
       `the client_autopay SELECT omits ${column}, which cardOnFileDecision reads`,
@@ -195,7 +198,7 @@ test('SF-06 a charge is bounded by what the invoice still owes', () => {
   // so the overcharge exists only in Stripe.
   const charge = routeBody("app.post('/api/invoices/:id/charge'");
   assert.match(
-    charge, /const owedNowCents = Math\.max\(0, Number\(inv\.total_cents \|\| 0\) - Number\(inv\.amount_paid_cents \|\| 0\)\)/,
+    charge, /Number\(inv\.total_cents \|\| 0\) - Number\(inv\.amount_paid_cents \|\| 0\)/,
     'the charge route no longer recomputes what is owed from the stored row',
   );
   assert.match(charge, /if \(amount > owedNowCents\)/, 'the charge amount is unbounded again');
@@ -220,4 +223,41 @@ test('SF-07 deleting an invoice reports whether anything was deleted', () => {
     del, /\.run\(\)\s*\n\s*return c\.json\(\{ ok: true \}\)/,
     'the DELETE returns ok:true without checking what happened',
   );
+});
+
+test('SF-08 the charge ceiling is the minimum of every measure of what is owed', () => {
+  // PUT allows total, amount_paid AND balance_due independently, and dual-writes
+  // each *_cents twin only for keys present in the body. So a write-down posting
+  // {balance_due: 0} on a $1,000 invoice leaves total_cents=100000,
+  // amount_paid_cents=0, balance_due_cents=0 — settled everywhere the UI looks,
+  // while total - paid still authorises the full $1,000.
+  //
+  // Whichever column claims LESS is owed has to win: an authorisation ceiling
+  // should fail toward refusing.
+  const charge = routeBody("app.post('/api/invoices/:id/charge'");
+  assert.match(charge, /const derivedOwedCents = Math\.max\(0, Number\(inv\.total_cents \|\| 0\) - Number\(inv\.amount_paid_cents \|\| 0\)\)/);
+  assert.match(charge, /inv\.balance_due_cents !== null/, 'the stored balance is no longer consulted');
+  assert.match(
+    charge, /const owedNowCents = Math\.min\(derivedOwedCents, storedOwedCents\)/,
+    'the ceiling is no longer the minimum — a written-down invoice is chargeable again',
+  );
+});
+
+test('SF-09 the ceiling arithmetic refuses a written-down invoice', () => {
+  // Executes the rule rather than matching it, so the assertion survives a
+  // rewrite that preserves behaviour.
+  const charge = routeBody("app.post('/api/invoices/:id/charge'");
+  const from = charge.indexOf('const derivedOwedCents');
+  const lineStart = charge.indexOf('const owedNowCents');
+  const block = charge.slice(from, charge.indexOf('\n', lineStart));
+  const ceiling = new Function('inv', `${block}\nreturn owedNowCents;`);
+
+  // Written down to zero while total/paid still say $1,000 is outstanding.
+  assert.equal(ceiling({ total_cents: 100000, amount_paid_cents: 0, balance_due_cents: 0 }), 0);
+  // Stale-high stored balance must not raise the ceiling above what is derivable.
+  assert.equal(ceiling({ total_cents: 100000, amount_paid_cents: 100000, balance_due_cents: 100000 }), 0);
+  // Pre-0058 row with no cents twin falls back to the derived figure.
+  assert.equal(ceiling({ total_cents: 100000, amount_paid_cents: 25000, balance_due_cents: null }), 75000);
+  // The ordinary case: both agree, nothing is blocked.
+  assert.equal(ceiling({ total_cents: 100000, amount_paid_cents: 25000, balance_due_cents: 75000 }), 75000);
 });

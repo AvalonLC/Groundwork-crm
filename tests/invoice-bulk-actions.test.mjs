@@ -66,6 +66,13 @@ const LIST = [
   { id: 'c', invoice_number: 'INV-0003', status: 'void',    balance_due: 400.00 },
   { id: 'd', invoice_number: 'INV-0004', status: 'draft',   balance_due: 75.50 },
   { id: 'e', invoice_number: 'INV-0005', status: 'overdue', balance_due: 120.00 },
+  // status='paid' WITH a live balance is the normal production shape, not a
+  // corner case: bulk edit's "Mark paid" PUTs {status:'paid'} alone, and PUT
+  // only dual-writes a *_cents twin for keys present in the body, so the
+  // balance is left untouched. The previous 'paid' fixture had balance_due 0,
+  // so the cents floor excluded it before the status rule was consulted and
+  // adding 'paid' to INV_PAYABLE_STATUSES would have left IB-02 green.
+  { id: 'f', invoice_number: 'INV-0006', status: 'paid',    balance_due: 2400.00 },
 ];
 
 test('IB-01 the selection is intersected with the list, not trusted on its own', () => {
