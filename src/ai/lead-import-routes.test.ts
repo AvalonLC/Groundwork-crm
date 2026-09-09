@@ -436,3 +436,312 @@ describe("GET /api/lead-import/:id", () => {
     expect(j.data.warnings).toEqual(["No property address was found in this document."]);
   });
 });
+
+// ── POST /api/lead-import/:id/confirm ───────────────────────────────────────
+// insertOpportunityRow's INSERT carries a real FK (opportunities.rep_id ->
+// reps.id) unlike anything hit by the upload/extract/status routes above —
+// confirm is the first route in this file that actually creates an
+// opportunity row, so its rep_id must reference a real reps row or the
+// insert fails with SQLITE_CONSTRAINT_FOREIGNKEY. "test-rep" (the repId
+// default used throughout this file) is inserted once per test via
+// insertRep() below wherever a test exercises the create-opportunity path.
+async function insertRep(id: string) {
+  await db().prepare(`INSERT OR IGNORE INTO reps (id, name, role, pin) VALUES (?,?,?,?)`)
+    .bind(id, id, "rep", "0000").run();
+}
+
+const postConfirm = (companyId: string, importId: string, body: any, repId = "test-rep") =>
+  authedAs(companyId, repId).request(`/${importId}/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }, env);
+
+/**
+ * Insert a lead_import (+ its backing lead_import_document) row directly,
+ * bypassing upload/extract, so confirm tests can start from an exact,
+ * hand-crafted `status`/`proposed_json` state — the same fixture style as
+ * LIS-05/LIS-06 above.
+ */
+async function insertImportFixture(
+  companyId: string,
+  overrides: Partial<{ importId: string; docId: string; status: string; proposedJson: any }> = {},
+) {
+  const importId = overrides.importId || `limp_${Math.random().toString(36).slice(2, 10)}`;
+  const docId = overrides.docId || `lidoc_${Math.random().toString(36).slice(2, 10)}`;
+  const status = overrides.status || "ready";
+  const draft = overrides.proposedJson ?? {
+    contact: { person_name: "Jane Homeowner", company_name: "", phone: "(555) 123-0000", email: "jane@example.com" },
+    client_type: "Residential",
+    properties: [{ label: "Primary Property", address: "123 Main St, Springfield, IL 62704", notes: "" }],
+    project: "Tree removal", urgency: "", contract_hint: "unknown", summary_note: "Removal of large oak.", pricing_options: [],
+    division_suggestion: { label: "Landscape", rationale: "mentions tree work" },
+  };
+  await db().prepare(
+    `INSERT INTO lead_import_document (id, company_id, original_filename, safe_filename, r2_key, byte_size, sha256_hash, status, import_id)
+     VALUES (?,?,?,?,?,?,?, 'uploaded', ?)`
+  ).bind(docId, companyId, "proposal.pdf", "proposal.pdf", `fake/r2/${docId}`, 10, `hash_${docId}`, importId).run();
+  await db().prepare(
+    `INSERT INTO lead_import (id, company_id, document_id, idempotency_token, status, proposed_json, warnings_json)
+     VALUES (?,?,?,?,?,?, '[]')`
+  ).bind(importId, companyId, docId, `tok_${importId}`, status, JSON.stringify(draft)).run();
+  return { importId, docId, draft };
+}
+
+describe("POST /api/lead-import/:id/confirm", () => {
+  it("LIC-01 not found for an unknown import id", async () => {
+    const res = await postConfirm(TENANT, "limp_does_not_exist", { approved: {} });
+    expect(res.status).toBe(404);
+  });
+
+  it("LIC-02 404s (never 403) for another tenant's import", async () => {
+    const { importId, draft } = await insertImportFixture(TENANT);
+    const res = await postConfirm(TENANT_2, importId, { approved: draft });
+    expect(res.status).toBe(404);
+  });
+
+  it("LIC-03 rejects confirmation from a status earlier than ready/needs_review (e.g. still extracting)", async () => {
+    const { importId, draft } = await insertImportFixture(TENANT, { status: "extracting" });
+    const res = await postConfirm(TENANT, importId, { approved: draft });
+    expect(res.status).toBe(409);
+    const j: any = await res.json();
+    expect(j.error).toBe("invalid_state");
+  });
+
+  it("LIC-04 rejects a draft with no contact identity (neither person_name nor company_name)", async () => {
+    const { importId, draft } = await insertImportFixture(TENANT);
+    const badDraft = { ...draft, contact: { ...draft.contact, person_name: "", company_name: "" } };
+    const res = await postConfirm(TENANT, importId, { approved: badDraft });
+    expect(res.status).toBe(400);
+    const j: any = await res.json();
+    expect(j.error).toBe("missing_contact_identity");
+    // Rejection must not have advanced the import's status at all.
+    const row: any = await db().prepare(`SELECT status FROM lead_import WHERE id=?`).bind(importId).first();
+    expect(row.status).toBe("ready");
+  });
+
+  it("LIC-05 rejects a draft with zero properties", async () => {
+    const { importId, draft } = await insertImportFixture(TENANT);
+    const badDraft = { ...draft, properties: [] };
+    const res = await postConfirm(TENANT, importId, { approved: badDraft });
+    expect(res.status).toBe(400);
+    const j: any = await res.json();
+    expect(j.error).toBe("missing_property");
+  });
+
+  it("LIC-06 create-new-client + create-new-property: single opportunity created, client/property rows written, document linked to both", async () => {
+    await insertRep("test-rep");
+    const { importId, docId, draft } = await insertImportFixture(TENANT);
+    const res = await postConfirm(TENANT, importId, { approved: draft });
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.status).toBe("finalized");
+    expect(j.data.result_client_id).toBeTruthy();
+    expect(j.data.result_opportunity_ids).toHaveLength(1);
+
+    const clientRow: any = await db().prepare(`SELECT * FROM clients WHERE id=? AND company_id=?`)
+      .bind(j.data.result_client_id, TENANT).first();
+    expect(clientRow).toBeTruthy();
+    expect(clientRow.name).toBe("Jane Homeowner");
+    expect(clientRow.email).toBe("jane@example.com");
+    expect(clientRow.status).toBe("Active"); // table DEFAULT, not explicitly set by the confirm route
+
+    const oppId = j.data.result_opportunity_ids[0];
+    const oppRow: any = await db().prepare(`SELECT * FROM opportunities WHERE id=? AND company_id=?`)
+      .bind(oppId, TENANT).first();
+    expect(oppRow).toBeTruthy();
+    expect(oppRow.client).toBe("Jane Homeowner");
+    expect(oppRow.client_id).toBe(j.data.result_client_id);
+    expect(oppRow.address).toBe("123 Main St, Springfield, IL 62704");
+    expect(oppRow.source).toBe("PDF Import");
+
+    const propRow: any = await db().prepare(`SELECT * FROM properties WHERE company_id=? AND client_id=?`)
+      .bind(TENANT, j.data.result_client_id).first();
+    expect(propRow).toBeTruthy();
+    expect(propRow.street).toBe("123 Main St, Springfield, IL 62704");
+    expect(propRow.is_primary).toBe(1);
+
+    const noteRow: any = await db().prepare(`SELECT * FROM notes WHERE opp_id=?`).bind(oppId).first();
+    expect(noteRow).toBeTruthy();
+    expect(noteRow.body).toContain("Removal of large oak.");
+
+    const links: any = await db().prepare(
+      `SELECT entity_type, entity_id FROM lead_import_document_link WHERE company_id=? AND document_id=? ORDER BY entity_type`
+    ).bind(TENANT, docId).all();
+    const linkSet = (links.results as any[]).map((r) => `${r.entity_type}:${r.entity_id}`);
+    expect(linkSet).toContain(`client:${j.data.result_client_id}`);
+    expect(linkSet).toContain(`opportunity:${oppId}`);
+
+    const importRow: any = await db().prepare(`SELECT status, result_client_id, confirmed_by_rep_id FROM lead_import WHERE id=?`)
+      .bind(importId).first();
+    expect(importRow.status).toBe("finalized");
+    expect(importRow.result_client_id).toBe(j.data.result_client_id);
+    expect(importRow.confirmed_by_rep_id).toBe("test-rep");
+  });
+
+  it("LIC-07 multiple properties: one opportunity per property, multi-property naming convention, one property row per site", async () => {
+    const draft = {
+      contact: { person_name: "Acme Property Mgmt", company_name: "Acme Property Mgmt", phone: "", email: "" },
+      client_type: "Commercial",
+      properties: [
+        { label: "North Lot", address: "1 North Ave", notes: "gate code 4321" },
+        { label: "South Lot", address: "2 South Ave", notes: "" },
+      ],
+      project: "Landscape maintenance", urgency: "", contract_hint: "annual", summary_note: "Two-site contract.", pricing_options: [],
+      division_suggestion: { label: "Maintenance", rationale: "" },
+    };
+    await insertRep("test-rep");
+    const { importId } = await insertImportFixture(TENANT, { proposedJson: draft });
+
+    const res = await postConfirm(TENANT, importId, { approved: draft });
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.result_opportunity_ids).toHaveLength(2);
+
+    const opps: any = await db().prepare(
+      `SELECT client, address FROM opportunities WHERE id IN (?,?) ORDER BY address`
+    ).bind(j.data.result_opportunity_ids[0], j.data.result_opportunity_ids[1]).all();
+    const names = (opps.results as any[]).map((r) => r.client).sort();
+    expect(names).toEqual(["Acme Property Mgmt — North Lot", "Acme Property Mgmt — South Lot"]);
+
+    const propCount: any = await db().prepare(
+      `SELECT COUNT(*) AS n FROM properties WHERE company_id=? AND client_id=?`
+    ).bind(TENANT, j.data.result_client_id).first();
+    expect(propCount.n).toBe(2);
+  });
+
+  it("LIC-08 link-to-existing-client + link-to-existing-property: no new client/property row created", async () => {
+    await insertRep("test-rep");
+    const existingClientId = await insertClient(TENANT, { name: "Jane Homeowner", email: "jane@example.com" });
+    const existingPropertyId = await insertProperty(TENANT, existingClientId, { street: "123 Main St", city: "Springfield", state: "IL", zip: "62704" });
+    const { importId, draft } = await insertImportFixture(TENANT);
+
+    const before: any = await db().prepare(`SELECT COUNT(*) AS n FROM clients WHERE company_id=?`).bind(TENANT).first();
+    const beforeProps: any = await db().prepare(`SELECT COUNT(*) AS n FROM properties WHERE company_id=?`).bind(TENANT).first();
+
+    const res = await postConfirm(TENANT, importId, {
+      approved: draft,
+      client_choice: { action: "link", client_id: existingClientId },
+      property_choices: [{ action: "link", property_id: existingPropertyId }],
+    });
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.result_client_id).toBe(existingClientId);
+
+    const after: any = await db().prepare(`SELECT COUNT(*) AS n FROM clients WHERE company_id=?`).bind(TENANT).first();
+    const afterProps: any = await db().prepare(`SELECT COUNT(*) AS n FROM properties WHERE company_id=?`).bind(TENANT).first();
+    expect(after.n).toBe(before.n); // no new client row
+    expect(afterProps.n).toBe(beforeProps.n); // no new property row
+
+    const oppRow: any = await db().prepare(`SELECT client_id FROM opportunities WHERE id=?`).bind(j.data.result_opportunity_ids[0]).first();
+    expect(oppRow.client_id).toBe(existingClientId);
+  });
+
+  it("LIC-09 a stale/invalid link target falls through to create rather than erroring", async () => {
+    await insertRep("test-rep");
+    const existingClientId = await insertClient(TENANT, { name: "Jane Homeowner" });
+    const { importId, draft } = await insertImportFixture(TENANT);
+
+    const res = await postConfirm(TENANT, importId, {
+      approved: draft,
+      client_choice: { action: "link", client_id: existingClientId },
+      property_choices: [{ action: "link", property_id: "prop_does_not_exist" }],
+    });
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+
+    const propRow: any = await db().prepare(`SELECT * FROM properties WHERE company_id=? AND client_id=?`)
+      .bind(TENANT, existingClientId).first();
+    expect(propRow).toBeTruthy(); // a new property WAS created despite the bogus link target
+  });
+
+  it("LIC-10 linking to a client_id that does not exist at all returns 404 and marks the import failed (retryable)", async () => {
+    const { importId, draft } = await insertImportFixture(TENANT);
+    const res = await postConfirm(TENANT, importId, {
+      approved: draft,
+      client_choice: { action: "link", client_id: "cli_does_not_exist" },
+    });
+    expect(res.status).toBe(404);
+    const j: any = await res.json();
+    expect(j.error).toBe("client_not_found");
+
+    const row: any = await db().prepare(`SELECT status FROM lead_import WHERE id=?`).bind(importId).first();
+    expect(row.status).toBe("failed"); // retryable — canTransition(creating, failed) is legal
+  });
+
+  it("LIC-11 idempotency: confirming an already-finalized import returns the ORIGINAL result, creates nothing new", async () => {
+    await insertRep("test-rep");
+    const { importId, draft } = await insertImportFixture(TENANT);
+    const first: any = await (await postConfirm(TENANT, importId, { approved: draft })).json();
+    expect(first.data.status).toBe("finalized");
+
+    const clientCountBefore: any = await db().prepare(`SELECT COUNT(*) AS n FROM clients WHERE company_id=?`).bind(TENANT).first();
+    const oppCountBefore: any = await db().prepare(`SELECT COUNT(*) AS n FROM opportunities WHERE company_id=?`).bind(TENANT).first();
+
+    // A second confirm call against the same (now finalized) import, even
+    // with a different body, must resolve to the FIRST outcome.
+    const differentDraft = { ...draft, contact: { ...draft.contact, person_name: "Someone Else Entirely" } };
+    const second: any = await (await postConfirm(TENANT, importId, { approved: differentDraft })).json();
+    expect(second.data.already_confirmed).toBe(true);
+    expect(second.data.result_client_id).toBe(first.data.result_client_id);
+    expect(second.data.result_opportunity_ids).toEqual(first.data.result_opportunity_ids);
+
+    const clientCountAfter: any = await db().prepare(`SELECT COUNT(*) AS n FROM clients WHERE company_id=?`).bind(TENANT).first();
+    const oppCountAfter: any = await db().prepare(`SELECT COUNT(*) AS n FROM opportunities WHERE company_id=?`).bind(TENANT).first();
+    expect(clientCountAfter.n).toBe(clientCountBefore.n); // no second client created
+    expect(oppCountAfter.n).toBe(oppCountBefore.n); // no second opportunity created
+  });
+
+  it("LIC-12 idempotency: an import already stuck mid-flight (status='creating') also returns already_confirmed rather than creating a second time", async () => {
+    const { importId, draft } = await insertImportFixture(TENANT, { status: "creating" });
+    const res = await postConfirm(TENANT, importId, { approved: draft });
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.already_confirmed).toBe(true);
+    expect(j.data.status).toBe("creating");
+  });
+
+  it("LIC-13 division_key human override selects that division, case-insensitively, over the deterministic classifier's own guess", async () => {
+    await insertRep("test-rep");
+    await db().prepare(
+      `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`
+    ).bind(`${TENANT}:company_divisions`, JSON.stringify([
+      { key: "landscape", label: "Landscape", color: "#2D7A55" },
+      { key: "tree-care", label: "Tree Care", color: "#8A5A2D" },
+    ])).run();
+    const { importId, draft } = await insertImportFixture(TENANT);
+
+    const res = await postConfirm(TENANT, importId, {
+      approved: draft,
+      division_key: "TREE-CARE", // deliberately wrong case vs. the stored key "tree-care"
+    });
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.division.division.key).toBe("tree-care");
+    expect(j.data.division.source).toBe("explicit");
+
+    const oppRow: any = await db().prepare(`SELECT work_type, service_line FROM opportunities WHERE id=?`)
+      .bind(j.data.result_opportunity_ids[0]).first();
+    expect(oppRow.work_type).toBe("tree-care");
+    expect(oppRow.service_line).toBe("Tree Care");
+  });
+
+  it("LIC-14 rate-limits confirm attempts per tenant", async () => {
+    const app = authedAs(TENANT);
+    for (let n = 0; n < 20; n++) {
+      const { importId, draft } = await insertImportFixture(TENANT, { status: "extracting" }); // cheap 409 path, still counted by the limiter
+      await app.request(`/${importId}/confirm`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ approved: draft }),
+      }, env);
+    }
+    const { importId, draft } = await insertImportFixture(TENANT, { status: "extracting" });
+    const res = await app.request(`/${importId}/confirm`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ approved: draft }),
+    }, env);
+    expect(res.status).toBe(429);
+    const j: any = await res.json();
+    expect(j.error).toBe("rate_limited");
+  });
+});

@@ -22,8 +22,8 @@
  *
  * HARD INVARIANT carried over from src/ai/pdf-lead-import.ts and
  * src/ai/lead-import-parse.ts: AI output is always a SUGGESTION. Nothing in
- * this router creates or alters a CRM record except the (not-yet-written)
- * confirm route, and only in response to an explicit, authenticated confirm
+ * this router creates or alters a CRM record except the POST /:id/confirm
+ * route below, and only in response to an explicit, authenticated confirm
  * action — never as a side effect of upload/extraction/parsing.
  */
 
@@ -48,6 +48,8 @@ import {
   findClientMatches, findPropertyMatches,
   type ExistingClientRow, type ExistingPropertyRow, type ClientMatchCandidate, type PropertyMatchCandidate,
 } from "./lead-import-match";
+import { insertOpportunityRow, resolveDefaultPipelineStage } from "../marketing/leads";
+import { logActivity } from "../activity-log";
 
 export const leadImportRouter = new Hono<AppEnv>();
 
@@ -286,7 +288,7 @@ async function setImportStatus(
 //               say-so, and NEVER creates/alters a client/opportunity/
 //               property row. A human explicitly finishing review, or
 //               explicitly accepting the draft as-is, is what the
-//               not-yet-built confirm route requires before that happens.)
+//               POST /:id/confirm route below requires before that happens.)
 // "Re-run extraction" is this same route again: it re-reads the ALREADY
 // STORED PDF from R2 (never asks for a re-upload) and is idempotent-safe
 // to call repeatedly — canTransition treats needs_review -> needs_review
@@ -552,4 +554,309 @@ leadImportRouter.get("/:id", async (c) => {
       property_matches: propertyMatches,
     },
   });
+});
+
+// ── POST /api/lead-import/:id/confirm — create/link CRM records ────────────
+//
+// The ONLY route in this file that ever creates or alters a CRM record —
+// every other route only extracts/parses/suggests. Requires an explicit,
+// authenticated confirm action; nothing here runs automatically.
+//
+// Request body — the human's REVIEWED values, never raw AI output:
+//   {
+//     approved: LeadImportDraft,      // edited draft — this is what gets written, not proposed_json
+//     client_choice: { action: "link", client_id: string } | { action: "create" },
+//     property_choices?: Array<
+//       { action: "link", property_id: string } | { action: "create" }
+//     >,  // one entry per approved.properties[i]; defaults to "create" for any index not covered
+//     division_key?: string,          // human's final division choice — overrides the AI/keyword
+//                                      // suggestion; never trusted from the model, always from this
+//                                      // explicit field or the already-classified divisionResult
+//   }
+//
+// Spec requirements this route exists to satisfy:
+//   - "explicit link-vs-create choice" — client_choice/property_choices are
+//     REQUIRED inputs, never inferred silently from the match suggestions
+//     computed by GET /:id. A fuzzy suggestion is never auto-applied.
+//   - "idempotent creation" — guarded by the import's own idempotency_token
+//     via a write-once-guard-first status transition (ready -> creating),
+//     mirroring src/api/receipt-posting.ts's postApprovedReceiptToLedger
+//     ordering: the guarded write happens BEFORE any CRM insert, so a losing
+//     concurrent request never reaches the insert path at all. A second
+//     confirm call against an already-`creating`/`finalized` import returns
+//     the ORIGINAL result (from result_client_id/result_opportunity_ids_json)
+//     rather than creating a second set of records.
+//   - "document access from every resulting record" — one
+//     lead_import_document_link row per client/opportunity actually
+//     created or linked this call, so the source PDF can be found FROM any
+//     of them later (a document/preview route is separate, not-yet-built
+//     work; the link rows this route writes are what that route will read).
+async function loadDivisions(db: D1Database, companyId: string) {
+  return loadCompanyDivisions(db, companyId);
+}
+
+type ClientChoice = { action: "link"; client_id: string } | { action: "create" };
+type PropertyChoice = { action: "link"; property_id: string } | { action: "create" };
+
+leadImportRouter.post("/:id/confirm", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const repId = c.var.repId as string;
+  const importId = c.req.param("id");
+
+  const rlOk = await rateLimit(db, `lead_import_confirm_${companyId}`, 20, 300);
+  if (!rlOk) {
+    return c.json({ ok: false, error: "rate_limited", message: "Too many confirm requests. Please wait a few minutes and try again." }, 429);
+  }
+
+  const row = await loadOwnedImport(db, companyId, importId);
+  if (!row) return c.json({ ok: false, error: "not_found", message: "Import not found" }, 404);
+
+  const current = row.status as LeadImportStatus;
+
+  // Idempotency: an import that already finished creating (or is mid-flight
+  // on another concurrent request) returns its ORIGINAL result rather than
+  // creating a second set of records. This check happens BEFORE any
+  // parsing/validation of the request body — a retried confirm with a
+  // slightly different body must still resolve to the first outcome, per
+  // the spec's "never silently create a duplicate" rule.
+  if (current === "finalized" || current === "creating") {
+    let resultOpportunityIds: string[] = [];
+    try { resultOpportunityIds = JSON.parse(row.result_opportunity_ids_json || "[]"); } catch { /* leave empty */ }
+    return c.json({
+      ok: true,
+      data: {
+        import_id: importId,
+        status: current,
+        already_confirmed: true,
+        result_client_id: row.result_client_id || "",
+        result_opportunity_ids: resultOpportunityIds,
+      },
+    });
+  }
+
+  // Everything before "ready" (still extracting/parsing/needs review) or
+  // already terminal-failed-without-a-retry must go through the
+  // extract/review routes first — this route never advances an import past
+  // review on its own.
+  if (current !== "ready" && current !== "needs_review") {
+    return c.json({ ok: false, error: "invalid_state", message: `Cannot confirm from status "${current}".`, status: current }, 409);
+  }
+
+  const body: any = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return c.json({ ok: false, error: "bad_request", message: "A JSON body with an approved draft is required." }, 400);
+  }
+
+  // The human's reviewed values are what gets written — never raw AI
+  // output/proposed_json. normalizeLeadImportDraft is reused here (not a
+  // second, separate validator) so a hand-edited draft goes through the
+  // exact same sanitization/length-capping/stripTrustedIds pass a
+  // freshly-parsed one does; the model is never trusted with an id and
+  // neither is a human-submitted body that happens to contain one.
+  const approved: LeadImportDraft = normalizeLeadImportDraft(body.approved);
+
+  if (!approved.contact.person_name && !approved.contact.company_name) {
+    return c.json({ ok: false, error: "missing_contact_identity", message: "A contact name or company name is required before creating a lead." }, 400);
+  }
+  if (approved.properties.length === 0) {
+    return c.json({ ok: false, error: "missing_property", message: "At least one property address is required before creating a lead." }, 400);
+  }
+
+  const clientChoice: ClientChoice = body.client_choice && body.client_choice.action === "link"
+    ? { action: "link", client_id: String(body.client_choice.client_id || "") }
+    : { action: "create" };
+  if (clientChoice.action === "link" && !clientChoice.client_id) {
+    return c.json({ ok: false, error: "bad_request", message: "client_choice.client_id is required when action is \"link\"." }, 400);
+  }
+
+  const rawPropertyChoices = Array.isArray(body.property_choices) ? body.property_choices : [];
+  const propertyChoices: PropertyChoice[] = approved.properties.map((_p, i) => {
+    const raw = rawPropertyChoices[i];
+    if (raw && raw.action === "link" && raw.property_id) {
+      return { action: "link", property_id: String(raw.property_id) };
+    }
+    return { action: "create" };
+  });
+
+  // Division: the human's explicit final choice (division_key) takes
+  // priority when supplied; otherwise fall back to re-running the same
+  // deterministic-first classifier this import's own extract step already
+  // ran, using the approved (possibly edited) draft's own project/division
+  // fields — never the model's label treated as an id, exactly as
+  // classifyDivision's own contract requires.
+  const divisions = await loadDivisions(db, companyId);
+  let division = classifyDivision(divisions, {
+    projectCategory: approved.project, workType: approved.project,
+    serviceLine: approved.division_suggestion.label, aiSuggestedLabel: approved.division_suggestion.label,
+  });
+  if (body.division_key) {
+    // Case-insensitive match against key/label, matching classifyDivision's
+    // own internal norm() comparison exactly (src/ai/lead-import-division.ts)
+    // — a case-sensitive match here would silently fail to find a division
+    // whose stored key/label differs only in case from what the client sent.
+    const wanted = String(body.division_key).toLowerCase().trim();
+    const explicit = divisions.find(
+      (d) => d.key.toLowerCase().trim() === wanted || d.label.toLowerCase().trim() === wanted,
+    );
+    if (explicit) division = { division: explicit, source: "explicit", isFallback: false };
+  }
+
+  // ── Write-once guard FIRST, mirroring postApprovedReceiptToLedger's
+  // documented ordering exactly: the guarded status transition happens
+  // BEFORE any CRM insert below, so a losing concurrent request (racing
+  // confirm calls against the same import) never reaches the client/
+  // opportunity INSERT at all — it fails this UPDATE's WHERE clause and
+  // returns a safe "already in progress" response instead of creating a
+  // second, duplicate record set. ──────────────────────────────────────────
+  const guard = await db.prepare(
+    `UPDATE lead_import SET status='creating', updated_at=datetime('now') WHERE id=? AND status=?`
+  ).bind(importId, current).run();
+  if (!guard.meta.changes) {
+    // Someone else's concurrent confirm call won the race between our read
+    // of `current` above and this write — re-read and return that result
+    // rather than erroring, since the outcome is exactly the not-a-real-
+    // error "already_confirmed" case above, just discovered a few
+    // milliseconds later than usual.
+    const winner = await loadOwnedImport(db, companyId, importId);
+    let resultOpportunityIds: string[] = [];
+    try { resultOpportunityIds = JSON.parse(winner?.result_opportunity_ids_json || "[]"); } catch { /* leave empty */ }
+    return c.json({
+      ok: true,
+      data: {
+        import_id: importId, status: winner?.status || "creating", already_confirmed: true,
+        result_client_id: winner?.result_client_id || "", result_opportunity_ids: resultOpportunityIds,
+      },
+    });
+  }
+
+  try {
+    // ── Client: link to an existing row, or create a new one. ─────────────
+    let clientId: string;
+    if (clientChoice.action === "link") {
+      const existing: any = await db.prepare(`SELECT id FROM clients WHERE id=? AND company_id=?`)
+        .bind(clientChoice.client_id, companyId).first();
+      if (!existing) {
+        await setImportStatus(db, importId, "creating", "failed", { errorMessage: "client_not_found" }).catch(() => {});
+        return c.json({ ok: false, error: "client_not_found", message: "The client you chose to link no longer exists." }, 404);
+      }
+      clientId = existing.id;
+    } else {
+      clientId = newId("cli");
+      const contactName = approved.contact.person_name || approved.contact.company_name;
+      await db.prepare(
+        `INSERT INTO clients (id, company_id, name, phone, email, address, type, notes)
+         VALUES (?,?,?,?,?,?,?,?)`
+      ).bind(
+        clientId, companyId, contactName, approved.contact.phone, approved.contact.email,
+        approved.properties[0]?.address || "", approved.client_type, approved.summary_note || "",
+      ).run();
+    }
+
+    // ── Properties: link existing rows, or create new ones — one per
+    // approved.properties[i], following each entry's own choice. ──────────
+    const propertyIds: string[] = [];
+    for (const [i, p] of approved.properties.entries()) {
+      const choice: PropertyChoice = propertyChoices[i] ?? { action: "create" };
+      if (choice.action === "link") {
+        const existing: any = await db.prepare(`SELECT id FROM properties WHERE id=? AND company_id=? AND client_id=?`)
+          .bind(choice.property_id, companyId, clientId).first();
+        if (existing) {
+          propertyIds.push(existing.id);
+          continue;
+        }
+        // A stale/invalid link target must never silently drop this
+        // property from the lead — fall through to creating it instead,
+        // same as if "create" had been chosen.
+      }
+      const propId = newId("prop");
+      await db.prepare(
+        `INSERT INTO properties (id, company_id, client_id, label, street, notes, is_primary)
+         VALUES (?,?,?,?,?,?,?)`
+      ).bind(propId, companyId, clientId, p.label || "Primary Property", p.address || "", p.notes || "", i === 0 ? 1 : 0).run();
+      propertyIds.push(propId);
+    }
+
+    // ── One opportunity per property (multi-property handling — the spec's
+    // "one contact, several sites -> several opportunities" requirement),
+    // all sharing the same client_id and the same division classification. ─
+    const defaultStage = await resolveDefaultPipelineStage(db, companyId);
+    const multi = approved.properties.length > 1;
+    const contactName = approved.contact.person_name || approved.contact.company_name;
+    const opportunityIds: string[] = [];
+    for (const p of approved.properties) {
+      const oppId = await insertOpportunityRow(db, companyId, {
+        repId: repId || null,
+        client: multi ? `${contactName} — ${p.label || p.address || "Site"}` : contactName,
+        phone: approved.contact.phone, email: approved.contact.email, address: p.address,
+        serviceLine: division.division.label, source: "PDF Import", status: defaultStage,
+        project: approved.project, urgency: approved.urgency, decisionMaker: contactName,
+        workType: division.division.key, clientType: approved.client_type,
+        clientId,
+      });
+      opportunityIds.push(oppId);
+
+      const noteBody = [
+        approved.summary_note || "",
+        p.notes ? `Site notes: ${p.notes}` : "",
+      ].filter(Boolean).join("\n");
+      if (noteBody) {
+        await db.prepare(`INSERT INTO notes (id, opp_id, rep_id, body, company_id) VALUES (?,?,?,?,?)`)
+          .bind(newId("note"), oppId, repId || null, noteBody, companyId).run();
+      }
+
+      // Document access from every resulting record (spec requirement):
+      // link this import's source document to each opportunity created —
+      // INSERT OR IGNORE since the unique index on (document_id,
+      // entity_type, entity_id) makes a repeat link (e.g. a future
+      // "re-link this document" action) a safe no-op, never a duplicate row.
+      await db.prepare(
+        `INSERT OR IGNORE INTO lead_import_document_link (id, company_id, document_id, import_id, entity_type, entity_id)
+         VALUES (?,?,?,?, 'opportunity', ?)`
+      ).bind(newId("lidl"), companyId, row.document_id, importId, oppId).run();
+    }
+
+    // Link the document to the client too (once, regardless of how many
+    // properties/opportunities were created from this one import).
+    await db.prepare(
+      `INSERT OR IGNORE INTO lead_import_document_link (id, company_id, document_id, import_id, entity_type, entity_id)
+       VALUES (?,?,?,?, 'client', ?)`
+    ).bind(newId("lidl"), companyId, row.document_id, importId, clientId).run();
+
+    // Result references + terminal status — mirrors postApprovedReceiptToLedger's
+    // "only the request that won the guard reaches this line" property:
+    // nothing above this point can run twice for the same import, so these
+    // writes are safe without a further guard of their own.
+    await db.prepare(
+      `UPDATE lead_import SET status='finalized', approved_json=?, confirmed_by_rep_id=?, confirmed_at=datetime('now'),
+         result_client_id=?, result_opportunity_ids_json=?, updated_at=datetime('now') WHERE id=?`
+    ).bind(JSON.stringify(approved), repId || "", clientId, JSON.stringify(opportunityIds), importId).run();
+
+    // Note: unlike index.tsx's POST /api/opportunities, this route does not
+    // call syncPublishedStageAssignment() or write a `{companyId}:last_write`
+    // broadcast setting. Neither is exported from index.tsx (importing them
+    // back out of index.tsx would recreate the cycle this router is built to
+    // avoid — see the file header), and src/marketing/public.ts's own
+    // insertOpportunityRow call site (the public inquiry-form lead path)
+    // follows the exact same precedent: not every opportunity-creating
+    // entry point outside index.tsx performs those two side effects.
+    await logActivity(db, {
+      companyId, actorId: repId || "", actorName: repId || "",
+      entityType: "lead_import", entityId: importId, entityLabel: contactName,
+      action: "confirmed", afterJson: { client_id: clientId, opportunity_ids: opportunityIds },
+    });
+
+    return c.json({
+      ok: true,
+      data: {
+        import_id: importId, status: "finalized",
+        result_client_id: clientId, result_opportunity_ids: opportunityIds,
+        division: division,
+      },
+    });
+  } catch (e: any) {
+    console.error("[lead-import/confirm]", e?.message || e);
+    await setImportStatus(db, importId, "creating", "failed", { errorMessage: "create_error" }).catch(() => {});
+    return c.json({ ok: false, error: "create_error", message: "Could not create the lead. Please try again." }, 500);
+  }
 });
