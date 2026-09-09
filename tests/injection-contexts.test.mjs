@@ -103,7 +103,10 @@ test('IJ-04 an entity string is escaped once, not decoded and re-encoded', () =>
 test('IJ-05 navigation links carry no inline JavaScript at all', () => {
   const { R } = recordModule();
   for (const id of PAYLOADS) {
-    const html = R.PaymentTimeline([], { invoiceId: id })
+    // A milestone is required, or PaymentTimeline early-returns an empty-state
+    // card with no link — restoring the inline onclick on its link would not
+    // have failed this test.
+    const html = R.PaymentTimeline([{ name: 'Deposit', amount: 100, status: 'paid' }], { invoiceId: id })
       + R.FinancialSummary({ invoiceId: id, estimateId: id, contractTotal: 100, balanceDue: 0 });
     const { document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
     for (const el of document.querySelectorAll('*')) {
@@ -151,16 +154,20 @@ test('IJ-08 record-page interpolates no value into a JavaScript string', () => {
   // authored code, by design. What must never come back is an interpolated
   // DATA value inside a JS string literal, which is what the invoiceId and
   // estimateId links used to be.
+  // Handlers can span lines — the defect this PR removed was a four-line
+  // onclick, and only its second line carried both the attribute and an
+  // interpolation. Scanning the file as one string with the attribute value
+  // allowed to run past newlines catches the continuation lines too.
   const offenders = [];
-  recSource.split('\n').forEach((line, i) => {
-    if (/^\s*(\/\/|\*)/.test(line.trim())) return;
-    if (/onclick="[^"]*'\$\{/.test(line)) offenders.push(`record-page.js:${i + 1}`);
-  });
+  for (const m of recSource.matchAll(/\son[a-z]+="([^"]*)"/g)) {
+    if (/'\$\{/.test(m[1])) offenders.push(m[0].trim().slice(0, 70));
+  }
   assert.deepEqual(offenders, [], 'a value is interpolated into a JS string literal');
 });
 
 test('IJ-08b the latent id-in-onclick surface in invoices.js cannot grow', () => {
-  // invoices.js has 19 handlers of the shape onclick="_invFoo('${inv.id}')".
+  // invoices.js has 21 handlers of the shape onEVENT="_invFoo('${inv.id}')" —
+  // 19 onclick plus two onchange the original onclick-only regex could not see.
   // They are NOT live: invoice ids are generated server-side as
   // `inv_${Date.now()}_${base36}` (src/index.tsx:9298, 9526) and the POST route
   // never reads an id from the body, so no attacker-controlled value reaches
@@ -173,23 +180,44 @@ test('IJ-08b the latent id-in-onclick surface in invoices.js cannot grow', () =>
   // these, this fails and says why.
   const sites = recount(invSource);
   assert.ok(
-    sites.length <= 19,
+    sites.length <= 21,
     `inline onclick handlers interpolating into a JS string grew to ${sites.length}:\n  ` +
-    sites.slice(19).join('\n  '),
+    sites.slice(21).join('\n  '),
   );
-  // Only ids may appear there. Anything else is a new class of value.
-  const nonId = sites.filter(l => !/'\$\{(inv\.id|invId|invId\|\|''|i\.id)\}'/.test(l));
+  // Only ids may appear there — checked per INTERPOLATION, not per line. The
+  // previous version asked whether the line contained any id, so
+  // onclick="_invFoo('${inv.id}','${inv.client_name}')" was filtered out by its
+  // first argument and the second never examined.
+  const ID = /^(inv\.id|invId(\s*\|\|\s*'')?|i\.id|i|id|cl\.id|pm\.id)$/;
+  const nonId = [];
+  for (const line of sites) {
+    for (const expr of jsStringInterpolations(line)) {
+      if (!ID.test(expr)) nonId.push(`${expr}  <-  ${line.trim().slice(0, 60)}`);
+    }
+  }
   assert.deepEqual(
-    nonId.map(l => l.trim().slice(0, 60)), [],
+    nonId, [],
     'a non-id value is now interpolated into a JavaScript string literal',
   );
 });
 
+/**
+ * Every line putting an interpolation inside a JS string literal in ANY inline
+ * handler attribute.
+ *
+ * `onclick` alone missed onchange="_invUpdateDueDate('${inv.id}',this.value)"
+ * and its sibling at :447 — the identical shape, invisible to the guard.
+ */
 function recount(src) {
   return src.split('\n').filter(line => {
     if (/^\s*(\/\/|\*)/.test(line.trim())) return false;
-    return /onclick="[^"]*'\$\{/.test(line);
+    return /\son[a-z]+="[^"]*'\$\{/.test(line);
   });
+}
+
+/** Every `'${...}'` occurrence on a line, so each is judged on its own. */
+function jsStringInterpolations(line) {
+  return [...line.matchAll(/'\$\{([^}]*)\}'/g)].map(m => m[1].trim());
 }
 
 test('IJ-09 every _invDate/_invAgo call site is covered by the helper', () => {
@@ -199,4 +227,59 @@ test('IJ-09 every _invDate/_invAgo call site is covered by the helper', () => {
   assert.equal(wrapped, 0, 'a call site now escapes too — the helper would double-escape');
   const sites = (invSource.match(/\$\{[^}]*_inv(Date|Ago)\(/g) || []).length;
   assert.ok(sites >= 8, `expected at least 8 interpolation sites, found ${sites}`);
+});
+
+test('IJ-10 no user-controlled value sits raw in an HTML attribute', () => {
+  // The element context was hardened first and the ATTRIBUTE context was left
+  // raw in the same file — `value="${inv.due_date||''}"` on the invoice detail,
+  // the same field the fix eight lines above names as attacker-controlled, plus
+  // the builder's copy and the line-item qty/unit_price whose `description`
+  // sibling one line up WAS escaped.
+  //
+  // due_date is stored verbatim (src/index.tsx: `b.due_date`), and line_items
+  // is JSON.stringify'd straight from the body, so both are reachable.
+  const ATTR = /(\b[a-zA-Z-]+)="([^"]*\$\{[^"]*)"/g;
+  const SAFE = /_invEsc\(|esc\(|escapeHtml\(|gwIcon\(|_invBadge\(|_invFmt\(|_invDate\(|_invAgo\(|Class\(|fmt\(/;
+  // Server-generated ids and literals from in-file arrays are not user data.
+  const INERT = /^(inv\.id|invId(\s*\|\|\s*'')?|i|id|cl\.id|pm\.id|t|primary|state|pct|td\.color|\(inv\.balance_due\|\|0\)\.toFixed\(2\))$/;
+  // A ternary whose branches are both quoted literals can only emit one of
+  // them, whatever the condition is — e.g. aria-selected="${x ? 'true' : 'false'}".
+  const LITERAL_TERNARY = /\?\s*'[^']*'\s*:\s*'[^']*'\s*$/;
+  const offenders = [];
+  for (const [file, src] of [['invoices.js', invSource], ['record-page.js', recSource]]) {
+    src.split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line.trim())) return;
+      for (const m of line.matchAll(ATTR)) {
+        const [, attr, val] = m;
+        if (/^(class|style|data-|id$)/.test(attr) || /^on[a-z]+$/.test(attr)) continue;
+        for (const e of val.matchAll(/\$\{([^}]*)\}/g)) {
+          const expr = e[1].trim();
+          if (SAFE.test(expr) || INERT.test(expr) || LITERAL_TERNARY.test(expr)) continue;
+          offenders.push(`${file}:${i + 1} ${attr}="\${${expr}}"`);
+        }
+      }
+    });
+  }
+  assert.deepEqual(offenders, [], 'a user-controlled value is raw in an HTML attribute');
+});
+
+test('IJ-11 a poisoned due date cannot break out of its input attribute', () => {
+  // Executed, not matched: render the real attribute and parse it.
+  const { _invEsc } = invoiceDates();
+  for (const p of PAYLOADS) {
+    const html = `<input type="date" value="${_invEsc(p)}">`;
+    const { document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
+    const input = document.querySelector('input');
+    assert.equal(input.getAttribute('value'), p, 'the value did not round-trip');
+    assert.equal(input.getAttribute('onfocus'), null, `${p} injected a handler`);
+    assert.equal(document.body.querySelectorAll('*').length, 1, `${p} created extra elements`);
+  }
+});
+
+test('IJ-12 every exit from _invDate is HTML-safe, including the catch', () => {
+  // The catch returned the raw value, so the invariant all eight call sites now
+  // rely on was untrue on one branch.
+  const src = invSource.slice(invSource.indexOf('function _invDate'), invSource.indexOf('function _invAgo'));
+  assert.doesNotMatch(src, /catch\s*\(e\)\s*\{\s*return d;/, '_invDate still echoes the raw value on throw');
+  assert.match(src, /catch\s*\(e\)\s*\{\s*return _invEsc\(String\(d\)\);/);
 });

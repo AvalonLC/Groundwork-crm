@@ -42,7 +42,7 @@ function _invDate(d) {
     if (!Number.isFinite(t.getTime())) return _invEsc(String(d));
     return t.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
   }
-  catch(e) { return d; }
+  catch(e) { return _invEsc(String(d)); }
 }
 function _invAgo(d) {
   if (!d) return '';
@@ -439,7 +439,7 @@ function _invRenderDetail(inv) {
   <div class="inv-detail-dates-bar">
     <div class="inv-detail-date-pill">
       <span class="inv-detail-date-lbl">Due Date</span>
-      <input type="date" class="inv-date-inline" id="invDueDateInline" value="${inv.due_date||''}"
+      <input type="date" class="inv-date-inline" id="invDueDateInline" value="${_invEsc(inv.due_date||'')}"
         onchange="_invUpdateDueDate('${inv.id}',this.value)">
     </div>
     <div class="inv-detail-date-pill">
@@ -509,7 +509,7 @@ function _invRenderDetail(inv) {
     <div class="inv-detail-party-lbl" style="margin-bottom:6px">${gwIcon('globe',12,'#9CA3AF')} Client Portal Link</div>
     <div style="display:flex;gap:8px">
       <input class="inv-portal-input" readonly id="invPortalLink_${inv.id}"
-        value="${window.location.origin}/invoices/portal/${inv.portal_token||''}">
+        value="${_invEsc(window.location.origin + '/invoices/portal/' + (inv.portal_token||''))}">
       <button class="inv-btn-secondary" style="flex-shrink:0" onclick="navigator.clipboard.writeText(document.getElementById('invPortalLink_${inv.id}').value).then(()=>showToast('Link copied','success'))">${gwIcon('copy',13)} Copy</button>
     </div>
   </div>`;
@@ -593,7 +593,7 @@ window._invResendModal = async function(invId) {
       <div class="inv-portal-row" style="margin-top:8px">
         <div class="inv-detail-party-lbl" style="margin-bottom:4px">Portal Link (included automatically)</div>
         <div style="display:flex;gap:8px">
-          <input class="inv-portal-input" readonly id="invResendPortalLink" value="${window.location.origin}/invoices/portal/${inv.portal_token||''}">
+          <input class="inv-portal-input" readonly id="invResendPortalLink" value="${_invEsc(window.location.origin + '/invoices/portal/' + (inv.portal_token||''))}">
           <button class="inv-btn-secondary" style="flex-shrink:0" onclick="navigator.clipboard.writeText(document.getElementById('invResendPortalLink').value).then(()=>showToast('Copied','success'))">${gwIcon('copy',12)} Copy</button>
         </div>
       </div>
@@ -912,7 +912,7 @@ function _invRenderBuilder(inv, clients, invId) {
         <div class="inv-row2">
           <div class="inv-field-group">
             <label class="inv-label">Due Date</label>
-            <input class="inv-input" type="date" id="invDueDate" value="${inv?.due_date||defaultDueStr}">
+            <input class="inv-input" type="date" id="invDueDate" value="${_invEsc(inv?.due_date||defaultDueStr)}">
           </div>
           <div class="inv-field-group">
             <label class="inv-label">Terms</label>
@@ -942,11 +942,11 @@ function _invRenderBuilder(inv, clients, invId) {
         <div class="inv-row2">
           <div class="inv-field-group">
             <label class="inv-label">Tax Rate (%)</label>
-            <input class="inv-input" type="number" id="invTaxRate" value="${inv?.tax_rate||0}" min="0" max="100" step="0.01" oninput="_invCalcTotals()">
+            <input class="inv-input" type="number" id="invTaxRate" value="${_invEsc(inv?.tax_rate||0)}" min="0" max="100" step="0.01" oninput="_invCalcTotals()">
           </div>
           <div class="inv-field-group">
             <label class="inv-label">Discount ($)</label>
-            <input class="inv-input" type="number" id="invDiscount" value="${inv?.discount_amount||0}" min="0" step="0.01" oninput="_invCalcTotals()">
+            <input class="inv-input" type="number" id="invDiscount" value="${_invEsc(inv?.discount_amount||0)}" min="0" step="0.01" oninput="_invCalcTotals()">
           </div>
         </div>
         <div class="inv-totals-preview" id="invTotalsPreview">
@@ -979,8 +979,8 @@ let _invLineCount = 1;
 function _invLineItemRow(li, i) {
   return `<div class="inv-li-row" data-idx="${i}" id="invLiRow_${i}">
     <input class="inv-input inv-li-desc" type="text" placeholder="Description" value="${_invEsc(li.description||'')}" oninput="_invCalcTotals()">
-    <input class="inv-input inv-li-qty" type="number" placeholder="Qty" value="${li.qty||1}" min="0" step="any" oninput="_invCalcTotals()">
-    <input class="inv-input inv-li-price" type="number" placeholder="Unit $" value="${li.unit_price||0}" min="0" step="0.01" oninput="_invCalcTotals()">
+    <input class="inv-input inv-li-qty" type="number" placeholder="Qty" value="${_invEsc(li.qty ?? 1)}" min="0" step="any" oninput="_invCalcTotals()">
+    <input class="inv-input inv-li-price" type="number" placeholder="Unit $" value="${_invEsc(li.unit_price ?? 0)}" min="0" step="0.01" oninput="_invCalcTotals()">
     <div class="inv-li-total" id="invLiTotal_${i}">${_invFmt((li.qty||1)*(li.unit_price||0))}</div>
     <button type="button" class="inv-li-remove" onclick="_invRemoveLineItem(${i})">${gwIcon('trash',11,'#9CA3AF')}</button>
   </div>`;
@@ -1136,7 +1136,7 @@ function _invRenderPortal(inv, brand) {
 <div style="min-height:100vh;background:#F3F4F6;font-family:'Inter',sans-serif">
   <div style="background:${primary};padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px">
     <div>
-      ${brand.logo_url ? `<img src="${brand.logo_url}" alt="${brand.name||''}" style="height:44px;object-fit:contain">` : `<div style="font-size:22px;font-weight:900;color:#fff">${brand.name||'Groundwork'}</div>`}
+      ${brand.logo_url ? `<img src="${_invEsc(brand.logo_url||'')}" alt="${_invEsc(brand.name||'')}" style="height:44px;object-fit:contain">` : `<div style="font-size:22px;font-weight:900;color:#fff">${brand.name||'Groundwork'}</div>`}
       ${brand.tagline ? `<div style="font-size:11px;color:rgba(255,255,255,.72);margin-top:2px;font-style:italic">${brand.tagline}</div>` : ''}
     </div>
     <div style="text-align:right;color:rgba(255,255,255,.8);font-size:12px;line-height:1.6">

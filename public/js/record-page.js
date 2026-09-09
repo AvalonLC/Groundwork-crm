@@ -735,7 +735,7 @@
     const visible = crew.slice(0, 3);
     const overflow = crew.length > 3 ? crew.length - 3 : 0;
     const avatars = visible.map(c =>
-      `<div class="ops-assign-avatar" title="${c.name||''}">${c.initials||'?'}</div>`
+      `<div class="ops-assign-avatar" title="${esc(c.name||'')}">${c.initials||'?'}</div>`
     ).join('') + (overflow ? `<div class="ops-assign-overflow">+${overflow}</div>` : '');
     return `<div class="ops-assign-row">
       <div class="ops-assign-avatars">${avatars}</div>
