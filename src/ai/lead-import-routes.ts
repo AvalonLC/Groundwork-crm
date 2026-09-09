@@ -461,9 +461,9 @@ leadImportRouter.post("/:id/extract", async (c) => {
 //      the CRM's client/property list can change between an import's
 //      extraction and a human opening the review screen.
 // This route never writes to the database — matching is suggestion-only by
-// spec ("fuzzy-as-suggestion-only, deterministic-first"); the not-yet-built
-// confirm route is where a human's explicit link-vs-create choice is
-// actually acted on.
+// spec ("fuzzy-as-suggestion-only, deterministic-first"); POST /:id/confirm
+// below is where a human's explicit link-vs-create choice is actually acted
+// on.
 leadImportRouter.get("/:id", async (c) => {
   const db = c.env.DB as D1Database;
   const companyId = c.var.companyId as string;
@@ -589,8 +589,8 @@ leadImportRouter.get("/:id", async (c) => {
 //   - "document access from every resulting record" — one
 //     lead_import_document_link row per client/opportunity actually
 //     created or linked this call, so the source PDF can be found FROM any
-//     of them later (a document/preview route is separate, not-yet-built
-//     work; the link rows this route writes are what that route will read).
+//     of them later via GET /entity-links/:entityType/:entityId, which
+//     reads exactly these rows (see that route below).
 async function loadDivisions(db: D1Database, companyId: string) {
   return loadCompanyDivisions(db, companyId);
 }
