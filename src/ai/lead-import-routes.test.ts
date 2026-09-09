@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { PDFDocument } from "pdf-lib";
+import { http, HttpResponse } from "msw";
+import { network } from "../../test/network";
 import { leadImportRouter } from "./lead-import-routes";
 
 const db = () => env.DB as D1Database;
@@ -290,6 +292,192 @@ describe("POST /api/lead-import/:id/extract", () => {
     expect(j.error).toBe("document_missing");
     const row: any = await db().prepare(`SELECT status FROM lead_import WHERE id=?`).bind(up.data.import_id).first();
     expect(row.status).toBe("failed");
+  });
+
+  // ── AI-call-succeeds branch, mocked via @msw/cloudflare's setupNetwork() ──
+  //
+  // Every LIX-01..06 test above exercises the "no AI key configured" path
+  // (see the describe-block comment above): _aiCreds() finds nothing to
+  // call, so extract soft-degrades straight to needs_review without ever
+  // reaching _aiChatJson's fetch(). That's real, correct coverage of a real
+  // production path (an AI-disabled tenant), but it never actually invokes
+  // the fetch() inside _aiChatJson (src/ai/infra.ts) — so a bug specific to
+  // handling a successful upstream response (parsing draft.contact fields,
+  // running them through classifyDivision/deriveMissingInfo, and persisting
+  // proposed_json/warnings_json) had no test able to catch it. The
+  // TENANT_AI/TENANT_AI_AVAILABLE tenants below get a real
+  // `{companyId}:openai_api_key` settings row (an obviously-fake test-only
+  // value, never a real credential) so _aiCreds() resolves a non-empty
+  // apiKey and the route actually reaches _aiChatJson -> fetch(); MSW's
+  // setupNetwork() (wired into vitest.config.ts's setupFiles via
+  // test/mock-network-setup.ts) intercepts that fetch() call *inside the
+  // workerd runtime* and returns a canned OpenAI-shaped chat-completion
+  // response instead of ever leaving the sandbox — this is the officially
+  // documented mechanism for @cloudflare/vitest-pool-workers (see
+  // https://developers.cloudflare.com/workers/testing/vitest-integration/mock-outbound-requests/),
+  // not the raw undici MockAgent also declared in that package's types.
+  const TENANT_AI = "t-lead-import-ai";
+  const TENANT_AI_NO_ADDRESS = "t-lead-import-ai-no-address";
+  const TENANT_AI_UPSTREAM_ERROR = "t-lead-import-ai-upstream-error";
+
+  async function enableFakeAiKey(companyId: string) {
+    await db().prepare(
+      `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, 'sk-test-fake-not-a-real-key', datetime('now'))`
+    ).bind(`${companyId}:openai_api_key`).run();
+  }
+
+  /** A complete, schema-shaped chat-completion body — see LEAD_IMPORT_DRAFT_SCHEMA in lead-import-parse.ts. */
+  function fakeChatCompletion(draftOverrides: Record<string, any> = {}) {
+    const draft = {
+      contact: { person_name: "Jamie Rivera", company_name: "Rivera Property Group", phone: "555-010-2233", email: "jamie@riverapg.example" },
+      client_type: "Commercial",
+      properties: [{ label: "Main Site", address: "42 Alder Court, Springfield, OH 45501", notes: "gate code 1234" }],
+      project: "Tree removal and stump grinding",
+      urgency: "within 30 days",
+      contract_hint: "one_time",
+      summary_note: "Removal of three dead oaks near the parking lot.",
+      pricing_options: [{
+        label: "Tree removal (3 trees) + stump grinding", property_label: "Main Site",
+        customer_price_low_cents: 180000, customer_price_high_cents: 220000,
+        billing_frequency: "one_time", internal_cost_cents: null, is_deposit: false, notes: "",
+      }],
+      division_suggestion: { label: "Tree Removal", rationale: "Document explicitly describes tree removal and stump grinding work." },
+      ...draftOverrides,
+    };
+    return {
+      id: "chatcmpl-fake-test-only", object: "chat.completion", model: "gpt-5-mini",
+      choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(draft) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 400, completion_tokens: 120, total_tokens: 520 },
+    };
+  }
+
+  it("LIXA-01 AI-success path: parses a full draft, classifies division, and persists proposed_json/warnings_json", async () => {
+    await enableFakeAiKey(TENANT_AI);
+    network.use(
+      http.post("https://api.openai.com/v1/chat/completions", () => HttpResponse.json(fakeChatCompletion())),
+    );
+
+    const bytes = await makePdfBytes("LIXA-01 Rivera Property Group tree removal proposal");
+    const up: any = await (await postUpload(TENANT_AI, uploadForm(bytes))).json();
+    const res = await postExtract(TENANT_AI, up.data.import_id);
+
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.status).toBe("needs_review");
+    expect(j.data.draft.contact.person_name).toBe("Jamie Rivera");
+    expect(j.data.draft.contact.company_name).toBe("Rivera Property Group");
+    expect(j.data.draft.properties).toHaveLength(1);
+    expect(j.data.draft.properties[0].address).toBe("42 Alder Court, Springfield, OH 45501");
+    expect(j.data.draft.pricing_options[0].customer_price_low_cents).toBe(180000);
+    expect(j.data.draft.pricing_options[0].customer_price_high_cents).toBe(220000);
+    // No tenant division setting exists for TENANT_AI, so classifyDivision
+    // runs against DEFAULT_DIVISIONS. Neither "Tree Removal" (the AI
+    // suggestion's label) nor the project text keyword-match any of
+    // LEGACY_KEYWORD_BRIDGES' word lists (landscape/hardscape/drainage/
+    // design/irrigat/lighting/enhancement, mainten/mowing/recurring,
+    // snow/ice/plow) — so this deliberately lands on the "no confident
+    // match, defaulted, please confirm" fallback path, which is itself a
+    // real, expected production outcome for a document like this one.
+    expect(j.data.division.isFallback).toBe(true);
+    expect(j.data.division.source).toBe("default");
+    // A full contact + address + phone means nothing should be flagged missing,
+    // but the division fallback above still produces exactly one warning.
+    expect(j.data.missing_info).toEqual([]);
+    expect(j.data.warnings).toEqual([
+      'Could not confidently classify a division from this document — defaulted to "Landscape". Please confirm.',
+    ]);
+
+    const row: any = await db().prepare(
+      `SELECT status, proposed_json, warnings_json, ai_model FROM lead_import WHERE id=?`
+    ).bind(up.data.import_id).first();
+    expect(row.status).toBe("needs_review");
+    expect(row.ai_model).toBe("gpt-5-mini");
+    const persisted = JSON.parse(row.proposed_json);
+    expect(persisted.contact.person_name).toBe("Jamie Rivera");
+    expect(JSON.parse(row.warnings_json)).toEqual([
+      'Could not confidently classify a division from this document — defaulted to "Landscape". Please confirm.',
+    ]);
+  });
+
+  it("LIXA-02 AI-success path with an incomplete draft: missing_info and division-fallback warnings both surface", async () => {
+    await enableFakeAiKey(TENANT_AI_NO_ADDRESS);
+    network.use(
+      http.post("https://api.openai.com/v1/chat/completions", () => HttpResponse.json(fakeChatCompletion({
+        contact: { person_name: "", company_name: "", phone: "", email: "" },
+        properties: [],
+        division_suggestion: { label: "", rationale: "" },
+      }))),
+    );
+
+    const bytes = await makePdfBytes("LIXA-02 vague document with no contact or address");
+    const up: any = await (await postUpload(TENANT_AI_NO_ADDRESS, uploadForm(bytes))).json();
+    const res = await postExtract(TENANT_AI_NO_ADDRESS, up.data.import_id);
+
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.status).toBe("needs_review");
+    // No person_name/company_name -> contact_identity; no address -> property_address;
+    // no phone/email -> contact_method (see deriveMissingInfo in pdf-lead-import.ts).
+    expect(j.data.missing_info).toEqual(["contact_identity", "property_address", "contact_method"]);
+    expect(j.data.warnings.some((w: string) => /Missing:/.test(w))).toBe(true);
+    expect(j.data.warnings.some((w: string) => /No property address/i.test(w))).toBe(true);
+    // Empty division_suggestion.label gives the deterministic classifier
+    // nothing to match against either -> falls all the way to the default.
+    expect(j.data.division.isFallback).toBe(true);
+    expect(j.data.warnings.some((w: string) => /Could not confidently classify a division/i.test(w))).toBe(true);
+  });
+
+  it("LIXA-03 upstream non-OK response soft-degrades to needs_review with an ai_upstream error, never a 500", async () => {
+    await enableFakeAiKey(TENANT_AI_UPSTREAM_ERROR);
+    network.use(
+      http.post("https://api.openai.com/v1/chat/completions", () =>
+        HttpResponse.json({ error: { message: "invalid_api_key (test double)" } }, { status: 401 })),
+    );
+
+    const bytes = await makePdfBytes("LIXA-03 upstream failure case");
+    const up: any = await (await postUpload(TENANT_AI_UPSTREAM_ERROR, uploadForm(bytes))).json();
+    const res = await postExtract(TENANT_AI_UPSTREAM_ERROR, up.data.import_id);
+
+    expect(res.status).toBe(200); // extraction itself still succeeded — this is a soft degrade, not a route failure
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.status).toBe("needs_review");
+    expect(j.data.warning).toMatch(/AI parsing failed/i);
+
+    const row: any = await db().prepare(`SELECT status, error_message, proposed_json FROM lead_import WHERE id=?`)
+      .bind(up.data.import_id).first();
+    expect(row.status).toBe("needs_review");
+    expect(row.error_message).toBe("ai_upstream");
+    // Column default is NOT NULL DEFAULT '' (migrations/0088), never actually
+    // NULL — asserting the empty-string default is what "never partially
+    // written on a failed AI call" means at the schema level here.
+    expect(row.proposed_json).toBe("");
+  });
+
+  it("LIXA-04 a JSON-invalid AI response (never happens with structured outputs, but the bare-fallback path can produce one) still soft-degrades cleanly", async () => {
+    await enableFakeAiKey(TENANT_AI_UPSTREAM_ERROR);
+    // Reuses TENANT_AI_UPSTREAM_ERROR's already-fake key from LIXA-03 (each
+    // test's network.use() handler is reset afterEach, so this is an
+    // independent case, not relying on the previous test's registration).
+    network.use(
+      http.post("https://api.openai.com/v1/chat/completions", () => HttpResponse.json({
+        id: "chatcmpl-malformed", object: "chat.completion", model: "gpt-5-mini",
+        choices: [{ index: 0, message: { role: "assistant", content: "not json at all, model went rogue" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+      })),
+    );
+
+    const bytes = await makePdfBytes("LIXA-04 malformed AI response case");
+    const up: any = await (await postUpload(TENANT_AI_UPSTREAM_ERROR, uploadForm(bytes))).json();
+    const res = await postExtract(TENANT_AI_UPSTREAM_ERROR, up.data.import_id);
+
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.status).toBe("needs_review");
+    expect(j.data.warning).toMatch(/AI parsing failed/i);
+    const row: any = await db().prepare(`SELECT error_message FROM lead_import WHERE id=?`).bind(up.data.import_id).first();
+    expect(row.error_message).toBe("ai_error"); // _aiParseJson threw -> caught by the catch block, not the r.ok===false branch
   });
 });
 

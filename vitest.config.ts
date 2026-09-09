@@ -27,6 +27,6 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     reporters: ["default", "json"],
     outputFile: { json: "./test-results.json" },
-    setupFiles: ["./test/apply-migrations.ts"]
+    setupFiles: ["./test/apply-migrations.ts", "./test/mock-network-setup.ts"]
   }
 });
