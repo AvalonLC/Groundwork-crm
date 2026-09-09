@@ -56,6 +56,8 @@ import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/l
 import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, toolSpecs } from './marketing/ai-tools'
 // ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
 import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
+// ── PDF-to-lead import — mounted sub-router (see src/ai/lead-import-routes.ts) ──
+import { leadImportRouter } from './ai/lead-import-routes'
 import { hoursPerVisitFromRecurringData } from './recurring/estimate_hours'
 import { generateVisits, VISIT_HORIZON_DAYS, WORK_ORDER_HORIZON_DAYS } from './recurring/generate'
 import { shouldLockRate } from './api/labor_variance'
@@ -112,6 +114,13 @@ app.route('/api/marketing', marketingRouter)
 // c.var.companyId.
 app.use('/api/scheduling/*', requireAuth)
 app.route('/api/scheduling', schedulingRouter)
+
+// ── PDF-to-lead import ───────────────────────────────────────────────────────
+// Same pattern again: requireAuth at the mount point so leadImportRouter
+// stays a plain Hono app that can be tested on its own (see
+// src/ai/lead-import-routes.test.ts).
+app.use('/api/lead-import/*', requireAuth)
+app.route('/api/lead-import', leadImportRouter)
 // Scheduled drain — X-Cron-Secret header auth, same as the finance rollup.
 app.route('/internal/cron', marketingCronRouter)
 // Public: campaign images, unsubscribe, click redirects, inquiry forms and the
