@@ -27,6 +27,7 @@ import mig0034 from '../migrations/0034_price_book_estimate_merge.sql?raw'
 import mig0054 from '../migrations/0054_estimate_price_display.sql?raw'
 import mig0035 from '../migrations/0035_calendar_sync.sql?raw'
 import { ensureAiSchema, _aiCreds, _aiParseJson, _aiChatJson, _logAiUsage, _aiQuota, _aiQuotaGate, AI_PLAN_CAPS, aiPlanOf } from './ai/infra'
+import { logActivity } from './activity-log'
 import mig0037 from '../migrations/0037_platform_demos_pricing.sql?raw'
 import mig0038 from '../migrations/0038_real_pricing_import.sql?raw'
 import mig0039 from '../migrations/0039_onboarding_system.sql?raw'
@@ -1403,30 +1404,10 @@ app.get('/api/activity-log', requireAuth, async (c) => {
 // Clients CANNOT post to this endpoint directly — they call regular mutation endpoints
 // which call logActivity() internally.
 // Exposed here for Cloudflare Queue consumers or future server-to-server logging.
-async function logActivity(
-  db: D1Database,
-  { companyId, actorId, actorName, entityType, entityId, entityLabel, action, beforeJson, afterJson }: {
-    companyId: string; actorId: string; actorName: string;
-    entityType: string; entityId: string; entityLabel: string;
-    action: string; beforeJson?: any; afterJson?: any
-  }
-) {
-  try {
-    const id = 'act_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    await db.prepare(`
-      INSERT INTO activity_log
-        (id, company_id, actor_id, actor_name, entity_type, entity_id, entity_label, action, before_json, after_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      id, companyId, actorId, actorName,
-      entityType, entityId, entityLabel, action,
-      beforeJson ? JSON.stringify(beforeJson) : '',
-      afterJson  ? JSON.stringify(afterJson)  : ''
-    ).run()
-  } catch (_) {
-    // Activity log failures must never break the main operation
-  }
-}
+//
+// logActivity itself moved to src/activity-log.ts (imported at the top of this
+// file) so a standalone router mounted here (e.g. src/ai/lead-import-routes.ts)
+// can call it without an import cycle back into this file.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PIPELINE STAGES  — per-company pipeline stage configuration
