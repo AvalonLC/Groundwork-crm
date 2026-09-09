@@ -28,13 +28,22 @@
  */
 
 import { Hono } from "hono";
+import { extractText, getDocumentProxy } from "unpdf";
 import type { AppEnv } from "../env";
 import { rateLimit } from "../portal";
 import { randomToken } from "../marketing/send";
 import {
   hasPdfMagicBytes, computeContentHash, safeFilename, documentR2Key,
-  MAX_PDF_BYTES,
+  validateAndExtractPdf, canTransition, deriveMissingInfo,
+  PDF_ERROR_MESSAGES, MAX_PDF_BYTES,
+  type PdfExtractor, type LeadImportStatus, type PdfValidationError,
 } from "./pdf-lead-import";
+import {
+  buildLeadImportMessages, normalizeLeadImportDraft, LEAD_IMPORT_DRAFT_SCHEMA,
+  type LeadImportDraft,
+} from "./lead-import-parse";
+import { loadCompanyDivisions, classifyDivision } from "./lead-import-division";
+import { _aiCreds, _aiChatJson, _aiParseJson, _aiQuotaGate, _logAiUsage } from "./infra";
 
 export const leadImportRouter = new Hono<AppEnv>();
 
@@ -204,6 +213,232 @@ leadImportRouter.post("/upload", async (c) => {
       status: "uploaded",
       duplicate: false,
       safe_filename: safeName,
+    },
+  });
+});
+
+// The production unpdf extractor — identical to the one wired up in
+// src/ai/pdf-lead-import.test.ts's `realExtractor` (that test file proved
+// this exact call pattern works against the real Cloudflare Workers/
+// workerd runtime). validateAndExtractPdf takes this as an injected
+// callback so its own branching/validation logic stays independently
+// testable without a real PDF fixture for every case (see that module's doc
+// comment) — this is the one, and only, production wiring of it.
+const realPdfExtractor: PdfExtractor = async (bytes) => {
+  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+  const { totalPages, text } = await extractText(pdf, { mergePages: true });
+  return { totalPages, text: String(text || "") };
+};
+
+/**
+ * Shared row-fetch + tenant-scope guard for every route below that acts on
+ * an existing lead_import. Returns null (having already written the 404
+ * response) when the row doesn't exist or belongs to a different tenant —
+ * 404, not 403, so this never confirms to an attacker that an import id
+ * exists for a company they aren't in (same convention as
+ * src/portal.tsx's media routes).
+ */
+async function loadOwnedImport(db: D1Database, companyId: string, importId: string) {
+  return db.prepare(
+    `SELECT li.*, lid.r2_key, lid.safe_filename, lid.original_filename, lid.mime_type
+     FROM lead_import li
+     JOIN lead_import_document lid ON lid.id = li.document_id
+     WHERE li.id=? AND li.company_id=? LIMIT 1`
+  ).bind(importId, companyId).first<any>();
+}
+
+/**
+ * Move a lead_import to a new status IF the transition is legal, writing
+ * updated_at and (optionally) an error_message alongside it. Centralized so
+ * every route that changes status goes through the same canTransition()
+ * check — an illegal transition is a programming error in THIS router, not
+ * a user-facing 400, so it throws rather than returning a response, and the
+ * caller's own try/catch turns it into a failed-status write instead of an
+ * unhandled 500.
+ */
+async function setImportStatus(
+  db: D1Database, importId: string, from: LeadImportStatus, to: LeadImportStatus, extra: { errorMessage?: string } = {},
+): Promise<void> {
+  if (!canTransition(from, to)) {
+    throw new Error(`illegal lead_import transition: ${from} -> ${to}`);
+  }
+  await db.prepare(
+    `UPDATE lead_import SET status=?, error_message=?, updated_at=datetime('now') WHERE id=?`
+  ).bind(to, extra.errorMessage || "", importId).run();
+}
+
+// ── POST /api/lead-import/:id/extract — extract + AI-parse a PDF import ────
+//
+// No request body — acts entirely on the import row + its already-stored
+// R2 document. Two-phase, each phase's failure recorded as its own status
+// so a retry (POST again) re-enters exactly the step that failed rather
+// than re-running the whole pipeline blind:
+//   uploaded -> extracting -> (text pulled from R2 via unpdf)
+//            -> parsing    -> (AI call, using the shared lead-import-parse
+//                               contract — untrusted-content framing,
+//                               anti-prompt-injection, stripTrustedIds)
+//            -> needs_review (always — AI output is only ever a SUGGESTION;
+//               this route NEVER auto-advances to "ready" on the model's
+//               say-so, and NEVER creates/alters a client/opportunity/
+//               property row. A human explicitly finishing review, or
+//               explicitly accepting the draft as-is, is what the
+//               not-yet-built confirm route requires before that happens.)
+// "Re-run extraction" is this same route again: it re-reads the ALREADY
+// STORED PDF from R2 (never asks for a re-upload) and is idempotent-safe
+// to call repeatedly — canTransition treats needs_review -> needs_review
+// and failed -> extracting as legal precisely so a retry lands here safely.
+leadImportRouter.post("/:id/extract", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const repId = c.var.repId as string;
+  const importId = c.req.param("id");
+
+  const rlOk = await rateLimit(db, `lead_import_extract_${companyId}`, 30, 300);
+  if (!rlOk) {
+    return c.json({ ok: false, error: "rate_limited", message: "Too many extraction requests. Please wait a few minutes and try again." }, 429);
+  }
+
+  const row = await loadOwnedImport(db, companyId, importId);
+  if (!row) return c.json({ ok: false, error: "not_found", message: "Import not found" }, 404);
+
+  const current = row.status as LeadImportStatus;
+  // Only a state this route is actually meant to (re-)enter may proceed —
+  // an import already 'ready'/'creating'/'finalized' must go through the
+  // review/confirm routes instead, never be silently re-extracted underneath
+  // a human who has already reviewed it.
+  const RETRY_ENTRY: LeadImportStatus[] = ["uploaded", "extracting", "parsing", "needs_review", "failed"];
+  if (!RETRY_ENTRY.includes(current)) {
+    return c.json({ ok: false, error: "invalid_state", message: `Cannot extract from status "${current}".`, status: current }, 409);
+  }
+
+  // ── Phase 1: extraction (re-reads the ALREADY-STORED PDF from R2 — the
+  // spec's "re-run extraction reuses stored PDF, never asks to re-upload"
+  // requirement). ──────────────────────────────────────────────────────────
+  await setImportStatus(db, importId, current, "extracting").catch(() => {});
+
+  const obj = await (c.env.MEDIA as R2Bucket).get(row.r2_key);
+  if (!obj) {
+    // The document row exists but its R2 object is gone (should not happen
+    // under normal operation — surfaced as a named, retryable failure
+    // rather than a generic 500, since a human retrying later after an
+    // infra hiccup is the expected recovery path, not a full re-upload).
+    await setImportStatus(db, importId, "extracting", "failed", { errorMessage: "document_missing" });
+    return c.json({ ok: false, error: "document_missing", message: "The original document could not be found in storage. Please re-upload it." }, 500);
+  }
+  const bytes = await obj.arrayBuffer();
+
+  let extraction;
+  try {
+    extraction = await validateAndExtractPdf(bytes, realPdfExtractor);
+  } catch (e: any) {
+    console.error("[lead-import/extract]", e?.message || e);
+    await setImportStatus(db, importId, "extracting", "failed", { errorMessage: "extraction_error" });
+    return c.json({ ok: false, error: "extraction_error", message: "This document could not be read. Please try again." }, 500);
+  }
+
+  if (!extraction.ok) {
+    const errKey = extraction.error as PdfValidationError;
+    await setImportStatus(db, importId, "extracting", "failed", { errorMessage: errKey });
+    return c.json({ ok: false, error: errKey, message: PDF_ERROR_MESSAGES[errKey] }, 400);
+  }
+
+  await db.prepare(
+    `UPDATE lead_import SET extracted_text=?, extracted_page_count=?, updated_at=datetime('now') WHERE id=?`
+  ).bind(extraction.text || "", extraction.pageCount || 0, importId).run();
+
+  // ── Phase 2: AI parsing (shared contract — src/ai/lead-import-parse.ts).
+  // AI output is always a SUGGESTION: this phase only writes proposed_json/
+  // warnings_json and lands on needs_review, never "ready" and never a CRM
+  // write. ─────────────────────────────────────────────────────────────────
+  await setImportStatus(db, importId, "extracting", "parsing");
+
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env);
+  if (!apiKey) {
+    await setImportStatus(db, importId, "parsing", "needs_review", { errorMessage: "no_api_key" });
+    return c.json({
+      ok: true,
+      data: {
+        import_id: importId, status: "needs_review",
+        warning: "AI is not enabled for your company yet — the document text was extracted, but you'll need to fill in the lead details manually. Ask your rep to enable AI, or add your own OpenAI key under Integrations.",
+        extracted_page_count: extraction.pageCount || 0,
+      },
+    });
+  }
+  const quotaGate = await _aiQuotaGate(db, companyId, keySource);
+  if (quotaGate) {
+    await setImportStatus(db, importId, "parsing", "needs_review", { errorMessage: "quota_exceeded" });
+    return c.json({ ok: true, data: { import_id: importId, status: "needs_review", warning: quotaGate.body?.message || "AI quota exceeded — fill in the lead details manually.", extracted_page_count: extraction.pageCount || 0 } });
+  }
+
+  const messages = buildLeadImportMessages("pdf", extraction.text || "", { filename: row.original_filename || undefined });
+
+  let draft: LeadImportDraft;
+  const warnings: string[] = [];
+  try {
+    const r = await _aiChatJson(baseUrl, apiKey, model, messages, LEAD_IMPORT_DRAFT_SCHEMA);
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      console.error("[lead-import/extract] upstream", r.status, errText.slice(0, 300));
+      await setImportStatus(db, importId, "parsing", "needs_review", { errorMessage: "ai_upstream" });
+      return c.json({ ok: true, data: { import_id: importId, status: "needs_review", warning: "AI parsing failed — fill in the lead details manually.", extracted_page_count: extraction.pageCount || 0 } });
+    }
+    const j: any = await r.json();
+    await _logAiUsage(db, companyId, repId || "", "lead_import_pdf", model, j?.usage, keySource);
+    const raw = (j?.choices?.[0]?.message?.content || "").trim();
+    draft = normalizeLeadImportDraft(_aiParseJson(raw));
+  } catch (e: any) {
+    console.error("[lead-import/extract]", e?.message || e);
+    await setImportStatus(db, importId, "parsing", "needs_review", { errorMessage: "ai_error" });
+    return c.json({ ok: true, data: { import_id: importId, status: "needs_review", warning: "AI parsing failed — fill in the lead details manually.", extracted_page_count: extraction.pageCount || 0 } });
+  }
+
+  // Deterministic-first division classification (src/ai/lead-import-division.ts).
+  // The model's division_suggestion.label is consulted only as the LAST
+  // resort inside classifyDivision — never trusted as an id, never applied
+  // if a real tenant division keyword-matches first.
+  const divisions = await loadCompanyDivisions(db, companyId);
+  const divisionResult = classifyDivision(divisions, {
+    projectCategory: draft.project, workType: draft.project, serviceLine: draft.division_suggestion.label,
+    aiSuggestedLabel: draft.division_suggestion.label,
+  });
+  if (divisionResult.isFallback) {
+    warnings.push(`Could not confidently classify a division from this document — defaulted to "${divisionResult.division.label}". Please confirm.`);
+  }
+
+  // Missing-information is derived live at read time (never persisted as
+  // its own column — see deriveMissingInfo's doc comment), but a first-pass
+  // warning here still helps a reviewer opening the review screen for the
+  // first time understand why it's flagged.
+  const firstProperty = draft.properties[0];
+  const missing = deriveMissingInfo({
+    personName: draft.contact.person_name, companyName: draft.contact.company_name,
+    address: firstProperty?.address, phone: draft.contact.phone, email: draft.contact.email,
+  });
+  if (missing.length > 0) {
+    warnings.push(`Missing: ${missing.join(", ")}`);
+  }
+  if (draft.properties.length === 0) {
+    warnings.push("No property address was found in this document.");
+  }
+
+  const proposedJson = JSON.stringify({ ...draft, division: divisionResult });
+
+  await db.prepare(
+    `UPDATE lead_import SET proposed_json=?, warnings_json=?, ai_model=?, updated_at=datetime('now') WHERE id=?`
+  ).bind(proposedJson, JSON.stringify(warnings), model, importId).run();
+
+  await setImportStatus(db, importId, "parsing", "needs_review");
+
+  return c.json({
+    ok: true,
+    data: {
+      import_id: importId,
+      status: "needs_review",
+      draft,
+      division: divisionResult,
+      warnings,
+      missing_info: missing,
+      extracted_page_count: extraction.pageCount || 0,
     },
   });
 });

@@ -204,3 +204,91 @@ describe("POST /api/lead-import/upload", () => {
     expect(doc.uploaded_by_rep_id).toBe("rep-abc");
   });
 });
+
+// ── POST /api/lead-import/:id/extract ───────────────────────────────────────
+// The test tenants here have no `settings` rows and no env.OPENAI_API_KEY
+// (see wrangler.jsonc / .dev.vars for this test run), so _aiCreds() always
+// resolves to an empty apiKey — every extract call below exercises the
+// "extraction succeeds, AI parsing soft-degrades to needs_review with a
+// warning" path. That path is exactly what a real AI-disabled tenant hits,
+// and separately proves extraction/R2/state-machine wiring end-to-end
+// without needing to mock fetch. The AI-call-succeeds branch (draft parsing,
+// division classification, missing-info) is unit-tested in isolation by
+// lead-import-parse.test.ts / lead-import-division.test.ts / this module's
+// PDF-08..PDF-10-equivalent coverage in pdf-lead-import.test.ts, and by the
+// stubbed-fetch path noted for future work in this route's own review.
+const postExtract = (companyId: string, importId: string, repId = "test-rep") =>
+  authedAs(companyId, repId).request(`/${importId}/extract`, { method: "POST" }, env);
+
+describe("POST /api/lead-import/:id/extract", () => {
+  it("LIX-01 not found for an unknown import id", async () => {
+    const res = await postExtract(TENANT, "limp_does_not_exist");
+    expect(res.status).toBe(404);
+  });
+
+  it("LIX-02 404s (never 403) for another tenant's import — same convention as portal media routes", async () => {
+    const bytes = await makePdfBytes("LIX-02 cross tenant");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+    const res = await postExtract(TENANT_2, up.data.import_id);
+    expect(res.status).toBe(404);
+  });
+
+  it("LIX-03 extracts text from a stored PDF and soft-degrades to needs_review when AI is not enabled", async () => {
+    const marker = "LIX-03 Avalon Tree Removal unique marker text";
+    const bytes = await makePdfBytes(marker);
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+
+    const res = await postExtract(TENANT, up.data.import_id);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.status).toBe("needs_review");
+    expect(j.data.warning).toMatch(/AI is not enabled/i);
+    expect(j.data.extracted_page_count).toBe(1);
+
+    const row: any = await db().prepare(`SELECT status, extracted_text, error_message FROM lead_import WHERE id=?`)
+      .bind(up.data.import_id).first();
+    expect(row.status).toBe("needs_review");
+    expect(row.extracted_text).toContain("LIX-03");
+    expect(row.error_message).toBe("no_api_key");
+  });
+
+  it("LIX-04 rejects re-extraction once an import has moved past review (e.g. ready)", async () => {
+    const bytes = await makePdfBytes("LIX-04");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+    await postExtract(TENANT, up.data.import_id); // -> needs_review
+    await db().prepare(`UPDATE lead_import SET status='ready' WHERE id=?`).bind(up.data.import_id).run();
+
+    const res = await postExtract(TENANT, up.data.import_id);
+    expect(res.status).toBe(409);
+    const j: any = await res.json();
+    expect(j.error).toBe("invalid_state");
+  });
+
+  it("LIX-05 retry-from-failed re-enters extraction (canTransition failed -> extracting)", async () => {
+    const bytes = await makePdfBytes("LIX-05 retry from failed enough characters");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+    await db().prepare(`UPDATE lead_import SET status='failed', error_message='extraction_error' WHERE id=?`)
+      .bind(up.data.import_id).run();
+
+    const res = await postExtract(TENANT, up.data.import_id);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.status).toBe("needs_review");
+  });
+
+  it("LIX-06 document_missing (500) when the R2 object backing the import is gone", async () => {
+    const bytes = await makePdfBytes("LIX-06");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+    const doc: any = await db().prepare(`SELECT r2_key FROM lead_import_document WHERE id=?`)
+      .bind(up.data.document_id).first();
+    await (env.MEDIA as R2Bucket).delete(doc.r2_key);
+
+    const res = await postExtract(TENANT, up.data.import_id);
+    expect(res.status).toBe(500);
+    const j: any = await res.json();
+    expect(j.error).toBe("document_missing");
+    const row: any = await db().prepare(`SELECT status FROM lead_import WHERE id=?`).bind(up.data.import_id).first();
+    expect(row.status).toBe("failed");
+  });
+});
