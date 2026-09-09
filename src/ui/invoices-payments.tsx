@@ -33,7 +33,7 @@ const INVOICE_BADGE: Record<string, string> = {
 };
 
 /**
- * Invoices & Payments — the full record view (every invoice, any status),
+ * Invoice Reporting — the full record view (every invoice, any status),
  * distinct from Collections (which only shows open/actionable receivables).
  * Reads the CRM's own `DB` directly, same as collections.tsx — no
  * receivables/payments table of its own in Finance OS. Strictly read-only.
@@ -44,7 +44,7 @@ invoicesPaymentsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Invoices & Payments" active="finInvPay" role={role} partial={isPartialRequest(c)}>
+      <Page title="Invoice Reporting" active="finInvPay" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -70,7 +70,7 @@ invoicesPaymentsRouter.get("/", async (c) => {
   ]);
 
   return c.html(
-    <Page title="Invoices & Payments" active="finInvPay" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
+    <Page title="Invoice Reporting" active="finInvPay" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <div class="fin-note">
         Reads the CRM's own invoices and payments directly — the full record,
         every status. For just what's still owed, see Collections instead.

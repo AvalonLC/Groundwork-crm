@@ -51,7 +51,7 @@ test("UFN-05 the top tab-strip renders all 8 items plus Setup & Config, with the
   await page.goto(`/money-loop?tenant_id=${TENANT}&role=owner`);
   for (const label of [
     "Money Loop", "Work Queue", "Job Costing", "Budget & Rates", "Overhead Recovery",
-    "Invoices & Payments", "Ledger", "Documents", "Setup & Config",
+    "Invoice Reporting", "Ledger", "Documents", "Setup & Config",
   ]) {
     await expect(page.locator(".fin-toptab", { hasText: label })).toBeVisible();
   }

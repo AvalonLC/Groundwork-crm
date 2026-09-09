@@ -107,7 +107,15 @@ export const FINANCE_NAV: FinanceNavItem[] = [
   { key: "finJobCost",  label: "Job Costing",         href: "/finance/job-costing" },
   { key: "finBudget",   label: "Budget & Rates",      href: "/finance/budget" },
   { key: "finRecovery", label: "Overhead Recovery",   href: "/finance/recovery" },
-  { key: "finInvPay",   label: "Invoices & Payments", href: "/finance/invoices-payments" },
+  // "Invoice Reporting", not "Invoices". This page is a READ-ONLY record view
+  // -- two SELECT-driven tables. The operational invoice system (create, edit,
+  // send, charge a card on file, record a payment, line items, portal token,
+  // bulk actions) is the CRM's own #invoices screen, public/js/invoices.js.
+  // Both were previously labelled some form of "Invoices", so the Financial
+  // section offered two destinations with the same name and very different
+  // powers. Renaming the reporting view is the whole fix: nothing is
+  // redirected, nothing is retired, and no behaviour moves.
+  { key: "finInvPay",   label: "Invoice Reporting", href: "/finance/invoices-payments" },
   { key: "finLedger",   label: "Ledger",              href: "/finance/ledger" },
   { key: "finDocuments", label: "Documents",          href: "/finance/documents" },
 ];

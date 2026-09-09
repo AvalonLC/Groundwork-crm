@@ -743,7 +743,7 @@ function fallbackCopy(text){
       // Finance OS tabs (src/ui/layout.tsx's FINANCE_NAV, same labels)
       finControl:'Money Loop', finQueue:'Work Queue', finJobCost:'Job Costing',
       finBudget:'Budget & Rates', finRecovery:'Overhead Recovery',
-      finInvPay:'Invoices & Payments', finLedger:'Ledger', finDocuments:'Documents',
+      finInvPay:'Invoice Reporting', finLedger:'Ledger', finDocuments:'Documents',
       finConfig:'Setup & Config',
       // Operations workspace tabs
       scheduleBoard:'Schedule', dispatchBoard:'Dispatch',
@@ -1049,7 +1049,10 @@ const _GW_FIN_NAV_TABS = [
   {id:'finJobCost',    label:'Job Costing'},
   {id:'finBudget',     label:'Budget & Rates'},
   {id:'finRecovery',   label:'Overhead Recovery'},
-  {id:'finInvPay',     label:'Invoices & Payments'},
+  // Read-only reporting. The operational invoice system is show('invoices')
+  // (public/js/invoices.js); see src/ui/layout.tsx's FINANCE_NAV for why these
+  // two are no longer both called "Invoices".
+  {id:'finInvPay',     label:'Invoice Reporting'},
   {id:'finLedger',     label:'Ledger'},
   {id:'finDocuments',  label:'Documents'},
   {id:'finConfig',     label:'Setup & Config'},
