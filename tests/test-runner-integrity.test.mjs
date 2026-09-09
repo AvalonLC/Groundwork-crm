@@ -26,15 +26,15 @@ const raw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
 const pkg = JSON.parse(raw);
 
 /**
- * Known orphans, pre-existing and deliberately not adopted here: they belong to
- * the sales-process feature, not to anything this file's author touched, and
- * wiring up another area's tests is that area's call to make. Listed rather than
- * ignored so the debt is visible and someone can decide.
+ * Test files deliberately not run by any npm script, with the reason.
+ *
+ * Empty, and worth keeping empty. The two sales-process files that sat here
+ * were adopted once someone actually ran them: 15 of their 16 tests passed
+ * untouched, and the one failure was a stale anchor (a page deleted in 90f4ac2)
+ * rather than a regression. "Belongs to another area" was a reasonable place to
+ * stop at the time; it was not a reason the tests could not run.
  */
-const KNOWN_UNRUN = [
-  'sales-process-platform.test.mjs',
-  'sales-process-safety.test.mjs',
-];
+const KNOWN_UNRUN = [];
 
 test('TR-01 package.json declares no duplicate script keys', () => {
   // JSON.parse silently keeps only the last of a duplicated key, so this has to

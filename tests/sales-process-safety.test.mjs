@@ -8,7 +8,13 @@ const migrationReview = readFileSync(new URL('../migrations/0050_sales_process_m
 const frontend = readFileSync(new URL('../public/js/app_premium.js', import.meta.url), 'utf8');
 
 test('sales-process runtime never accesses platform leads', () => {
-  const block = server.slice(server.indexOf('VERSIONED SALES PROCESS'), server.indexOf('NAV PERMISSIONS'));
+  // A missing anchor would make this an empty string, and every doesNotMatch
+  // below would then pass against nothing. Same trap as
+  // tests/sales-process-platform.test.mjs's region().
+  const from = server.indexOf('VERSIONED SALES PROCESS');
+  const to = server.indexOf('NAV PERMISSIONS');
+  assert.ok(from >= 0 && to > from, 'the VERSIONED SALES PROCESS … NAV PERMISSIONS section markers are gone');
+  const block = server.slice(from, to);
   assert.ok(block.length > 1000);
   assert.doesNotMatch(block, /\b(?:FROM|JOIN|UPDATE|INTO)\s+gw_leads\b/i);
 });
