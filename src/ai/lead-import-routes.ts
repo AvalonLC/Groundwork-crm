@@ -42,8 +42,12 @@ import {
   buildLeadImportMessages, normalizeLeadImportDraft, LEAD_IMPORT_DRAFT_SCHEMA,
   type LeadImportDraft,
 } from "./lead-import-parse";
-import { loadCompanyDivisions, classifyDivision } from "./lead-import-division";
+import { loadCompanyDivisions, classifyDivision, type DivisionClassificationResult } from "./lead-import-division";
 import { _aiCreds, _aiChatJson, _aiParseJson, _aiQuotaGate, _logAiUsage } from "./infra";
+import {
+  findClientMatches, findPropertyMatches,
+  type ExistingClientRow, type ExistingPropertyRow, type ClientMatchCandidate, type PropertyMatchCandidate,
+} from "./lead-import-match";
 
 export const leadImportRouter = new Hono<AppEnv>();
 
@@ -439,6 +443,113 @@ leadImportRouter.post("/:id/extract", async (c) => {
       warnings,
       missing_info: missing,
       extracted_page_count: extraction.pageCount || 0,
+    },
+  });
+});
+
+// ── GET /api/lead-import/:id — status/detail + existing-record match ───────
+//
+// Read-only. Two things a review-screen frontend needs that no other route
+// currently exposes:
+//   1. The CURRENT state of an import after a page refresh (extract's
+//      response is otherwise the only place a draft/warnings/division ever
+//      appear) — parses the persisted proposed_json/warnings_json back out.
+//   2. Existing-client/property match SUGGESTIONS for that draft (spec
+//      capability 5), computed fresh on every read rather than cached, since
+//      the CRM's client/property list can change between an import's
+//      extraction and a human opening the review screen.
+// This route never writes to the database — matching is suggestion-only by
+// spec ("fuzzy-as-suggestion-only, deterministic-first"); the not-yet-built
+// confirm route is where a human's explicit link-vs-create choice is
+// actually acted on.
+leadImportRouter.get("/:id", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const importId = c.req.param("id");
+
+  const row = await loadOwnedImport(db, companyId, importId);
+  if (!row) return c.json({ ok: false, error: "not_found", message: "Import not found" }, 404);
+
+  let draft: LeadImportDraft | null = null;
+  let division: DivisionClassificationResult | null = null;
+  if (row.proposed_json) {
+    try {
+      const parsed = JSON.parse(row.proposed_json);
+      // division was appended alongside the draft's own fields at write
+      // time (see POST /:id/extract) — split it back out rather than
+      // leaving a stray `division` key sitting inside the draft object the
+      // frontend expects to match LeadImportDraft's own shape.
+      const { division: divisionRaw, ...draftRaw } = parsed || {};
+      draft = draftRaw as LeadImportDraft;
+      division = (divisionRaw as DivisionClassificationResult) || null;
+    } catch {
+      // Malformed proposed_json should never happen (this router is the
+      // only writer), but a parse failure here must never crash the status
+      // read — surface the import with draft:null rather than a 500.
+      draft = null;
+      division = null;
+    }
+  }
+
+  let warnings: string[] = [];
+  try {
+    warnings = row.warnings_json ? JSON.parse(row.warnings_json) : [];
+  } catch {
+    warnings = [];
+  }
+
+  // Matching only makes sense once there's a draft to match against — an
+  // import still mid-extraction has no contact/address fields yet.
+  let clientMatches: ClientMatchCandidate[] = [];
+  let propertyMatches: PropertyMatchCandidate[] = [];
+  let missing: string[] = [];
+  if (draft) {
+    const [existingClients, existingProperties] = await Promise.all([
+      db.prepare(`SELECT id, name, phone, email, address, type FROM clients WHERE company_id=?`)
+        .bind(companyId).all<ExistingClientRow>(),
+      db.prepare(`SELECT id, client_id, label, street, street2, city, state, zip FROM properties WHERE company_id=?`)
+        .bind(companyId).all<ExistingPropertyRow>(),
+    ]);
+
+    const firstProperty = draft.properties[0];
+    clientMatches = findClientMatches(
+      {
+        personName: draft.contact.person_name, companyName: draft.contact.company_name,
+        phone: draft.contact.phone, email: draft.contact.email, address: firstProperty?.address,
+      },
+      existingClients.results || [],
+    );
+    // If a deterministic client match exists, scope the property search to
+    // that client first (a property match only matters relative to WHICH
+    // client it would be linked under) — otherwise search every tenant
+    // property, unscoped, purely as a suggestion.
+    const deterministicClient = clientMatches.find((m) => m.strength === "deterministic");
+    propertyMatches = findPropertyMatches(
+      firstProperty?.address, existingProperties.results || [],
+      deterministicClient ? { clientId: deterministicClient.client.id } : {},
+    );
+
+    missing = deriveMissingInfo({
+      personName: draft.contact.person_name, companyName: draft.contact.company_name,
+      address: firstProperty?.address, phone: draft.contact.phone, email: draft.contact.email,
+    });
+  }
+
+  return c.json({
+    ok: true,
+    data: {
+      import_id: importId,
+      status: row.status,
+      error_message: row.error_message || "",
+      original_filename: row.original_filename || "",
+      safe_filename: row.safe_filename || "",
+      extracted_page_count: row.extracted_page_count || 0,
+      draft,
+      division,
+      warnings,
+      missing_info: missing,
+      client_matches: clientMatches,
+      property_matches: propertyMatches,
     },
   });
 });

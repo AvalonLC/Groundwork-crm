@@ -292,3 +292,147 @@ describe("POST /api/lead-import/:id/extract", () => {
     expect(row.status).toBe("failed");
   });
 });
+
+// ── GET /api/lead-import/:id ─────────────────────────────────────────────
+const getImport = (companyId: string, importId: string, repId = "test-rep") =>
+  authedAs(companyId, repId).request(`/${importId}`, { method: "GET" }, env);
+
+async function insertClient(companyId: string, fields: Partial<{ id: string; name: string; phone: string; email: string; address: string; type: string }> = {}) {
+  const id = fields.id || `cli_${Math.random().toString(36).slice(2, 10)}`;
+  await db().prepare(
+    `INSERT INTO clients (id, company_id, name, phone, email, address, type) VALUES (?,?,?,?,?,?,?)`
+  ).bind(id, companyId, fields.name || "", fields.phone || "", fields.email || "", fields.address || "", fields.type || "Residential").run();
+  return id;
+}
+
+async function insertProperty(companyId: string, clientId: string, fields: Partial<{ id: string; label: string; street: string; city: string; state: string; zip: string }> = {}) {
+  const id = fields.id || `prop_${Math.random().toString(36).slice(2, 10)}`;
+  await db().prepare(
+    `INSERT INTO properties (id, company_id, client_id, label, street, city, state, zip) VALUES (?,?,?,?,?,?,?,?)`
+  ).bind(id, companyId, clientId, fields.label || "Primary Property", fields.street || "", fields.city || "", fields.state || "", fields.zip || "").run();
+  return id;
+}
+
+describe("GET /api/lead-import/:id", () => {
+  it("LIS-01 not found for an unknown import id", async () => {
+    const res = await getImport(TENANT, "limp_does_not_exist");
+    expect(res.status).toBe(404);
+  });
+
+  it("LIS-02 404s (never 403) for another tenant's import", async () => {
+    const bytes = await makePdfBytes("LIS-02 cross tenant status read");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+    const res = await getImport(TENANT_2, up.data.import_id);
+    expect(res.status).toBe(404);
+  });
+
+  it("LIS-03 returns draft:null and empty matches before extraction has run", async () => {
+    const bytes = await makePdfBytes("LIS-03 not yet extracted");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+
+    const res = await getImport(TENANT, up.data.import_id);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.status).toBe("uploaded");
+    expect(j.data.draft).toBeNull();
+    expect(j.data.client_matches).toEqual([]);
+    expect(j.data.property_matches).toEqual([]);
+  });
+
+  it("LIS-04 after extraction (AI disabled), returns draft:null since no proposed_json exists yet, but exposes the no_api_key warning state", async () => {
+    // Extraction alone (with AI disabled, per every test tenant here — see
+    // the LIX-03 comment above) never writes proposed_json; only a
+    // successful AI parse does. This route must reflect that honestly
+    // rather than fabricating a draft.
+    const bytes = await makePdfBytes("LIS-04 extracted but ai disabled enough chars");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes))).json();
+    await postExtract(TENANT, up.data.import_id);
+
+    const res = await getImport(TENANT, up.data.import_id);
+    const j: any = await res.json();
+    expect(j.data.status).toBe("needs_review");
+    expect(j.data.draft).toBeNull();
+    expect(j.data.error_message).toBe("no_api_key");
+  });
+
+  it("LIS-05 surfaces a deterministic client match by email and a fuzzy property-address suggestion, scoped to that client", async () => {
+    const importId = "limp_lis05_fixture";
+    const clientId = await insertClient(TENANT, { name: "Jane Homeowner", email: "jane@example.com", phone: "5551230000" });
+    await insertProperty(TENANT, clientId, { street: "123 Main St", city: "Springfield", state: "IL", zip: "62704" });
+    // A second, unrelated client+property in the same tenant must never be
+    // pulled in by the clientId-scoped property search below.
+    const otherClientId = await insertClient(TENANT, { name: "Unrelated Co" });
+    await insertProperty(TENANT, otherClientId, { street: "123 Main St", city: "Springfield", state: "IL", zip: "62704" });
+
+    const docId = "lidoc_lis05_fixture";
+    await db().prepare(
+      `INSERT INTO lead_import_document (id, company_id, original_filename, safe_filename, r2_key, byte_size, sha256_hash, status, import_id)
+       VALUES (?,?,?,?,?,?,?, 'uploaded', ?)`
+    ).bind(docId, TENANT, "x.pdf", "x.pdf", "fake/r2/key", 10, "deadbeef_lis05", importId).run();
+    await db().prepare(
+      `INSERT INTO lead_import (id, company_id, document_id, idempotency_token, status, proposed_json, warnings_json)
+       VALUES (?,?,?,?, 'needs_review', ?, '[]')`
+    ).bind(
+      importId, TENANT, docId, "tok_lis05",
+      JSON.stringify({
+        contact: { person_name: "Jane Homeowner", company_name: "", phone: "(555) 123-0000", email: "jane@example.com" },
+        client_type: "Residential",
+        properties: [{ label: "Primary Property", address: "123 Main St, Springfield, IL 62704", notes: "" }],
+        project: "Tree removal", urgency: "", contract_hint: "unknown", summary_note: "", pricing_options: [],
+        division_suggestion: { label: "", rationale: "" },
+        division: { division: { key: "landscape", label: "Landscape" }, source: "keyword", isFallback: false },
+      }),
+    ).run();
+
+    const res = await getImport(TENANT, importId);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.draft.contact.email).toBe("jane@example.com");
+    expect(j.data.division.division.key).toBe("landscape");
+
+    expect(j.data.client_matches).toHaveLength(1);
+    expect(j.data.client_matches[0].client.id).toBe(clientId);
+    expect(j.data.client_matches[0].strength).toBe("deterministic");
+    expect(j.data.client_matches[0].basis).toContain("email");
+
+    // Property match must be scoped to the deterministic client's own
+    // property, never the unrelated client's identically-addressed one.
+    expect(j.data.property_matches.length).toBeGreaterThan(0);
+    for (const m of j.data.property_matches) {
+      expect(m.property.client_id).toBe(clientId);
+    }
+    expect(j.data.missing_info).toEqual([]);
+  });
+
+  it("LIS-06 no match candidates when nothing in the tenant's client list matches", async () => {
+    const importId = "limp_lis06_fixture";
+    const docId = "lidoc_lis06_fixture";
+    await db().prepare(
+      `INSERT INTO lead_import_document (id, company_id, original_filename, safe_filename, r2_key, byte_size, sha256_hash, status, import_id)
+       VALUES (?,?,?,?,?,?,?, 'uploaded', ?)`
+    ).bind(docId, TENANT, "x.pdf", "x.pdf", "fake/r2/key2", 10, "deadbeef_lis06", importId).run();
+    await db().prepare(
+      `INSERT INTO lead_import (id, company_id, document_id, idempotency_token, status, proposed_json, warnings_json)
+       VALUES (?,?,?,?, 'needs_review', ?, '["No property address was found in this document."]')`
+    ).bind(
+      importId, TENANT, docId, "tok_lis06",
+      JSON.stringify({
+        contact: { person_name: "Nobody Known", company_name: "", phone: "", email: "" },
+        client_type: "Residential",
+        properties: [],
+        project: "", urgency: "", contract_hint: "unknown", summary_note: "", pricing_options: [],
+        division_suggestion: { label: "", rationale: "" },
+        division: { division: { key: "landscape", label: "Landscape" }, source: "default", isFallback: true },
+      }),
+    ).run();
+
+    const res = await getImport(TENANT, importId);
+    const j: any = await res.json();
+    expect(j.data.client_matches).toEqual([]);
+    expect(j.data.property_matches).toEqual([]);
+    expect(j.data.missing_info).toEqual(expect.arrayContaining(["property_address", "contact_method"]));
+    expect(j.data.warnings).toEqual(["No property address was found in this document."]);
+  });
+});
