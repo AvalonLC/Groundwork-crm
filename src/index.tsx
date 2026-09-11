@@ -3,6 +3,7 @@ import { verifyStripeSignature } from './api/stripe_signature'
 import { classifyStripeEvent, refundDelta, invoiceStatusFor, eventAccountId, accountReadiness } from './api/stripe_events'
 import { canInvoice } from './api/invoice-access'
 import { decideCustomer, paymentMethodUsable, targetAccountFor, applicationFeeCents, chargeIdempotencyKey, cardOnFileDecision, autopayCapCents } from './api/stripe_customers'
+import { canReturnToDraft, canHardDelete } from './api/invoice-lifecycle'
 import { decideFailureActions, clientFailureEmail } from './api/dunning'
 import type { Context, Next } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -9328,12 +9329,48 @@ app.post('/api/invoices', requireAuth, async (c) => {
 })
 
 // PUT /api/invoices/:id — update invoice
+/**
+ * What an invoice has already done with money, for the lifecycle rules.
+ *
+ * Counted here rather than inferred from the invoice row alone, because the
+ * row can disagree with reality: a payment can exist against an invoice whose
+ * amount_paid was never written back, and a Stripe charge can exist with no
+ * payment row at all when a write-back failed. Every query is company-scoped.
+ */
+async function invoiceFootprint(db: D1Database, companyId: string, invoiceId: string) {
+  const pay: any = await db.prepare(
+    `SELECT COUNT(*) AS n,
+            SUM(CASE WHEN stripe_payment_intent_id IS NOT NULL AND stripe_payment_intent_id != '' THEN 1
+                     WHEN stripe_charge_id IS NOT NULL AND stripe_charge_id != '' THEN 1
+                     ELSE 0 END) AS refs
+       FROM payments WHERE invoice_id=? AND company_id=?`
+  ).bind(invoiceId, companyId).first().catch(() => null)
+  return {
+    paymentCount: Number(pay?.n || 0),
+    processorRefCount: Number(pay?.refs || 0),
+  }
+}
+
 app.put('/api/invoices/:id', requireAuth, async (c) => {
   if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Editing invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const b: any = await c.req.json()
   const id = c.req.param('id')
+
+  // A financially active invoice may not be returned to draft. PUT writes
+  // `status` verbatim and DELETE only ever matched status='draft', so
+  // Edit -> Draft -> Delete hard-deleted a settled invoice in two steps. This
+  // closes the first half; the DELETE route closes the second.
+  if (String(b?.status || '') === 'draft') {
+    const cur: any = await db.prepare(
+      `SELECT status, amount_paid, amount_paid_cents, paid_at, sent_at, voided_at, stripe_payment_status
+         FROM invoices WHERE id=? AND company_id=? LIMIT 1`
+    ).bind(id, companyId).first()
+    if (!cur) return c.json({ error: 'Not found' }, 404)
+    const verdict = canReturnToDraft(cur, await invoiceFootprint(db, companyId, id))
+    if (!verdict.ok) return c.json({ error: verdict.reason, code: verdict.code }, 409)
+  }
 
   const allowed = ['title','status','client_id','client_name','client_email','client_phone',
     'client_address','estimate_id','subtotal','tax_rate','tax_amount','discount_amount','total',
@@ -9374,13 +9411,25 @@ app.delete('/api/invoices/:id', requireAuth, async (c) => {
   if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Deleting invoices is limited to admin and office manager', 403)
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  // Only drafts are deletable. The result used to be discarded and {ok:true}
-  // returned unconditionally, so deleting a sent or paid invoice reported
-  // success and did nothing — and a bulk run printed a column of green ticks
-  // for rows that then reappeared on the next refresh. Eight other routes in
-  // this file already check meta.changes; this one now does too.
+  // Only an UNTOUCHED draft may be destroyed. `AND status='draft'` in the WHERE
+  // was the whole rule before, which a PUT setting status='draft' defeated —
+  // and it could not see payments at all. payments.invoice_id carries no
+  // foreign key, so a delete leaves rows still counted by the payments page
+  // pointing at nothing.
+  const id = c.req.param('id')
+  const cur: any = await db.prepare(
+    `SELECT status, amount_paid, amount_paid_cents, paid_at, sent_at, voided_at, stripe_payment_status
+       FROM invoices WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(id, companyId).first()
+  if (!cur) return c.json({ error: 'Not found' }, 404)
+
+  const verdict = canHardDelete(cur, await invoiceFootprint(db, companyId, id))
+  if (!verdict.ok) return c.json({ error: verdict.reason, code: verdict.code }, 409)
+
+  // status is still in the WHERE as a belt-and-braces guard against a race
+  // between the check above and this write.
   const res = await db.prepare(`DELETE FROM invoices WHERE id=? AND company_id=? AND status='draft'`)
-    .bind(c.req.param('id'), companyId).run()
+    .bind(id, companyId).run()
   if (!res.meta.changes) {
     return c.json({ error: 'Only draft invoices can be deleted. Void it instead.' }, 409)
   }
