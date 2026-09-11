@@ -1083,15 +1083,31 @@ window._invSubmitBuilder = async function(invId, action) {
 
 /* ── Void / Delete ──────────────────────────────────────────────────────────── */
 window._invVoid = async function(invId) {
-  if (!confirm('Void this invoice? It cannot be undone.')) return;
-  await fetch(`/api/invoices/${invId}`, { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status:'void' }) });
+  // A reason is required, and it is stored. Voiding is now the primary way a
+  // bad invoice leaves circulation — an invoice that has touched money can no
+  // longer be deleted — so "why" has to survive with the record or the status
+  // change is unattributable months later.
+  const reason = prompt('Void this invoice?\n\nGive a reason (stored on the record):');
+  if (reason === null) return;
+  if (!String(reason).trim()) return showToast('A reason is required to void an invoice', 'error');
+  const res = await fetch(`/api/invoices/${invId}/void`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: String(reason).trim() }),
+  });
+  // The response used to be discarded and success toasted unconditionally.
+  if (!res.ok) return showToast(await _invErr(res, 'Could not void this invoice'), 'error');
   showToast('Invoice voided', 'success');
   document.getElementById('inv-detail-overlay')?.remove();
   _invLoadList();
 };
 window._invDelete = async function(invId) {
   if (!confirm('Delete this draft invoice?')) return;
-  await fetch(`/api/invoices/${invId}`, { method:'DELETE', credentials:'include' });
+  const res = await fetch(`/api/invoices/${invId}`, { method: 'DELETE', credentials: 'include' });
+  // Deleting now refuses anything financially active with a 409 and a reason.
+  // This toasted "Invoice deleted" regardless, so a refusal read as a success
+  // and the row simply reappeared on the next refresh.
+  if (!res.ok) return showToast(await _invErr(res, 'Could not delete this invoice'), 'error');
   showToast('Invoice deleted', 'success');
   document.getElementById('inv-detail-overlay')?.remove();
   _invLoadList();
