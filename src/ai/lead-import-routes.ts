@@ -35,7 +35,7 @@ import { randomToken } from "../marketing/send";
 import {
   hasPdfMagicBytes, computeContentHash, safeFilename, documentR2Key,
   validateAndExtractPdf, canTransition, deriveMissingInfo,
-  PDF_ERROR_MESSAGES, MAX_PDF_BYTES,
+  PDF_ERROR_MESSAGES, MAX_PDF_BYTES, MAX_BULK_FILES, MAX_BULK_TOTAL_BYTES, BULK_PARSE_CONCURRENCY,
   type PdfExtractor, type LeadImportStatus, type PdfValidationError,
 } from "./pdf-lead-import";
 import {
@@ -1030,5 +1030,302 @@ leadImportRouter.get("/entity-links/:entityType/:entityId", async (c) => {
       byte_size: r.byte_size,
       download_url: `/api/lead-import/document/${r.document_id}`,
     })),
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PR2 — Bulk PDF import (multiple files at once, ≤MAX_BULK_FILES). Every
+// route below reuses ingestPdfBytes()/runExtraction() (PR1's extracted core
+// logic, above) so a bulk-uploaded file goes through the EXACT SAME
+// hash-dedupe/idempotency/extract/parse pipeline a single-file import does —
+// never a parallel reimplementation. Same HARD INVARIANT as the rest of this
+// router: AI output is always a SUGGESTION; nothing below ever creates or
+// alters a CRM record — that still only happens via POST /:id/confirm,
+// called once per import, same as a single-file import would.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── POST /api/lead-import/bulk/upload — multi-file PDF upload ──────────────
+//
+// multipart/form-data, one or more repeated "files" field entries
+// (`form.getAll("files")`) — up to MAX_BULK_FILES files, MAX_BULK_TOTAL_BYTES
+// combined (both named constants from pdf-lead-import.ts, not invented
+// here). Creates one lead_import_batch row, then ingests each file through
+// ingestPdfBytes() with that batch's id — one lead_import row per file, all
+// sharing batch_id, each independently hash-deduped exactly like a
+// single-file upload would be.
+//
+// A per-file rejection (not-a-PDF, empty, oversized) never aborts the whole
+// batch — each file's outcome is reported independently in `results`, so a
+// human uploading 8 good PDFs and 2 bad ones still gets the 8 good ones
+// queued rather than losing the entire batch to one bad file. `file_count`
+// on the batch row reflects only what was actually ACCEPTED, so a queue UI
+// polling GET /bulk/:batchId never expects more imports than truly exist.
+leadImportRouter.post("/bulk/upload", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const repId = c.var.repId as string;
+
+  // Deliberately a tighter budget than the single-file upload's 30/300 —
+  // each call here can do up to MAX_BULK_FILES times the R2/D1 work of a
+  // single-file upload, so the per-tenant ceiling on call FREQUENCY is
+  // lower even though the ceiling on total files processed is much higher.
+  const rlOk = await rateLimit(db, `lead_import_bulk_upload_${companyId}`, 10, 300);
+  if (!rlOk) {
+    return c.json({ ok: false, error: "rate_limited", message: "Too many bulk uploads. Please wait a few minutes and try again." }, 429);
+  }
+
+  const form = await c.req.formData().catch(() => null);
+  if (!form) return c.json({ ok: false, error: "bad_request", message: "multipart/form-data required" }, 400);
+
+  const files = form.getAll("files").filter(
+    (f): f is File => !!f && typeof (f as any).arrayBuffer === "function",
+  );
+  if (files.length === 0) {
+    return c.json({ ok: false, error: "bad_request", message: 'At least one "files" field is required.' }, 400);
+  }
+  if (files.length > MAX_BULK_FILES) {
+    return c.json({
+      ok: false, error: "too_many_files",
+      message: `You can upload up to ${MAX_BULK_FILES} PDFs at once. Please split this into smaller batches.`,
+    }, 400);
+  }
+
+  const totalBytes = files.reduce((sum, f) => sum + (Number((f as any).size) || 0), 0);
+  if (totalBytes > MAX_BULK_TOTAL_BYTES) {
+    return c.json({
+      ok: false, error: "too_large",
+      message: `This batch is larger than the ${Math.round(MAX_BULK_TOTAL_BYTES / (1024 * 1024))} MB combined limit. Please upload fewer or smaller files at once.`,
+    }, 413);
+  }
+
+  const batchId = newId("libatch");
+  await db.prepare(
+    `INSERT INTO lead_import_batch (id, company_id, created_by_rep_id, status, file_count) VALUES (?,?,?, 'queued', ?)`
+  ).bind(batchId, companyId, repId || "", files.length).run();
+
+  const results: Array<{
+    filename: string; ok: boolean;
+    import_id?: string; document_id?: string; duplicate?: boolean; safe_filename?: string;
+    error?: string; message?: string;
+  }> = [];
+
+  // Sequential, not parallel — R2.put() + D1 insert per file already does
+  // real I/O work per iteration, and the per-file dedupe lookup inside
+  // ingestPdfBytes must see each PRIOR file's write in this same batch (two
+  // identical files uploaded together must still land as one document + two
+  // imports, never two documents) — a fully parallel version could race
+  // itself on that exact case.
+  for (const file of files) {
+    const originalFilename = String((file as any).name || "upload.pdf");
+    const size = Number((file as any).size) || 0;
+    if (size === 0) {
+      results.push({ filename: originalFilename, ok: false, error: "empty_file", message: "That file is empty." });
+      continue;
+    }
+    if (size > MAX_PDF_BYTES) {
+      results.push({
+        filename: originalFilename, ok: false, error: "too_large",
+        message: `Larger than the ${Math.round(MAX_PDF_BYTES / (1024 * 1024))} MB per-file limit.`,
+      });
+      continue;
+    }
+    const bytes = await (file as any).arrayBuffer() as ArrayBuffer;
+    const outcome = await ingestPdfBytes(db, c.env.MEDIA as R2Bucket, companyId, repId, bytes, originalFilename, batchId);
+    if (!outcome.ok) {
+      results.push({ filename: originalFilename, ok: false, error: outcome.error, message: outcome.message });
+      continue;
+    }
+    results.push({
+      filename: originalFilename, ok: true,
+      import_id: outcome.importId, document_id: outcome.documentId,
+      duplicate: outcome.duplicate, safe_filename: outcome.safeFilename,
+    });
+  }
+
+  const acceptedCount = results.filter((r) => r.ok).length;
+  if (acceptedCount !== files.length) {
+    await db.prepare(`UPDATE lead_import_batch SET file_count=?, updated_at=datetime('now') WHERE id=?`)
+      .bind(acceptedCount, batchId).run();
+  }
+
+  return c.json({
+    ok: true,
+    data: { batch_id: batchId, file_count: acceptedCount, results },
+  });
+});
+
+// ── POST /api/lead-import/bulk/:batchId/extract — extract+parse every ──────
+//    still-pending import in a batch
+//
+// Runs runExtraction() — the EXACT SAME two-phase pipeline POST /:id/extract
+// uses — once per RETRY_ENTRY-eligible import in the batch (an import
+// already 'ready'/'creating'/'finalized' is skipped, same rule the
+// single-file route enforces), bounded to BULK_PARSE_CONCURRENCY concurrent
+// in-flight extractions — the spec's named concurrency cap, chosen so this
+// one request's total outbound-fetch fan-out (one AI call per file) and
+// wall time stay bounded regardless of how many files (up to
+// MAX_BULK_FILES) are in the batch, and so one tenant's bulk import can
+// never burst the AI provider's own per-account rate limit as hard as
+// MAX_BULK_FILES fully-parallel calls would. AI output is still always a
+// SUGGESTION here: this route only ever advances an import to
+// needs_review/failed, exactly like the single-file route, and never
+// itself creates a CRM record — that is POST /:id/confirm's job alone, run
+// once per import a human has reviewed, same as for a single-file import.
+leadImportRouter.post("/bulk/:batchId/extract", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const repId = c.var.repId as string;
+  const batchId = c.req.param("batchId");
+
+  const rlOk = await rateLimit(db, `lead_import_bulk_extract_${companyId}`, 10, 300);
+  if (!rlOk) {
+    return c.json({ ok: false, error: "rate_limited", message: "Too many bulk extraction requests. Please wait a few minutes and try again." }, 429);
+  }
+
+  // 404, not 403, for a batch that doesn't exist or belongs to another
+  // tenant — same convention loadOwnedImport() follows for single imports.
+  const batch: any = await db.prepare(`SELECT id, status FROM lead_import_batch WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(batchId, companyId).first();
+  if (!batch) return c.json({ ok: false, error: "not_found", message: "Batch not found" }, 404);
+
+  const rowsRes = await db.prepare(
+    `SELECT li.*, lid.r2_key, lid.safe_filename, lid.original_filename, lid.mime_type
+     FROM lead_import li JOIN lead_import_document lid ON lid.id = li.document_id
+     WHERE li.batch_id=? AND li.company_id=?
+     ORDER BY li.created_at ASC`
+  ).bind(batchId, companyId).all<any>();
+  const rows = rowsRes.results || [];
+  if (rows.length === 0) {
+    return c.json({ ok: false, error: "empty_batch", message: "This batch has no documents to extract." }, 404);
+  }
+
+  const RETRY_ENTRY: LeadImportStatus[] = ["uploaded", "extracting", "parsing", "needs_review", "failed"];
+  const eligible = rows.filter((r: any) => RETRY_ENTRY.includes(r.status as LeadImportStatus));
+  if (eligible.length === 0) {
+    // Every import in this batch has already moved past the extract step
+    // (already reviewed/ready/finalized) — nothing to (re-)extract. Report
+    // the batch's own current status rather than flipping it to
+    // 'processing' and back for zero actual work.
+    return c.json({ ok: true, data: { batch_id: batchId, status: batch.status, processed: 0, results: [] } });
+  }
+
+  await db.prepare(`UPDATE lead_import_batch SET status='processing', updated_at=datetime('now') WHERE id=?`).bind(batchId).run();
+
+  type BulkExtractResult = { import_id: string; filename: string; status: string; warning?: string; error?: string };
+  const results: BulkExtractResult[] = [];
+
+  // Bounded-concurrency runner: BULK_PARSE_CONCURRENCY workers pull from a
+  // shared cursor, so at most that many extractions (and their AI calls)
+  // are ever in flight at once, regardless of eligible.length.
+  let cursor = 0;
+  async function worker() {
+    while (cursor < eligible.length) {
+      const row = eligible[cursor++];
+      const filename = row.original_filename || row.safe_filename || "";
+      try {
+        const outcome = await runExtraction(db, c.env as any, companyId, repId, row.id, row);
+        if (!outcome.ok) {
+          results.push({ import_id: row.id, filename, status: "failed", error: outcome.error });
+        } else if ("draft" in outcome) {
+          results.push({ import_id: row.id, filename, status: outcome.status });
+        } else {
+          results.push({ import_id: row.id, filename, status: outcome.status, warning: outcome.warning });
+        }
+      } catch (e: any) {
+        console.error("[lead-import/bulk-extract]", e?.message || e);
+        results.push({ import_id: row.id, filename, status: "failed", error: "extraction_error" });
+      }
+    }
+  }
+  const workerCount = Math.min(BULK_PARSE_CONCURRENCY, eligible.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  // Batch-level status: 'ready' as soon as at least one import in the batch
+  // reached a reviewable needs_review state — a human then opens the review
+  // queue and works through whichever imports succeeded, one at a time,
+  // exactly like a single-file needs_review screen. 'failed' only when
+  // EVERY eligible import in this run errored out — a partial batch (some
+  // succeeded, some failed) still surfaces as 'ready' so the good ones are
+  // never blocked behind the bad ones.
+  const anyReviewable = results.some((r) => r.status === "needs_review");
+  const batchStatus = anyReviewable ? "ready" : "failed";
+  await db.prepare(`UPDATE lead_import_batch SET status=?, updated_at=datetime('now') WHERE id=?`).bind(batchStatus, batchId).run();
+
+  return c.json({
+    ok: true,
+    data: { batch_id: batchId, status: batchStatus, processed: results.length, results },
+  });
+});
+
+// ── GET /api/lead-import/bulk/:batchId — batch status + per-file summary ───
+//
+// Read-only, mirrors GET /:id but for every import in a batch — a queue UI
+// polls this to render "3 of 10 ready for review, 2 failed, 5 still
+// processing" without issuing N separate GET /:id calls. Returns each
+// import's own status/warnings/missing_info (derived the same way GET /:id
+// derives them) but never the full draft body or match suggestions — a
+// queue LIST view does not need every field of every draft; a human opening
+// one specific import to actually review/confirm it still goes through
+// GET /:id and POST /:id/confirm exactly as a single-file import would.
+leadImportRouter.get("/bulk/:batchId", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const batchId = c.req.param("batchId");
+
+  const batch: any = await db.prepare(
+    `SELECT id, status, file_count, created_at FROM lead_import_batch WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(batchId, companyId).first();
+  if (!batch) return c.json({ ok: false, error: "not_found", message: "Batch not found" }, 404);
+
+  const rowsRes = await db.prepare(
+    `SELECT li.id, li.status, li.error_message, li.warnings_json, li.proposed_json,
+            lid.original_filename, lid.safe_filename
+     FROM lead_import li JOIN lead_import_document lid ON lid.id = li.document_id
+     WHERE li.batch_id=? AND li.company_id=?
+     ORDER BY li.created_at ASC`
+  ).bind(batchId, companyId).all<any>();
+
+  const imports = (rowsRes.results || []).map((r: any) => {
+    let warnings: string[] = [];
+    try { warnings = r.warnings_json ? JSON.parse(r.warnings_json) : []; } catch { warnings = []; }
+
+    let hasDraft = false;
+    let missing: string[] = [];
+    if (r.proposed_json) {
+      try {
+        const parsed = JSON.parse(r.proposed_json);
+        hasDraft = true;
+        missing = deriveMissingInfo({
+          personName: parsed?.contact?.person_name, companyName: parsed?.contact?.company_name,
+          address: parsed?.properties?.[0]?.address, phone: parsed?.contact?.phone, email: parsed?.contact?.email,
+        });
+      } catch {
+        // Malformed proposed_json should never happen (this router is the
+        // only writer) — never crash a batch-status read over it.
+        hasDraft = false;
+      }
+    }
+
+    return {
+      import_id: r.id,
+      status: r.status,
+      error_message: r.error_message || "",
+      original_filename: r.original_filename || "",
+      safe_filename: r.safe_filename || "",
+      has_draft: hasDraft,
+      warnings,
+      missing_info: missing,
+    };
+  });
+
+  return c.json({
+    ok: true,
+    data: {
+      batch_id: batch.id,
+      status: batch.status,
+      file_count: batch.file_count,
+      created_at: batch.created_at,
+      imports,
+    },
   });
 });

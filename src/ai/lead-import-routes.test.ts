@@ -46,6 +46,42 @@ function uploadForm(bytes: ArrayBuffer, filename = "Proposal.pdf", type = "appli
 const postUpload = (companyId: string, form: FormData, repId = "test-rep") =>
   authedAs(companyId, repId).request("/upload", { method: "POST", body: form }, env);
 
+/**
+ * Module-scoped (not nested in a single describe block) because both the
+ * single-file AI-success tests (LIXA-*) and the bulk-import status tests
+ * (LIBS-*) need to configure a fake AI key / mock chat-completion response.
+ */
+async function enableFakeAiKey(companyId: string) {
+  await db().prepare(
+    `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, 'sk-test-fake-not-a-real-key', datetime('now'))`
+  ).bind(`${companyId}:openai_api_key`).run();
+}
+
+/** A complete, schema-shaped chat-completion body — see LEAD_IMPORT_DRAFT_SCHEMA in lead-import-parse.ts. */
+function fakeChatCompletion(draftOverrides: Record<string, any> = {}) {
+  const draft = {
+    contact: { person_name: "Jamie Rivera", company_name: "Rivera Property Group", phone: "555-010-2233", email: "jamie@riverapg.example" },
+    client_type: "Commercial",
+    properties: [{ label: "Main Site", address: "42 Alder Court, Springfield, OH 45501", notes: "gate code 1234" }],
+    project: "Tree removal and stump grinding",
+    urgency: "within 30 days",
+    contract_hint: "one_time",
+    summary_note: "Removal of three dead oaks near the parking lot.",
+    pricing_options: [{
+      label: "Tree removal (3 trees) + stump grinding", property_label: "Main Site",
+      customer_price_low_cents: 180000, customer_price_high_cents: 220000,
+      billing_frequency: "one_time", internal_cost_cents: null, is_deposit: false, notes: "",
+    }],
+    division_suggestion: { label: "Tree Removal", rationale: "Document explicitly describes tree removal and stump grinding work." },
+    ...draftOverrides,
+  };
+  return {
+    id: "chatcmpl-fake-test-only", object: "chat.completion", model: "gpt-5-mini",
+    choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(draft) }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 400, completion_tokens: 120, total_tokens: 520 },
+  };
+}
+
 describe("POST /api/lead-import/upload", () => {
   it("LIU-01 stores a new PDF: R2 object written, document + import rows inserted", async () => {
     const bytes = await makePdfBytes("Avalon Tree Removal Proposal LIU-01");
@@ -319,37 +355,6 @@ describe("POST /api/lead-import/:id/extract", () => {
   const TENANT_AI = "t-lead-import-ai";
   const TENANT_AI_NO_ADDRESS = "t-lead-import-ai-no-address";
   const TENANT_AI_UPSTREAM_ERROR = "t-lead-import-ai-upstream-error";
-
-  async function enableFakeAiKey(companyId: string) {
-    await db().prepare(
-      `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, 'sk-test-fake-not-a-real-key', datetime('now'))`
-    ).bind(`${companyId}:openai_api_key`).run();
-  }
-
-  /** A complete, schema-shaped chat-completion body — see LEAD_IMPORT_DRAFT_SCHEMA in lead-import-parse.ts. */
-  function fakeChatCompletion(draftOverrides: Record<string, any> = {}) {
-    const draft = {
-      contact: { person_name: "Jamie Rivera", company_name: "Rivera Property Group", phone: "555-010-2233", email: "jamie@riverapg.example" },
-      client_type: "Commercial",
-      properties: [{ label: "Main Site", address: "42 Alder Court, Springfield, OH 45501", notes: "gate code 1234" }],
-      project: "Tree removal and stump grinding",
-      urgency: "within 30 days",
-      contract_hint: "one_time",
-      summary_note: "Removal of three dead oaks near the parking lot.",
-      pricing_options: [{
-        label: "Tree removal (3 trees) + stump grinding", property_label: "Main Site",
-        customer_price_low_cents: 180000, customer_price_high_cents: 220000,
-        billing_frequency: "one_time", internal_cost_cents: null, is_deposit: false, notes: "",
-      }],
-      division_suggestion: { label: "Tree Removal", rationale: "Document explicitly describes tree removal and stump grinding work." },
-      ...draftOverrides,
-    };
-    return {
-      id: "chatcmpl-fake-test-only", object: "chat.completion", model: "gpt-5-mini",
-      choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(draft) }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 400, completion_tokens: 120, total_tokens: 520 },
-    };
-  }
 
   it("LIXA-01 AI-success path: parses a full draft, classifies division, and persists proposed_json/warnings_json", async () => {
     await enableFakeAiKey(TENANT_AI);
@@ -1096,5 +1101,290 @@ describe("GET /api/lead-import/entity-links/:entityType/:entityId", () => {
       }),
     );
     expect(linkA).toBe(linkB); // one PDF, one document row, linked to both resulting opportunities
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PR2 — Bulk PDF import. Every route here reuses ingestPdfBytes()/
+// runExtraction() (the exact functions POST /upload and POST /:id/extract
+// call above), so these tests focus on the bulk-specific behavior — file
+// count/size limits, per-file independent outcomes, batch status
+// aggregation, concurrency bound — rather than re-proving the dedupe/
+// extraction logic itself, which LIU-01..LIX-0N already cover.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function bulkUploadForm(files: Array<{ bytes: ArrayBuffer; filename?: string; type?: string }>) {
+  const form = new FormData();
+  for (const f of files) {
+    form.append("files", new File([f.bytes], f.filename || "Proposal.pdf", { type: f.type || "application/pdf" }));
+  }
+  return form;
+}
+
+const postBulkUpload = (companyId: string, form: FormData, repId = "test-rep") =>
+  authedAs(companyId, repId).request("/bulk/upload", { method: "POST", body: form }, env);
+
+const postBulkExtract = (companyId: string, batchId: string, repId = "test-rep") =>
+  authedAs(companyId, repId).request(`/bulk/${batchId}/extract`, { method: "POST" }, env);
+
+const getBulkStatus = (companyId: string, batchId: string) =>
+  authedAs(companyId).request(`/bulk/${batchId}`, {}, env);
+
+describe("POST /api/lead-import/bulk/upload", () => {
+  it("LIBU-01 uploads several distinct PDFs: one batch row, one lead_import per file, all sharing batch_id", async () => {
+    const files = await Promise.all(
+      ["Alpha", "Beta", "Gamma"].map((label) => makePdfBytes(`LIBU-01 ${label} proposal`)),
+    );
+    const res = await postBulkUpload(
+      "t-libu-01",
+      bulkUploadForm(files.map((bytes, i) => ({ bytes, filename: `${["Alpha", "Beta", "Gamma"][i]}.pdf` }))),
+    );
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.file_count).toBe(3);
+    expect(j.data.results.length).toBe(3);
+    expect(j.data.results.every((r: any) => r.ok)).toBe(true);
+    const importIds = new Set(j.data.results.map((r: any) => r.import_id));
+    expect(importIds.size).toBe(3); // three distinct imports, not deduped against each other (different bytes)
+
+    const batch: any = await db().prepare(`SELECT company_id, status, file_count FROM lead_import_batch WHERE id=?`)
+      .bind(j.data.batch_id).first();
+    expect(batch.company_id).toBe("t-libu-01");
+    expect(batch.status).toBe("queued");
+    expect(batch.file_count).toBe(3);
+
+    const imports = await db().prepare(`SELECT id, batch_id, status FROM lead_import WHERE batch_id=?`)
+      .bind(j.data.batch_id).all();
+    expect(imports.results?.length).toBe(3);
+    expect(imports.results?.every((r: any) => r.status === "uploaded")).toBe(true);
+  });
+
+  it("LIBU-02 rejects a batch with more than MAX_BULK_FILES entries, without creating a batch row", async () => {
+    const bytesList = await Promise.all(
+      Array.from({ length: 11 }, (_, i) => makePdfBytes(`LIBU-02 file ${i}`)),
+    );
+    const before = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import_batch WHERE company_id='t-libu-02'`).first<any>();
+    const res = await postBulkUpload("t-libu-02", bulkUploadForm(bytesList.map((bytes, i) => ({ bytes, filename: `f${i}.pdf` }))));
+    expect(res.status).toBe(400);
+    const j: any = await res.json();
+    expect(j.ok).toBe(false);
+    expect(j.error).toBe("too_many_files");
+    const after = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import_batch WHERE company_id='t-libu-02'`).first<any>();
+    expect(after.n).toBe(before.n);
+  });
+
+  it("LIBU-03 a hash-duplicate within the same batch reuses the existing document, never creates a second one", async () => {
+    const bytes = await makePdfBytes("LIBU-03 identical content twice");
+    const res = await postBulkUpload("t-libu-03", bulkUploadForm([
+      { bytes, filename: "Copy1.pdf" },
+      { bytes, filename: "Copy2.pdf" },
+    ]));
+    const j: any = await res.json();
+    expect(j.data.results[0].ok).toBe(true);
+    expect(j.data.results[1].ok).toBe(true);
+    expect(j.data.results[0].document_id).toBe(j.data.results[1].document_id); // same bytes -> same document row
+    expect(j.data.results[0].duplicate).toBe(false);
+    expect(j.data.results[1].duplicate).toBe(true); // second entry recognized as a dupe of the first, within the same request
+
+    const docs = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import_document WHERE company_id='t-libu-03'`).first<any>();
+    expect(docs.n).toBe(1);
+    const imports = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import WHERE batch_id=?`).bind(j.data.batch_id).first<any>();
+    expect(imports.n).toBe(2); // two import attempts, one document
+  });
+
+  it("LIBU-04 a bad file in the batch is reported independently and never blocks the good files", async () => {
+    const good = await makePdfBytes("LIBU-04 good proposal");
+    const notPdf = new TextEncoder().encode("not a pdf at all").buffer;
+    const res = await postBulkUpload("t-libu-04", bulkUploadForm([
+      { bytes: good, filename: "Good.pdf" },
+      { bytes: notPdf, filename: "Bad.pdf" },
+    ]));
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.file_count).toBe(1); // only the accepted file counts
+    const [okResult, badResult] = j.data.results;
+    expect(okResult.ok).toBe(true);
+    expect(badResult.ok).toBe(false);
+    expect(badResult.error).toBe("not_pdf");
+
+    const batch: any = await db().prepare(`SELECT file_count FROM lead_import_batch WHERE id=?`).bind(j.data.batch_id).first();
+    expect(batch.file_count).toBe(1);
+    const imports = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import WHERE batch_id=?`).bind(j.data.batch_id).first<any>();
+    expect(imports.n).toBe(1); // the rejected file never got an import row at all
+  });
+
+  it("LIBU-05 rejects an empty files list", async () => {
+    const res = await postBulkUpload("t-libu-05", new FormData());
+    expect(res.status).toBe(400);
+    const j: any = await res.json();
+    expect(j.error).toBe("bad_request");
+  });
+
+  it("LIBU-06 two different tenants uploading byte-identical PDFs in the same request get independent documents", async () => {
+    const bytes = await makePdfBytes("LIBU-06 shared template text");
+    const [resA, resB] = await Promise.all([
+      postBulkUpload("t-libu-06a", bulkUploadForm([{ bytes }])),
+      postBulkUpload("t-libu-06b", bulkUploadForm([{ bytes }])),
+    ]);
+    const [ja, jb]: any[] = await Promise.all([resA.json(), resB.json()]);
+    expect(ja.data.results[0].duplicate).toBe(false);
+    expect(jb.data.results[0].duplicate).toBe(false);
+    expect(ja.data.results[0].document_id).not.toBe(jb.data.results[0].document_id);
+  });
+});
+
+describe("POST /api/lead-import/bulk/:batchId/extract", () => {
+  it("LIBX-01 not found for an unknown batch id", async () => {
+    const res = await postBulkExtract("t-libx-01", "libatch_does_not_exist");
+    expect(res.status).toBe(404);
+    const j: any = await res.json();
+    expect(j.error).toBe("not_found");
+  });
+
+  it("LIBX-02 extracts every eligible import in the batch (no AI key configured -> each soft-degrades to needs_review)", async () => {
+    const bytesList = await Promise.all([
+      makePdfBytes("LIBX-02 Alpha proposal with enough real text to extract"),
+      makePdfBytes("LIBX-02 Beta proposal with enough real text to extract"),
+    ]);
+    const up: any = await (await postBulkUpload("t-libx-02", bulkUploadForm(bytesList.map((bytes, i) => ({ bytes, filename: `f${i}.pdf` }))))).json();
+
+    const res = await postBulkExtract("t-libx-02", up.data.batch_id);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.ok).toBe(true);
+    expect(j.data.processed).toBe(2);
+    expect(j.data.results.every((r: any) => r.status === "needs_review")).toBe(true);
+    expect(j.data.status).toBe("ready"); // at least one reviewable import -> batch is 'ready'
+
+    const rows = await db().prepare(`SELECT status FROM lead_import WHERE batch_id=?`).bind(up.data.batch_id).all();
+    expect(rows.results?.every((r: any) => r.status === "needs_review")).toBe(true);
+
+    const batch: any = await db().prepare(`SELECT status FROM lead_import_batch WHERE id=?`).bind(up.data.batch_id).first();
+    expect(batch.status).toBe("ready");
+  });
+
+  it("LIBX-03 calling extract again on an already-needs_review batch re-enters cleanly (idempotent-safe retry)", async () => {
+    const bytes = await makePdfBytes("LIBX-03 retry-safe proposal with real text");
+    const up: any = await (await postBulkUpload("t-libx-03", bulkUploadForm([{ bytes }]))).json();
+    await postBulkExtract("t-libx-03", up.data.batch_id);
+
+    const res2 = await postBulkExtract("t-libx-03", up.data.batch_id);
+    expect(res2.status).toBe(200);
+    const j2: any = await res2.json();
+    expect(j2.data.processed).toBe(1);
+    expect(j2.data.results[0].status).toBe("needs_review");
+  });
+
+  it("LIBX-04 an import already past review (e.g. finalized) is skipped, not re-extracted", async () => {
+    const bytesA = await makePdfBytes("LIBX-04 Alpha proposal with real text");
+    const bytesB = await makePdfBytes("LIBX-04 Beta proposal with real text");
+    const up: any = await (await postBulkUpload("t-libx-04", bulkUploadForm([
+      { bytes: bytesA, filename: "a.pdf" }, { bytes: bytesB, filename: "b.pdf" },
+    ]))).json();
+    const [importA, importB] = up.data.results.map((r: any) => r.import_id);
+
+    // Manually fast-forward the first import straight to 'finalized' —
+    // simulates "one file in this batch was already reviewed and confirmed
+    // by a human before extract ran (or re-ran) on the rest of the batch".
+    await db().prepare(`UPDATE lead_import SET status='finalized' WHERE id=?`).bind(importA).run();
+
+    const res = await postBulkExtract("t-libx-04", up.data.batch_id);
+    const j: any = await res.json();
+    expect(j.data.processed).toBe(1); // only importB was eligible
+    expect(j.data.results[0].import_id).toBe(importB);
+
+    const rowA: any = await db().prepare(`SELECT status FROM lead_import WHERE id=?`).bind(importA).first();
+    expect(rowA.status).toBe("finalized"); // untouched
+  });
+
+  it("LIBX-05 a batch whose every import is already past review returns processed:0 without changing batch status", async () => {
+    const bytes = await makePdfBytes("LIBX-05 already-finalized proposal");
+    const up: any = await (await postBulkUpload("t-libx-05", bulkUploadForm([{ bytes }]))).json();
+    const importId = up.data.results[0].import_id;
+    await db().prepare(`UPDATE lead_import SET status='finalized' WHERE id=?`).bind(importId).run();
+    await db().prepare(`UPDATE lead_import_batch SET status='completed' WHERE id=?`).bind(up.data.batch_id).run();
+
+    const res = await postBulkExtract("t-libx-05", up.data.batch_id);
+    const j: any = await res.json();
+    expect(j.data.processed).toBe(0);
+    expect(j.data.status).toBe("completed"); // reported as-is, never flipped to 'processing'/'ready' for zero work
+  });
+
+  it("LIBX-06 a batch belonging to a different tenant is not found (tenant isolation)", async () => {
+    const bytes = await makePdfBytes("LIBX-06 tenant isolation check");
+    const up: any = await (await postBulkUpload("t-libx-06a", bulkUploadForm([{ bytes }]))).json();
+    const res = await postBulkExtract("t-libx-06b", up.data.batch_id);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/lead-import/bulk/:batchId", () => {
+  it("LIBS-01 not found for an unknown batch id", async () => {
+    const res = await getBulkStatus("t-libs-01", "libatch_does_not_exist");
+    expect(res.status).toBe(404);
+  });
+
+  it("LIBS-02 lists every import in the batch with its own status, filename, and missing_info — never the full draft", async () => {
+    // Unlike LIBS-03 (no AI key -> soft-degrade, proposed_json never
+    // written, has_draft correctly false), this test's own intent per its
+    // docstring is to verify has_draft:true + real missing_info values on a
+    // batch that WAS successfully extracted by the AI path. That requires a
+    // configured (fake) AI key and a mocked upstream response, same as
+    // LIXA-02, so runExtraction() actually reaches the branch that writes
+    // proposed_json/warnings_json instead of taking the no-API-key
+    // early-return. The draft itself is deliberately all-blank contact
+    // fields (mirroring LIXA-02's TENANT_AI_NO_ADDRESS case) so the
+    // pre-existing missing_info assertion below stays valid.
+    await enableFakeAiKey("t-libs-02");
+    network.use(
+      http.post("https://api.openai.com/v1/chat/completions", () => HttpResponse.json(fakeChatCompletion({
+        contact: { person_name: "", company_name: "", phone: "", email: "" },
+        properties: [],
+        division_suggestion: { label: "", rationale: "" },
+      }))),
+    );
+
+    const bytesA = await makePdfBytes("LIBS-02 Alpha proposal with real text");
+    const bytesB = await makePdfBytes("LIBS-02 Beta proposal with real text");
+    const up: any = await (await postBulkUpload("t-libs-02", bulkUploadForm([
+      { bytes: bytesA, filename: "Alpha.pdf" }, { bytes: bytesB, filename: "Beta.pdf" },
+    ]))).json();
+    await postBulkExtract("t-libs-02", up.data.batch_id);
+
+    const res = await getBulkStatus("t-libs-02", up.data.batch_id);
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    expect(j.data.batch_id).toBe(up.data.batch_id);
+    expect(j.data.file_count).toBe(2);
+    expect(j.data.imports.length).toBe(2);
+    for (const imp of j.data.imports) {
+      expect(imp.status).toBe("needs_review");
+      expect(imp.has_draft).toBe(true);
+      expect(["Alpha.pdf", "Beta.pdf"]).toContain(imp.original_filename);
+      expect(imp).not.toHaveProperty("draft"); // list view never returns the full draft body
+      expect(imp).not.toHaveProperty("proposed_json");
+      // Blank AI draft contact fields -> every canonical field missing,
+      // same derivation GET /:id uses.
+      expect(imp.missing_info).toEqual(["contact_identity", "property_address", "contact_method"]);
+    }
+  });
+
+  it("LIBS-03 reflects a not-yet-extracted batch's per-import status as 'uploaded' with has_draft:false", async () => {
+    const bytes = await makePdfBytes("LIBS-03 not yet extracted");
+    const up: any = await (await postBulkUpload("t-libs-03", bulkUploadForm([{ bytes }]))).json();
+
+    const res = await getBulkStatus("t-libs-03", up.data.batch_id);
+    const j: any = await res.json();
+    expect(j.data.imports[0].status).toBe("uploaded");
+    expect(j.data.imports[0].has_draft).toBe(false);
+    expect(j.data.imports[0].warnings).toEqual([]);
+  });
+
+  it("LIBS-04 a batch belonging to a different tenant is not found (tenant isolation)", async () => {
+    const bytes = await makePdfBytes("LIBS-04 tenant isolation check");
+    const up: any = await (await postBulkUpload("t-libs-04a", bulkUploadForm([{ bytes }]))).json();
+    const res = await getBulkStatus("t-libs-04b", up.data.batch_id);
+    expect(res.status).toBe(404);
   });
 });
