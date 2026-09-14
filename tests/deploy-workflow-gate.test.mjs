@@ -187,3 +187,22 @@ test('DG-09 the runbook exists and covers rollback and smoke checks', () => {
   assert.match(runbook, /Migrations do not roll back/);
   assert.match(code, /docs\/RUNBOOK-deploy\.md/, 'the workflow no longer points at the runbook');
 });
+
+test('DG-10 verify carries every job-level env ci.yml gate sets', () => {
+  // wrangler.jsonc declares vectorize and ai bindings, which the vitest
+  // workers pool resolves remotely — without credentials the job loops on
+  // "Establishing remote connection..." and dies. `npm test` then fails in
+  // verify while passing identically in ci.yml, and no dispatch can ever
+  // reach the deploy job.
+  //
+  // Raised in review of #139 and not acted on; the first real dispatch failed
+  // in precisely that step.
+  const gate = ci.slice(ci.indexOf('  gate:'), ci.indexOf('    steps:'));
+  const wanted = [...gate.matchAll(/^\s{6}([A-Z_]+):/gm)].map(m => m[1]);
+  assert.ok(wanted.length > 0, 'ci.yml gate no longer sets any job-level env');
+  const verify = job('verify');
+  for (const key of wanted) {
+    assert.match(verify, new RegExp(`^\\s+${key}:`, 'm'),
+      `the verify job does not set ${key}, which ci.yml's gate does`);
+  }
+});

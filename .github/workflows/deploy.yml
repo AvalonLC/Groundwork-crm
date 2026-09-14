@@ -114,6 +114,17 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Same job-level token ci.yml's gate sets, and for the same reason:
+    # wrangler.jsonc declares `vectorize` and `ai` bindings, which the
+    # vitest workers pool resolves REMOTELY. Without credentials it loops on
+    # "Establishing remote connection..." and the job dies — so `npm test`
+    # fails here while passing identically in ci.yml.
+    #
+    # This was raised in review of #139 ("verify omits the job-level env that
+    # gate sets ... no production deploy can ever complete") and not acted on.
+    # The first real dispatch failed in exactly that step, exactly as predicted.
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ needs.preflight.outputs.sha }}" }
