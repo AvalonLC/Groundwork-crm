@@ -280,3 +280,156 @@ export const MISSING_INFO_LABELS: Record<MissingInfoKey, string> = {
   property_address: "Property / service address",
   contact_method: "Phone or email",
 };
+
+// ── Abandoned-import cleanup (retention) ────────────────────────────────────
+//
+// Spec: a `temporary`/in-progress import that is never confirmed becomes
+// eligible for cleanup after ABANDONED_RETENTION_HOURS. This function is the
+// implementation the migration's own doc comment refers to
+// ("cleanupAbandonedImports()'s own guard and its tests") — it exists but is
+// NEVER auto-executed against production: nothing in this codebase calls it
+// on a schedule. The only invocation path is the secret-header-authenticated
+// POST /internal/cron/lead-import-cleanup route (src/api/cron-trigger.ts),
+// mirroring the existing nightly-rollup pattern — an external scheduler
+// (GitHub Actions) calls it, never a Cloudflare Workers `triggers` cron
+// (unsupported by this project's hosted-deploy path — see wrangler.jsonc's
+// own constraints). Even that route requires an explicit, deliberate call;
+// this module itself never runs anything on its own.
+//
+// HARD GUARDS (non-negotiable, same spirit as confirmLeadImport's
+// write-once ordering):
+//   1. NEVER touches a `finalized` import/document — the WHERE clause below
+//      only ever selects rows in a non-terminal, non-finalized status.
+//   2. NEVER deletes a row — only transitions status to 'abandoned' (a
+//      legal transition from every non-terminal status per
+//      LEGAL_TRANSITIONS above) and, per the spec's "do not retain complete
+//      extracted text indefinitely" instruction, nulls out the bulky/
+//      sensitive extracted_text and proposed_json columns on the import row
+//      it just abandoned — status/timestamps/ids/warnings are kept for
+//      audit purposes.
+//   3. A document row backing an abandoned import is itself only moved to
+//      'abandoned' if EVERY import referencing it is abandoned/failed/
+//      expired — never if any import (including a different, still-active
+//      one that later re-linked the same hash-deduped document) still needs
+//      it. This mirrors the schema's own "document status must not be
+//      forced backward by a second import" rule (see migrations/0088's doc
+//      comment on lead_import_document.status).
+//   4. Cursor-scoped by cutoff time using the SAME 'updated_at' column
+//      every status transition in this router already stamps
+//      (datetime('now')) — an import that's still being actively worked
+//      (extended by a retry) keeps advancing its own updated_at and is
+//      therefore never swept just because it was originally uploaded long
+//      ago.
+
+export interface CleanupAbandonedImportsResult {
+  /** How many lead_import rows were moved to 'abandoned' this run. */
+  importsAbandoned: number;
+  /** How many lead_import_document rows were moved to 'abandoned' this run. */
+  documentsAbandoned: number;
+  /** import_id values actually abandoned — useful for audit logging/tests. */
+  abandonedImportIds: string[];
+}
+
+/**
+ * Sweeps every tenant's stalled lead-import rows (unless `companyId` is
+ * given, scoping to just one) whose `updated_at` is older than
+ * ABANDONED_RETENTION_HOURS AND whose status is still non-terminal/
+ * non-finalized (temporary/uploaded/extracting/parsing/needs_review/ready/
+ * creating/failed) into 'abandoned'. Never touches `finalized`,
+ * already-`abandoned`, or already-`expired` rows — those are already
+ * terminal and are simply skipped by the WHERE clause, not re-processed.
+ *
+ * dryRun=true computes and returns exactly what WOULD be changed without
+ * writing anything — same contract as runNightlyRollup's own dry_run
+ * parameter (src/cron/rollup.ts / src/api/cron-trigger.ts), so a human can
+ * always preview a sweep before it runs for real.
+ */
+export async function cleanupAbandonedImports(
+  db: D1Database,
+  opts: { companyId?: string; dryRun?: boolean; now?: Date } = {},
+): Promise<CleanupAbandonedImportsResult> {
+  const cutoffIso = new Date(
+    (opts.now ?? new Date()).getTime() - ABANDONED_RETENTION_HOURS * 60 * 60 * 1000,
+  ).toISOString().replace("T", " ").slice(0, 19);
+
+  const NON_TERMINAL_NON_FINALIZED: LeadImportStatus[] = [
+    "temporary", "uploaded", "extracting", "parsing", "needs_review", "ready", "creating", "failed",
+  ];
+  const statusPlaceholders = NON_TERMINAL_NON_FINALIZED.map(() => "?").join(",");
+
+  const params: any[] = [...NON_TERMINAL_NON_FINALIZED, cutoffIso];
+  let companyClause = "";
+  if (opts.companyId) {
+    companyClause = " AND company_id = ?";
+    params.push(opts.companyId);
+  }
+
+  const staleRes = await db.prepare(
+    `SELECT id, company_id, document_id FROM lead_import
+     WHERE status IN (${statusPlaceholders}) AND updated_at < ?${companyClause}`,
+  ).bind(...params).all<{ id: string; company_id: string; document_id: string }>();
+  const stale = staleRes.results || [];
+
+  if (stale.length === 0) {
+    return { importsAbandoned: 0, documentsAbandoned: 0, abandonedImportIds: [] };
+  }
+
+  const importIds = stale.map((r) => r.id);
+  // A document can be referenced by more than one import (hash-deduped
+  // reuse) — collect the distinct set touched this run so guard #3 above
+  // can check EVERY import against each one, not just the stale ones.
+  const documentIds = [...new Set(stale.map((r) => r.document_id).filter(Boolean))];
+
+  if (opts.dryRun) {
+    return { importsAbandoned: importIds.length, documentsAbandoned: 0, abandonedImportIds: importIds };
+  }
+
+  // Guard #2: transition to 'abandoned' AND null out the bulky/sensitive
+  // retained fields on exactly the rows just selected — never a broader
+  // UPDATE than the SELECT above already scoped.
+  const idPlaceholders = importIds.map(() => "?").join(",");
+  await db.prepare(
+    `UPDATE lead_import
+     SET status='abandoned', extracted_text='', proposed_json='', updated_at=datetime('now')
+     WHERE id IN (${idPlaceholders})`,
+  ).bind(...importIds).run();
+
+  // Guard #3: only abandon a document if NONE of its imports are still in
+  // an active (non-abandoned/failed/expired) state — re-check fresh from
+  // the DB rather than assuming the stale set above is the complete answer
+  // for shared/hash-deduped documents.
+  let documentsAbandoned = 0;
+  if (documentIds.length > 0) {
+    const docIdPlaceholders = documentIds.map(() => "?").join(",");
+    const stillActiveRes = await db.prepare(
+      `SELECT DISTINCT document_id FROM lead_import
+       WHERE document_id IN (${docIdPlaceholders})
+         AND status NOT IN ('abandoned','failed','expired')`,
+    ).bind(...documentIds).all<{ document_id: string }>();
+    const stillActiveDocIds = new Set((stillActiveRes.results || []).map((r) => r.document_id));
+    const fullyAbandonedDocIds = documentIds.filter((id) => !stillActiveDocIds.has(id));
+
+    if (fullyAbandonedDocIds.length > 0) {
+      const fadPlaceholders = fullyAbandonedDocIds.map(() => "?").join(",");
+      // Documents are never in 'finalized' unless a confirm actually
+      // happened for one of their imports — but guard explicitly anyway
+      // (never touch a finalized document, belt-and-suspenders with
+      // guard #1) rather than relying solely on the still-active check above.
+      // Note: deliberately NOT using result.meta.rows_written here — D1/
+      // SQLite's rows_written also counts secondary-index page writes (this
+      // table has idx_lid_company_status on (company_id, status)), so it
+      // can report more than the number of logical document rows changed.
+      // fullyAbandonedDocIds.length is the actual candidate set already
+      // guarded above (status != 'finalized' excludes nothing further here
+      // since guard #1/#3 already kept finalized rows out of this set).
+      await db.prepare(
+        `UPDATE lead_import_document
+         SET status='abandoned', updated_at=datetime('now')
+         WHERE id IN (${fadPlaceholders}) AND status != 'finalized'`,
+      ).bind(...fullyAbandonedDocIds).run();
+      documentsAbandoned = fullyAbandonedDocIds.length;
+    }
+  }
+
+  return { importsAbandoned: importIds.length, documentsAbandoned, abandonedImportIds: importIds };
+}

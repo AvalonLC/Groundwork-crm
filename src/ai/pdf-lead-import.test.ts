@@ -1,13 +1,17 @@
 /// <reference types="@cloudflare/vitest-pool-workers" />
 import { describe, it, expect } from "vitest";
+import { env } from "cloudflare:test";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { extractText, getDocumentProxy } from "unpdf";
 import {
-  MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_EXTRACTED_TEXT_CHARS,
+  MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_EXTRACTED_TEXT_CHARS, ABANDONED_RETENTION_HOURS,
   hasPdfMagicBytes, validateAndExtractPdf, computeContentHash, safeFilename,
   documentR2Key, canTransition, isRetryable, isTerminal, deriveMissingInfo,
+  cleanupAbandonedImports,
   type PdfExtractor,
 } from "./pdf-lead-import";
+
+const db = () => env.DB as D1Database;
 
 // ── Fixture helpers — sanitized, synthetic PDFs generated in-process, never
 // committed real customer documents (per spec's testing requirement). ──────
@@ -246,5 +250,198 @@ describe("deriveMissingInfo — live-derived, never persisted", () => {
     expect(missing).toContain("contact_identity");
     expect(missing).toContain("contact_method");
     expect(missing).not.toContain("property_address");
+  });
+});
+
+describe("cleanupAbandonedImports — retention sweep", () => {
+  const TENANT = "t-pli-cleanup";
+  const TENANT_2 = "t-pli-cleanup-2";
+  let seq = 0;
+  function freshId(prefix: string): string {
+    seq += 1;
+    return `${prefix}_cai${seq}_${Date.now()}`;
+  }
+
+  /** Hours-ago timestamp in the exact 'YYYY-MM-DD HH:MM:SS' shape every status transition in this codebase already writes via datetime('now'). */
+  function hoursAgo(h: number): string {
+    return new Date(Date.now() - h * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
+  }
+
+  async function insertDocument(companyId: string, opts: { status?: string; updatedAt?: string } = {}): Promise<string> {
+    const id = freshId("lidoc");
+    await db().prepare(
+      `INSERT INTO lead_import_document (id, company_id, original_filename, safe_filename, r2_key, byte_size, sha256_hash, status, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`
+    ).bind(id, companyId, "x.pdf", "x.pdf", `fake/r2/${id}`, 10, `hash_${id}`, opts.status || "uploaded", opts.updatedAt || hoursAgo(0)).run();
+    return id;
+  }
+
+  async function insertImport(
+    companyId: string, documentId: string,
+    opts: { status?: string; updatedAt?: string; extractedText?: string; proposedJson?: string } = {},
+  ): Promise<string> {
+    const id = freshId("limp");
+    await db().prepare(
+      `INSERT INTO lead_import (id, company_id, document_id, idempotency_token, status, extracted_text, proposed_json, warnings_json, updated_at)
+       VALUES (?,?,?,?,?,?,?, '[]', ?)`
+    ).bind(
+      id, companyId, documentId, `tok_${id}`, opts.status || "uploaded",
+      opts.extractedText ?? "some extracted text", opts.proposedJson ?? "",
+      opts.updatedAt || hoursAgo(0),
+    ).run();
+    return id;
+  }
+
+  async function getImportRow(id: string): Promise<any> {
+    return db().prepare(`SELECT * FROM lead_import WHERE id=?`).bind(id).first();
+  }
+  async function getDocumentRow(id: string): Promise<any> {
+    return db().prepare(`SELECT * FROM lead_import_document WHERE id=?`).bind(id).first();
+  }
+
+  it("CAI-01 abandons a stale in-progress import and nulls its retained text/draft fields", async () => {
+    const docId = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importId = await insertImport(TENANT, docId, {
+      status: "needs_review",
+      updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1),
+      extractedText: "sensitive extracted text that must not linger forever",
+      proposedJson: JSON.stringify({ contact: { person_name: "Jane Doe" } }),
+    });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.importsAbandoned).toBe(1);
+    expect(result.abandonedImportIds).toEqual([importId]);
+
+    const row = await getImportRow(importId);
+    expect(row.status).toBe("abandoned");
+    expect(row.extracted_text).toBe("");
+    expect(row.proposed_json).toBe("");
+  });
+
+  it("CAI-02 leaves a recently-updated (not yet stale) import untouched", async () => {
+    const docId = await insertDocument(TENANT, { updatedAt: hoursAgo(1) });
+    const importId = await insertImport(TENANT, docId, { status: "needs_review", updatedAt: hoursAgo(1) });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).not.toContain(importId);
+
+    const row = await getImportRow(importId);
+    expect(row.status).toBe("needs_review");
+    expect(row.extracted_text).not.toBe("");
+  });
+
+  it("CAI-03 never touches a finalized import, no matter how old", async () => {
+    const docId = await insertDocument(TENANT, { status: "finalized", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 100) });
+    const importId = await insertImport(TENANT, docId, {
+      status: "finalized", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 100),
+    });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).not.toContain(importId);
+
+    const row = await getImportRow(importId);
+    expect(row.status).toBe("finalized");
+    expect(row.extracted_text).not.toBe(""); // untouched, not nulled
+
+    const docRow = await getDocumentRow(docId);
+    expect(docRow.status).toBe("finalized"); // guard #1 — never demoted
+  });
+
+  it("CAI-04 abandons the backing document only once EVERY import referencing it is stale", async () => {
+    const docId = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    // Two imports share this one hash-deduped document — one stale, one still active.
+    const staleImportId = await insertImport(TENANT, docId, {
+      status: "needs_review", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1),
+    });
+    const activeImportId = await insertImport(TENANT, docId, {
+      status: "needs_review", updatedAt: hoursAgo(1),
+    });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).toContain(staleImportId);
+    expect(result.abandonedImportIds).not.toContain(activeImportId);
+    // The document itself must stay untouched — the still-active import needs it.
+    expect(result.documentsAbandoned).toBe(0);
+    const docRow = await getDocumentRow(docId);
+    expect(docRow.status).not.toBe("abandoned");
+
+    const activeRow = await getImportRow(activeImportId);
+    expect(activeRow.status).toBe("needs_review");
+  });
+
+  it("CAI-05 abandons the backing document once ALL its imports are stale/failed/expired", async () => {
+    const docId = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importId = await insertImport(TENANT, docId, {
+      status: "failed", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1),
+    });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).toContain(importId);
+    expect(result.documentsAbandoned).toBe(1);
+
+    const docRow = await getDocumentRow(docId);
+    expect(docRow.status).toBe("abandoned");
+  });
+
+  it("CAI-06 dry_run reports what would change without writing anything", async () => {
+    const docId = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importId = await insertImport(TENANT, docId, {
+      status: "needs_review", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1),
+    });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT, dryRun: true });
+    expect(result.importsAbandoned).toBe(1);
+    expect(result.abandonedImportIds).toEqual([importId]);
+
+    const row = await getImportRow(importId);
+    expect(row.status).toBe("needs_review"); // unchanged — dry run wrote nothing
+    expect(row.extracted_text).not.toBe("");
+  });
+
+  it("CAI-07 companyId scoping sweeps only the requested tenant, leaving another tenant's equally-stale import alone", async () => {
+    const docA = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importA = await insertImport(TENANT, docA, { status: "needs_review", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const docB = await insertDocument(TENANT_2, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importB = await insertImport(TENANT_2, docB, { status: "needs_review", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).toContain(importA);
+    expect(result.abandonedImportIds).not.toContain(importB);
+
+    const rowB = await getImportRow(importB);
+    expect(rowB.status).toBe("needs_review"); // a different tenant's stale row, untouched by this scoped call
+  });
+
+  it("CAI-08 omitting companyId sweeps every tenant", async () => {
+    const docA = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importA = await insertImport(TENANT, docA, { status: "needs_review", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const docB = await insertDocument(TENANT_2, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importB = await insertImport(TENANT_2, docB, { status: "needs_review", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+
+    const result = await cleanupAbandonedImports(db()); // no companyId -> every tenant
+    expect(result.abandonedImportIds).toContain(importA);
+    expect(result.abandonedImportIds).toContain(importB);
+  });
+
+  it("CAI-09 an already-abandoned import is not re-processed (no-op, not an error)", async () => {
+    const docId = await insertDocument(TENANT, { status: "abandoned", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importId = await insertImport(TENANT, docId, {
+      status: "abandoned", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1),
+    });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).not.toContain(importId);
+    expect(result.importsAbandoned).toBe(0);
+  });
+
+  it("CAI-10 a stale but still-legally-retryable status (ready/creating) is swept the same as needs_review/failed", async () => {
+    const docReady = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importReady = await insertImport(TENANT, docReady, { status: "ready", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const docCreating = await insertDocument(TENANT, { updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+    const importCreating = await insertImport(TENANT, docCreating, { status: "creating", updatedAt: hoursAgo(ABANDONED_RETENTION_HOURS + 1) });
+
+    const result = await cleanupAbandonedImports(db(), { companyId: TENANT });
+    expect(result.abandonedImportIds).toContain(importReady);
+    expect(result.abandonedImportIds).toContain(importCreating);
   });
 });
