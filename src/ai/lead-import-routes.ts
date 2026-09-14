@@ -36,6 +36,7 @@ import {
   hasPdfMagicBytes, computeContentHash, safeFilename, documentR2Key,
   validateAndExtractPdf, canTransition, deriveMissingInfo,
   PDF_ERROR_MESSAGES, MAX_PDF_BYTES, MAX_BULK_FILES, MAX_BULK_TOTAL_BYTES, BULK_PARSE_CONCURRENCY,
+  NON_TERMINAL_NON_FINALIZED_STATUSES,
   type PdfExtractor, type LeadImportStatus, type PdfValidationError,
 } from "./pdf-lead-import";
 import {
@@ -519,6 +520,92 @@ leadImportRouter.post("/:id/extract", async (c) => {
     ok: true,
     data: { import_id: importId, status: outcome.status, warning: outcome.warning, extracted_page_count: outcome.pageCount },
   });
+});
+
+// ── GET /api/lead-import/mine/pending — resumable imports for this rep ─────
+//
+// The spec's "resume/retry" requirement (capability 10) needs an entry
+// point that works from OUTSIDE an active upload/queue session — a rep who
+// closed the browser mid-review, or came back the next day, has had no way
+// to find an in-progress import again until now (both the standalone
+// single-file modal and the bulk queue modal only ever show what's already
+// in their own in-memory JS state — nothing before this route persisted
+// that list anywhere the frontend could re-fetch it).
+//
+// Registered as a static "/mine/pending" path BEFORE the "/:id" route below
+// so it can never be shadowed by that dynamic segment (Hono's own router
+// already prefers a more-specific static match over a single dynamic
+// segment regardless of registration order for a multi-segment path like
+// this one, but the ordering is kept explicit here anyway so this stays
+// true even if that route's own path is ever changed to a single segment).
+//
+// Scope: every import for this rep's OWN uploads (uploaded_by_rep_id) that
+// is not yet terminal/finalized — i.e. exactly
+// NON_TERMINAL_NON_FINALIZED_STATUSES, the SAME list cleanupAbandonedImports
+// uses, so "still shows up here" and "not yet swept by retention" are
+// always the same set of imports by construction, never two lists that can
+// drift apart. An admin/office_manager additionally sees every rep's
+// pending imports for the tenant (mine=false), since they're the ones who
+// would actually run a retention sweep or need to unblock someone else's
+// stuck upload — a plain rep only ever sees their own.
+//
+// Never returns the full draft/extracted_text (same reasoning as
+// GET /bulk/:batchId above — a LIST view doesn't need every field of every
+// draft); opening one specific import to actually resume/retry/confirm it
+// still goes through GET /:id exactly as it already does today.
+const ADMIN_ROLES = new Set(["admin", "owner", "office_manager"]);
+
+leadImportRouter.get("/mine/pending", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const repId = c.var.repId as string;
+  const role = (c.var.role as string) || "";
+
+  const seeAllReps = ADMIN_ROLES.has(role) || !!c.var.isSuperAdmin;
+  const repClause = seeAllReps ? "" : " AND lid.uploaded_by_rep_id = ?";
+  const params: any[] = [companyId, ...NON_TERMINAL_NON_FINALIZED_STATUSES];
+  if (!seeAllReps) params.push(repId);
+
+  const statusPlaceholders = NON_TERMINAL_NON_FINALIZED_STATUSES.map(() => "?").join(",");
+  const rowsRes = await db.prepare(
+    `SELECT li.id, li.status, li.error_message, li.batch_id, li.updated_at, li.warnings_json, li.proposed_json,
+            lid.original_filename, lid.safe_filename, lid.uploaded_by_rep_id
+     FROM lead_import li
+     JOIN lead_import_document lid ON lid.id = li.document_id
+     WHERE li.company_id = ? AND li.status IN (${statusPlaceholders})${repClause}
+     ORDER BY li.updated_at DESC
+     LIMIT 200`
+  ).bind(...params).all<any>();
+
+  const imports = (rowsRes.results || []).map((r: any) => {
+    let missing: string[] = [];
+    if (r.proposed_json) {
+      try {
+        const parsed = JSON.parse(r.proposed_json);
+        missing = deriveMissingInfo({
+          personName: parsed?.contact?.person_name, companyName: parsed?.contact?.company_name,
+          address: parsed?.properties?.[0]?.address, phone: parsed?.contact?.phone, email: parsed?.contact?.email,
+        });
+      } catch {
+        // Malformed proposed_json should never happen (this router is the
+        // only writer) — never crash a list read over it.
+        missing = [];
+      }
+    }
+    return {
+      import_id: r.id,
+      status: r.status,
+      error_message: r.error_message || "",
+      batch_id: r.batch_id || "",
+      updated_at: r.updated_at,
+      original_filename: r.original_filename || "",
+      safe_filename: r.safe_filename || "",
+      uploaded_by_rep_id: r.uploaded_by_rep_id || "",
+      missing_info: missing,
+    };
+  });
+
+  return c.json({ ok: true, data: { imports } });
 });
 
 // ── GET /api/lead-import/:id — status/detail + existing-record match ───────

@@ -331,6 +331,19 @@ export interface CleanupAbandonedImportsResult {
 }
 
 /**
+ * Every status a lead_import row can sit in that is NEITHER terminal
+ * (finalized/abandoned/expired) NOR already-successfully-reviewed-and-
+ * confirmed. Exported so cleanupAbandonedImports() (below) and
+ * GET /api/lead-import/mine/pending (src/ai/lead-import-routes.ts, the
+ * "resume an abandoned/in-progress import" entry point) share the exact
+ * same list rather than each maintaining its own copy that could quietly
+ * drift apart.
+ */
+export const NON_TERMINAL_NON_FINALIZED_STATUSES: LeadImportStatus[] = [
+  "temporary", "uploaded", "extracting", "parsing", "needs_review", "ready", "creating", "failed",
+];
+
+/**
  * Sweeps every tenant's stalled lead-import rows (unless `companyId` is
  * given, scoping to just one) whose `updated_at` is older than
  * ABANDONED_RETENTION_HOURS AND whose status is still non-terminal/
@@ -352,12 +365,9 @@ export async function cleanupAbandonedImports(
     (opts.now ?? new Date()).getTime() - ABANDONED_RETENTION_HOURS * 60 * 60 * 1000,
   ).toISOString().replace("T", " ").slice(0, 19);
 
-  const NON_TERMINAL_NON_FINALIZED: LeadImportStatus[] = [
-    "temporary", "uploaded", "extracting", "parsing", "needs_review", "ready", "creating", "failed",
-  ];
-  const statusPlaceholders = NON_TERMINAL_NON_FINALIZED.map(() => "?").join(",");
+  const statusPlaceholders = NON_TERMINAL_NON_FINALIZED_STATUSES.map(() => "?").join(",");
 
-  const params: any[] = [...NON_TERMINAL_NON_FINALIZED, cutoffIso];
+  const params: any[] = [...NON_TERMINAL_NON_FINALIZED_STATUSES, cutoffIso];
   let companyClause = "";
   if (opts.companyId) {
     companyClause = " AND company_id = ?";

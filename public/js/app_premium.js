@@ -7025,6 +7025,10 @@ function lead(){
         + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M2 5.5h5L8.5 7H14v6.5H2z"/><path d="M2 5.5V3a1 1 0 0 1 1-1h2.5L7 3.5"/></svg>'
         + 'Bulk Import PDFs (AI)'
       + '</button>'
+      + '<button type="button" class="secondary-btn" onclick="window._gwPdfResumeImports&&window._gwPdfResumeImports()" title="Pick up an already-uploaded PDF that has not been reviewed and confirmed yet">'
+        + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M8 4v4l2.5 2.5"/><circle cx="8" cy="8" r="6.5"/></svg>'
+        + 'Resume PDF Import'
+      + '</button>'
       + '</div>'
     + '</div>'
     + '<form id="leadForm">'
@@ -14533,9 +14537,10 @@ window._gwPdfLeadClose = function() {
   // stays 'uploaded'/'needs_review' in D1) — closing the modal never deletes
   // anything, since the whole point of storing every original PDF durably is
   // that a human can come back and resume later (spec's resume/retry
-  // requirement). Standalone imports have no "resume an abandoned import"
-  // entry point yet — reopening this modal always starts a fresh upload —
-  // but nothing here destroys the abandoned import's server state.
+  // requirement). window._gwPdfResumeImports (below) is that resume entry
+  // point — it lists exactly the imports GET /mine/pending returns and
+  // reopens this same review modal via _gwPdfLeadOpenReviewFor for any of
+  // them; nothing here destroys an unconfirmed import's server state.
   const st = window._gwPdfLeadState;
   document.getElementById('gwPdfLeadModal')?.remove();
   window._gwPdfLeadState = null;
@@ -14549,18 +14554,21 @@ window._gwPdfLeadClose = function() {
 };
 
 /**
- * Opens the single-item review modal for one import belonging to a bulk
- * batch (the queue's "Review" button). Reuses GET /api/lead-import/:id —
- * the SAME status/detail route the standalone single-file flow already
- * calls in _gwPdfLeadFetchMatchesAndRender — rather than a parallel
- * bulk-specific fetch, so a bulk-imported document is reviewed/edited/
- * confirmed through the exact same form and POST /:id/confirm call a
- * single-file import would use.
+ * Opens the single-item review modal for one import — the bulk queue's own
+ * "Review" button (batchId set), AND the standalone resume-list's own
+ * "Resume" button (batchId '' — this import was never part of a batch).
+ * Reuses GET /api/lead-import/:id — the SAME status/detail route the
+ * standalone single-file flow already calls in
+ * _gwPdfLeadFetchMatchesAndRender — rather than a parallel bulk-specific
+ * fetch, so ANY import (bulk or standalone, freshly extracted or resumed
+ * days later) is reviewed/edited/confirmed through the exact same form and
+ * POST /:id/confirm call.
  */
 window._gwPdfLeadOpenReviewFor = async function(batchId, importId) {
   document.getElementById('gwPdfBulkModal')?.remove();
+  document.getElementById('gwPdfResumeModal')?.remove();
   _gwPdfLeadOpenShell();
-  window._gwPdfLeadState = { importId, documentId: null, originalFilename: '', draft: null, division: null, warnings: [], missingInfo: [], clientMatches: [], propertyMatches: [], fromBulk: { batchId } };
+  window._gwPdfLeadState = { importId, documentId: null, originalFilename: '', draft: null, division: null, warnings: [], missingInfo: [], clientMatches: [], propertyMatches: [], fromBulk: batchId ? { batchId } : null };
   _gwPdfLeadRenderProgress('Loading document…');
   const st = window._gwPdfLeadState;
   try {
@@ -15234,6 +15242,96 @@ window._gwPdfBulkRetryOne = async function(batchId) {
     if (typeof showToast === 'function') showToast(e.message || 'Retry failed — please try again.', 'error');
   }
   _gwPdfBulkRefreshQueue(batchId);
+};
+
+// ── Resume Pending PDF Imports ───────────────────────────────────────────────
+// The spec's "resume/retry" entry point reachable from OUTSIDE an active
+// upload/queue session (browser closed mid-review, came back the next day,
+// etc.) — GET /api/lead-import/mine/pending is the persisted list backing
+// this; nothing here creates/alters anything, it only surfaces what a rep
+// (or, for admin/office_manager, the whole tenant) already has in flight so
+// they can jump back into the exact same review modal
+// (window._gwPdfLeadOpenReviewFor) a fresh upload would have opened.
+window._gwPdfResumeImports = async function() {
+  document.getElementById('gwPdfBulkModal')?.remove();
+  document.getElementById('gwPdfLeadModal')?.remove();
+  document.getElementById('gwPdfResumeModal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gwPdfResumeModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+<div class="gw-modal-card" style="width:min(720px,100%);max-height:92vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <h2 style="margin:0 0 4px;font-size:18px">Resume PDF Imports</h2>
+      <p style="margin:0;font-size:13px;color:#6F7E6A">Documents already uploaded that haven't been reviewed and confirmed yet — nothing here has been lost, pick one up where you left off.</p>
+    </div>
+    <button onclick="document.getElementById('gwPdfResumeModal')?.remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <div id="gwPdfResumeBody"><div style="text-align:center;padding:24px;color:#6F7E6A;font-size:13px">Loading…</div></div>
+</div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  await _gwPdfResumeRefresh();
+};
+
+async function _gwPdfResumeRefresh() {
+  const body = document.getElementById('gwPdfResumeBody');
+  if (!body) return; // modal was closed while this fetch was in flight
+  let imports;
+  try {
+    const r = await fetch('/api/lead-import/mine/pending', { credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Could not load pending imports.');
+    imports = j.data.imports || [];
+  } catch (e) {
+    body.innerHTML = `<div style="text-align:center;padding:24px;color:#B4552E;font-size:13px">${escapeHtml(e.message || 'Could not load pending imports.')}</div>`;
+    return;
+  }
+
+  if (imports.length === 0) {
+    body.innerHTML = `<div style="text-align:center;padding:32px 16px;color:#6F7E6A;font-size:13px">Nothing to resume — every uploaded document has already been reviewed.</div>`;
+    return;
+  }
+
+  body.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">${imports.map(imp => {
+    const meta = GW_PDF_BULK_STATUS_META[imp.status] || { label: imp.status, color: '#6F7E6A' };
+    const missingChips = (imp.missing_info || []).map(k =>
+      `<span style="font-size:10.5px;font-weight:600;background:#B4552E14;color:#B4552E;border-radius:20px;padding:1px 8px;margin-right:4px">${escapeHtml(GW_PDF_MISSING_LABELS[k] || k)}</span>`
+    ).join('');
+    // Still mid-extraction (uploaded/extracting/parsing) — nothing to
+    // review/retry yet; if it's part of a bulk batch, reopening that
+    // batch's own queue (which auto-polls) is the useful action, otherwise
+    // just show the status with no action button.
+    const canReview = imp.status === 'needs_review' || imp.status === 'ready';
+    const canRetry = imp.status === 'failed';
+    const canOpenBatch = !canReview && !canRetry && imp.batch_id;
+    return `
+    <div style="display:flex;align-items:center;gap:10px;border:1px solid #E4EAE3;border-radius:10px;padding:10px 12px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#233123;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(imp.original_filename || imp.safe_filename || 'Document')}</div>
+        <div style="font-size:11.5px;color:${meta.color};font-weight:600;margin-top:2px">${escapeHtml(meta.label)}${imp.error_message ? ' — ' + escapeHtml(imp.error_message) : ''}${imp.batch_id ? ' · part of a bulk batch' : ''}</div>
+        ${missingChips ? `<div style="margin-top:4px">${missingChips}</div>` : ''}
+      </div>
+      ${canReview ? `<button class="primary-btn" style="padding:6px 14px;font-size:12.5px;flex-shrink:0" onclick="window._gwPdfLeadOpenReviewFor('${escapeHtml(imp.batch_id || '')}','${escapeHtml(imp.import_id)}')">Resume</button>` : ''}
+      ${canRetry ? (imp.batch_id
+        ? `<button class="secondary-btn" style="padding:6px 14px;font-size:12.5px;flex-shrink:0" onclick="document.getElementById('gwPdfResumeModal')?.remove();_gwPdfBulkOpenQueueModal('${escapeHtml(imp.batch_id)}')">Open Batch</button>`
+        : `<button class="secondary-btn" style="padding:6px 14px;font-size:12.5px;flex-shrink:0" onclick="window._gwPdfResumeRetryOne('${escapeHtml(imp.import_id)}')">Retry</button>`) : ''}
+      ${canOpenBatch ? `<button class="secondary-btn" style="padding:6px 14px;font-size:12.5px;flex-shrink:0" onclick="document.getElementById('gwPdfResumeModal')?.remove();_gwPdfBulkOpenQueueModal('${escapeHtml(imp.batch_id)}')">Open Batch</button>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+/** Retries extraction for one standalone (non-batch) failed import — reuses the single-file POST /:id/extract route, same as a fresh upload would call. */
+window._gwPdfResumeRetryOne = async function(importId) {
+  try {
+    const r = await fetch(`/api/lead-import/${importId}/extract`, { method: 'POST', credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Retry failed.');
+  } catch (e) {
+    if (typeof showToast === 'function') showToast(e.message || 'Retry failed — please try again.', 'error');
+  }
+  _gwPdfResumeRefresh();
 };
 
 // ── Mark Sold Modal ───────────────────────────────────────────────────────────

@@ -486,6 +486,92 @@ describe("POST /api/lead-import/:id/extract", () => {
   });
 });
 
+// ── GET /api/lead-import/mine/pending ────────────────────────────────────
+// The spec's "resume/retry from outside an active session" entry point —
+// see the route's own doc comment in lead-import-routes.ts for why this
+// exists and why it's registered before "/:id".
+const getPending = (companyId: string, repId = "test-rep", role = "rep") => {
+  const app = new Hono();
+  app.use("*", async (c, next) => {
+    c.set("companyId" as never, companyId as never);
+    c.set("repId" as never, repId as never);
+    c.set("role" as never, role as never);
+    c.set("isSuperAdmin" as never, false as never);
+    await next();
+  });
+  app.route("/", leadImportRouter);
+  return app.request("/mine/pending", { method: "GET" }, env);
+};
+
+describe("GET /api/lead-import/mine/pending", () => {
+  it("LIP-01 a rep sees only their own non-terminal imports, not another rep's", async () => {
+    const bytesA = await makePdfBytes("LIP-01 rep A's document");
+    const upA: any = await (await postUpload(TENANT, uploadForm(bytesA, "RepA.pdf"), "rep-a")).json();
+    const bytesB = await makePdfBytes("LIP-01 rep B's document");
+    const upB: any = await (await postUpload(TENANT, uploadForm(bytesB, "RepB.pdf"), "rep-b")).json();
+
+    const res = await getPending(TENANT, "rep-a", "rep");
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    const ids = j.data.imports.map((i: any) => i.import_id);
+    expect(ids).toContain(upA.data.import_id);
+    expect(ids).not.toContain(upB.data.import_id);
+  });
+
+  it("LIP-02 an admin sees every rep's pending imports for the tenant", async () => {
+    const bytesA = await makePdfBytes("LIP-02 rep A's document, admin view");
+    const upA: any = await (await postUpload(TENANT, uploadForm(bytesA, "RepA2.pdf"), "rep-a2")).json();
+    const bytesB = await makePdfBytes("LIP-02 rep B's document, admin view");
+    const upB: any = await (await postUpload(TENANT, uploadForm(bytesB, "RepB2.pdf"), "rep-b2")).json();
+
+    const res = await getPending(TENANT, "some-admin", "admin");
+    expect(res.status).toBe(200);
+    const j: any = await res.json();
+    const ids = j.data.imports.map((i: any) => i.import_id);
+    expect(ids).toContain(upA.data.import_id);
+    expect(ids).toContain(upB.data.import_id);
+  });
+
+  it("LIP-03 never returns a finalized/confirmed import", async () => {
+    const bytes = await makePdfBytes("LIP-03 confirmed import must not reappear");
+    const up: any = await (await postUpload(TENANT, uploadForm(bytes, "Finalized.pdf"), "rep-c")).json();
+    // Manually mark this import finalized (its own confirm path is
+    // exercised exhaustively elsewhere — LIC-* — this test only needs a
+    // terminal row to prove the list route excludes it).
+    await db().prepare(`UPDATE lead_import SET status='finalized' WHERE id=?`).bind(up.data.import_id).run();
+
+    const res = await getPending(TENANT, "rep-c", "rep");
+    const j: any = await res.json();
+    const ids = j.data.imports.map((i: any) => i.import_id);
+    expect(ids).not.toContain(up.data.import_id);
+  });
+
+  it("LIP-04 never returns another tenant's import, even for an admin", async () => {
+    const bytes = await makePdfBytes("LIP-04 other tenant's document");
+    const up: any = await (await postUpload(TENANT_2, uploadForm(bytes, "OtherTenant.pdf"), "rep-d")).json();
+
+    const res = await getPending(TENANT, "some-admin", "admin");
+    const j: any = await res.json();
+    const ids = j.data.imports.map((i: any) => i.import_id);
+    expect(ids).not.toContain(up.data.import_id);
+  });
+
+  it("LIP-05 includes batch_id so a resumed bulk-import item can reopen its own queue", async () => {
+    const form = new FormData();
+    const bytes = await makePdfBytes("LIP-05 bulk-uploaded document");
+    form.append("files", new File([bytes], "Bulk.pdf", { type: "application/pdf" }));
+    const upRes = await authedAs(TENANT, "rep-e").request("/bulk/upload", { method: "POST", body: form }, env);
+    const up: any = await upRes.json();
+    const importId = up.data.results[0].import_id;
+
+    const res = await getPending(TENANT, "rep-e", "rep");
+    const j: any = await res.json();
+    const row = j.data.imports.find((i: any) => i.import_id === importId);
+    expect(row).toBeTruthy();
+    expect(row.batch_id).toBe(up.data.batch_id);
+  });
+});
+
 // ── GET /api/lead-import/:id ─────────────────────────────────────────────
 const getImport = (companyId: string, importId: string, repId = "test-rep") =>
   authedAs(companyId, repId).request(`/${importId}`, { method: "GET" }, env);
