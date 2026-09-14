@@ -7021,6 +7021,10 @@ function lead(){
         + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>'
         + 'Import from PDF (AI)'
       + '</button>'
+      + '<button type="button" class="secondary-btn" onclick="window._gwPdfBulkImport&&window._gwPdfBulkImport()" title="Drop several proposal or work order PDFs at once — AI reads each one, then you review and confirm them individually">'
+        + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M2 5.5h5L8.5 7H14v6.5H2z"/><path d="M2 5.5V3a1 1 0 0 1 1-1h2.5L7 3.5"/></svg>'
+        + 'Bulk Import PDFs (AI)'
+      + '</button>'
       + '</div>'
     + '</div>'
     + '<form id="leadForm">'
@@ -14486,7 +14490,13 @@ window._gwAiLeadCreate = function() {
 // without the human having seen (and been able to edit) every field first —
 // mirrors _gwAiLeadCreate's own "review before creating" step above, just
 // against the PDF-backed backend state machine instead of a client-only draft.
-window._gwPdfLeadImport = function() {
+/**
+ * Builds (or rebuilds) the single-item PDF-lead-import modal shell. Shared
+ * by the standalone entry point below and by the bulk-import queue's
+ * "Review" action (_gwPdfLeadOpenReviewFor), which populates
+ * window._gwPdfLeadState itself rather than starting a fresh upload.
+ */
+function _gwPdfLeadOpenShell() {
   document.getElementById('gwPdfLeadModal')?.remove();
   const modal = document.createElement('div');
   modal.id = 'gwPdfLeadModal';
@@ -14509,7 +14519,11 @@ window._gwPdfLeadImport = function() {
 </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) window._gwPdfLeadClose(); });
   document.body.appendChild(modal);
-  window._gwPdfLeadState = { importId: null, documentId: null, originalFilename: '', draft: null, division: null, warnings: [], missingInfo: [], clientMatches: [], propertyMatches: [] };
+}
+
+window._gwPdfLeadImport = function() {
+  _gwPdfLeadOpenShell();
+  window._gwPdfLeadState = { importId: null, documentId: null, originalFilename: '', draft: null, division: null, warnings: [], missingInfo: [], clientMatches: [], propertyMatches: [], fromBulk: null };
   _gwPdfLeadRenderUpload();
 };
 
@@ -14519,11 +14533,78 @@ window._gwPdfLeadClose = function() {
   // stays 'uploaded'/'needs_review' in D1) — closing the modal never deletes
   // anything, since the whole point of storing every original PDF durably is
   // that a human can come back and resume later (spec's resume/retry
-  // requirement). There is currently no "resume an abandoned import" entry
-  // point in this UI yet — reopening this modal always starts a fresh
-  // upload — but nothing here destroys the abandoned import's server state.
+  // requirement). Standalone imports have no "resume an abandoned import"
+  // entry point yet — reopening this modal always starts a fresh upload —
+  // but nothing here destroys the abandoned import's server state.
+  const st = window._gwPdfLeadState;
   document.getElementById('gwPdfLeadModal')?.remove();
   window._gwPdfLeadState = null;
+  // This item was opened from the bulk-import queue's "Review" button —
+  // return to that (refreshed) queue instead of just closing everything, so
+  // reviewing/confirming one document naturally continues on to the next
+  // one rather than dropping the human back to a blank screen.
+  if (st && st.fromBulk && st.fromBulk.batchId) {
+    _gwPdfBulkOpenQueueModal(st.fromBulk.batchId);
+  }
+};
+
+/**
+ * Opens the single-item review modal for one import belonging to a bulk
+ * batch (the queue's "Review" button). Reuses GET /api/lead-import/:id —
+ * the SAME status/detail route the standalone single-file flow already
+ * calls in _gwPdfLeadFetchMatchesAndRender — rather than a parallel
+ * bulk-specific fetch, so a bulk-imported document is reviewed/edited/
+ * confirmed through the exact same form and POST /:id/confirm call a
+ * single-file import would use.
+ */
+window._gwPdfLeadOpenReviewFor = async function(batchId, importId) {
+  document.getElementById('gwPdfBulkModal')?.remove();
+  _gwPdfLeadOpenShell();
+  window._gwPdfLeadState = { importId, documentId: null, originalFilename: '', draft: null, division: null, warnings: [], missingInfo: [], clientMatches: [], propertyMatches: [], fromBulk: { batchId } };
+  _gwPdfLeadRenderProgress('Loading document…');
+  const st = window._gwPdfLeadState;
+  try {
+    const r = await fetch(`/api/lead-import/${importId}`, { credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Could not load this document.');
+    if (r.status && j.data && ['uploaded', 'extracting', 'parsing'].includes(j.data.status)) {
+      throw new Error('This document has not finished being read yet — try again from the queue in a moment.');
+    }
+    if (!j.data.draft) {
+      // Same case the standalone single-file flow handles in
+      // _gwPdfLeadUpload: AI is not enabled for this tenant (or quota
+      // exceeded) so extraction succeeded but produced no draft — offer a
+      // blank reviewable form rather than a dead end, exactly like the
+      // single-file path does.
+      st.draft = {
+        contact: { person_name: '', company_name: '', phone: '', email: '' },
+        client_type: 'Commercial', properties: [{ label: '', address: '', notes: '' }],
+        project: '', urgency: '', contract_hint: 'unknown', summary_note: '',
+        pricing_options: [], division_suggestion: { label: '', rationale: '' },
+      };
+      st.division = null;
+      st.warnings = [];
+      st.missingInfo = [];
+      st.clientMatches = [];
+      st.propertyMatches = [];
+      st.originalFilename = j.data.original_filename || j.data.safe_filename || '';
+      _gwPdfLeadRenderReview();
+      return;
+    }
+    st.draft = j.data.draft;
+    st.division = j.data.division;
+    st.warnings = j.data.warnings || [];
+    st.missingInfo = j.data.missing_info || [];
+    st.clientMatches = j.data.client_matches || [];
+    st.propertyMatches = j.data.property_matches || [];
+    st.originalFilename = j.data.original_filename || j.data.safe_filename || '';
+    _gwPdfLeadRenderReview();
+  } catch (e) {
+    // window._gwPdfLeadClose() sees fromBulk on the state above and
+    // reopens the queue modal on its own — this just adds the error toast.
+    window._gwPdfLeadClose();
+    if (typeof showToast === 'function') showToast(e.message || 'Could not open this document for review.', 'error');
+  }
 };
 
 function _gwPdfLeadRenderUpload() {
@@ -14880,6 +14961,279 @@ window._gwPdfLeadConfirm = async function() {
   if (oppIds.length > 1) show('pipeline');
   else if (oppIds[0]) show('pipeline', oppIds[0]);
   else show('pipeline');
+};
+
+// ── Bulk PDF Lead Import (PR2) ──────────────────────────────────────────────
+//
+// Multi-file counterpart to the single-file flow above. Uploads several
+// PDFs in one request (POST /api/lead-import/bulk/upload), kicks off
+// extraction for all of them (POST /api/lead-import/bulk/:batchId/extract),
+// then shows a queue the human works through one file at a time — each
+// "Review" click opens the SAME single-item review/confirm modal the
+// standalone flow uses (window._gwPdfLeadOpenReviewFor above), so a
+// bulk-imported document is reviewed, edited, and confirmed through the
+// exact same form and POST /:id/confirm call a single-file import would
+// use. Nothing in this section itself ever creates or alters a CRM record.
+const GW_PDF_BULK_MAX_FILES = 10; // mirrors MAX_BULK_FILES in src/ai/pdf-lead-import.ts
+
+window._gwPdfBulkImport = function() {
+  document.getElementById('gwPdfBulkModal')?.remove();
+  document.getElementById('gwPdfLeadModal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gwPdfBulkModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+<style>
+  #gwPdfBulkModal .um-input{color:#233123 !important;background:#FFFFFF !important;border:1px solid #C9D6C8 !important}
+</style>
+<div class="gw-modal-card" style="width:min(760px,100%);max-height:92vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <h2 style="margin:0 0 4px;font-size:18px">Bulk PDF Lead Import</h2>
+      <p style="margin:0;font-size:13px;color:#6F7E6A">Drop up to ${GW_PDF_BULK_MAX_FILES} proposals or work orders at once — AI reads each one, then you review and confirm them individually, exactly like a single-file import.</p>
+    </div>
+    <button onclick="window._gwPdfBulkClose()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <div id="gwPdfBulkBody"></div>
+</div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) window._gwPdfBulkClose(); });
+  document.body.appendChild(modal);
+  _gwPdfBulkRenderUpload();
+};
+
+window._gwPdfBulkClose = function() {
+  // Same non-destructive contract as the single-file modal's close — a
+  // batch already uploaded (and any imports already extracted) is left
+  // exactly as-is server-side; closing this modal never deletes anything.
+  document.getElementById('gwPdfBulkModal')?.remove();
+  if (window._gwPdfBulkPollTimer) { clearTimeout(window._gwPdfBulkPollTimer); window._gwPdfBulkPollTimer = null; }
+};
+
+function _gwPdfBulkRenderUpload() {
+  const body = document.getElementById('gwPdfBulkBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div id="gwPdfBulkDrop" style="border:2px dashed #C9D6C8;border-radius:12px;padding:28px 16px;text-align:center;transition:border-color .15s,background .15s;cursor:pointer">
+      <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="#8FA08B" stroke-width="1.3" style="margin-bottom:8px"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>
+      <div style="font-size:13.5px;color:#3E4A3C;font-weight:600;margin-bottom:4px">Drop up to ${GW_PDF_BULK_MAX_FILES} PDFs here, or click to choose files</div>
+      <div style="font-size:12px;color:#6F7E6A">Multiple proposals, work orders, or signed contracts — each up to 15 MB</div>
+      <input type="file" id="gwPdfBulkFile" accept=".pdf,application/pdf" multiple style="display:none">
+    </div>
+    <div id="gwPdfBulkErr" style="display:none;margin-top:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="secondary-btn" style="flex:1" onclick="window._gwPdfBulkClose()">Cancel</button>
+    </div>`;
+  const drop = document.getElementById('gwPdfBulkDrop');
+  const fileInput = document.getElementById('gwPdfBulkFile');
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#2D7A55'; drop.style.background = '#2D7A5508'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent'; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent';
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length) _gwPdfBulkUpload(files);
+  });
+  fileInput.addEventListener('change', e => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) _gwPdfBulkUpload(files);
+  });
+}
+
+function _gwPdfBulkShowErr(msg) {
+  const errEl = document.getElementById('gwPdfBulkErr');
+  if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg; }
+}
+
+function _gwPdfBulkRenderProgress(label) {
+  const body = document.getElementById('gwPdfBulkBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:36px 16px">
+      <div style="width:32px;height:32px;border:3px solid #E4EAE3;border-top-color:#2D7A55;border-radius:50%;animation:gwSpin .8s linear infinite"></div>
+      <div style="font-size:13.5px;color:#3E4A3C;font-weight:600">${escapeHtml(label)}</div>
+    </div>
+    <style>@keyframes gwSpin{to{transform:rotate(360deg)}}</style>`;
+}
+
+async function _gwPdfBulkUpload(files) {
+  if (files.length > GW_PDF_BULK_MAX_FILES) {
+    _gwPdfBulkShowErr(`You can upload up to ${GW_PDF_BULK_MAX_FILES} PDFs at once. Please split this into smaller batches.`);
+    return;
+  }
+  _gwPdfBulkRenderProgress(`Uploading ${files.length} document${files.length !== 1 ? 's' : ''}…`);
+  const form = new FormData();
+  files.forEach(f => form.append('files', f));
+  let upload;
+  try {
+    const r = await fetch('/api/lead-import/bulk/upload', { method: 'POST', credentials: 'include', body: form });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Upload failed');
+    upload = j.data;
+  } catch (e) {
+    _gwPdfBulkRenderUpload();
+    _gwPdfBulkShowErr(e.message || 'Upload failed — please try again.');
+    return;
+  }
+
+  const rejected = (upload.results || []).filter(r => !r.ok);
+  if (rejected.length && !upload.file_count) {
+    // Every file was rejected (e.g. all non-PDF) — nothing to extract.
+    _gwPdfBulkRenderUpload();
+    _gwPdfBulkShowErr(rejected[0].message || 'None of those files could be uploaded.');
+    return;
+  }
+
+  _gwPdfBulkRenderProgress('Reading documents and extracting lead details — this can take a moment for larger batches…');
+  try {
+    const r = await fetch(`/api/lead-import/bulk/${upload.batch_id}/extract`, { method: 'POST', credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Could not read these documents.');
+  } catch (e) {
+    // The batch and its documents are already safely stored even if this
+    // particular extract call failed (rate-limited, transient network
+    // error, etc.) — open the queue anyway so the human can retry
+    // extraction for the batch from there rather than losing the upload.
+    _gwPdfBulkOpenQueueModal(upload.batch_id);
+    if (typeof showToast === 'function') showToast(e.message || 'Extraction failed for this batch — you can retry from the queue.', 'error');
+    return;
+  }
+
+  if (rejected.length) {
+    if (typeof showToast === 'function') {
+      showToast(`${rejected.length} file${rejected.length !== 1 ? 's' : ''} could not be read and were skipped: ${rejected.map(r => r.filename).join(', ')}`, 'warning');
+    }
+  }
+  _gwPdfBulkOpenQueueModal(upload.batch_id);
+}
+
+/** Backend status -> queue-row label/color (mirrors LeadImportStatus in src/ai/pdf-lead-import.ts). */
+const GW_PDF_BULK_STATUS_META = {
+  uploaded:      { label: 'Queued',          color: '#6F7E6A' },
+  extracting:    { label: 'Reading…',        color: '#8B6914' },
+  parsing:       { label: 'Reading…',        color: '#8B6914' },
+  needs_review:  { label: 'Ready to review', color: '#2D7A55' },
+  ready:         { label: 'Ready to review', color: '#2D7A55' },
+  creating:      { label: 'Creating…',       color: '#8B6914' },
+  finalized:     { label: 'Lead created',    color: '#2D7A55' },
+  failed:        { label: 'Failed',          color: '#B4552E' },
+  abandoned:     { label: 'Abandoned',       color: '#9AA79A' },
+  expired:       { label: 'Expired',         color: '#9AA79A' },
+};
+
+/**
+ * Opens (or refreshes) the bulk-import queue modal for an existing batch —
+ * used right after upload/extract completes, and also as the return target
+ * from window._gwPdfLeadClose() when a single item was opened from here via
+ * _gwPdfLeadOpenReviewFor, so finishing one review naturally lands back on
+ * the rest of the queue.
+ */
+async function _gwPdfBulkOpenQueueModal(batchId) {
+  if (window._gwPdfBulkPollTimer) { clearTimeout(window._gwPdfBulkPollTimer); window._gwPdfBulkPollTimer = null; }
+  document.getElementById('gwPdfLeadModal')?.remove();
+  let modal = document.getElementById('gwPdfBulkModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'gwPdfBulkModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.addEventListener('click', e => { if (e.target === modal) window._gwPdfBulkClose(); });
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+<div class="gw-modal-card" style="width:min(760px,100%);max-height:92vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <h2 style="margin:0 0 4px;font-size:18px">Bulk PDF Lead Import</h2>
+      <p style="margin:0;font-size:13px;color:#6F7E6A">Review each document below, then confirm it to create a lead. This list updates automatically as documents finish being read.</p>
+    </div>
+    <button onclick="window._gwPdfBulkClose()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <div id="gwPdfBulkQueueBody"><div style="text-align:center;padding:24px;color:#6F7E6A;font-size:13px">Loading…</div></div>
+</div>`;
+  await _gwPdfBulkRefreshQueue(batchId);
+}
+
+async function _gwPdfBulkRefreshQueue(batchId) {
+  const body = document.getElementById('gwPdfBulkQueueBody');
+  if (!body) return; // modal was closed while this fetch was in flight
+  let data;
+  try {
+    const r = await fetch(`/api/lead-import/bulk/${batchId}`, { credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Could not load this batch.');
+    data = j.data;
+  } catch (e) {
+    body.innerHTML = `<div style="text-align:center;padding:24px;color:#B4552E;font-size:13px">${escapeHtml(e.message || 'Could not load this batch.')}</div>`;
+    return;
+  }
+
+  const imports = data.imports || [];
+  const pendingCount = imports.filter(i => ['uploaded', 'extracting', 'parsing'].includes(i.status)).length;
+  const reviewableCount = imports.filter(i => i.status === 'needs_review').length;
+  const doneCount = imports.filter(i => i.status === 'finalized').length;
+  const failedCount = imports.filter(i => i.status === 'failed').length;
+
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:11px;font-weight:600;background:#F4F7F3;color:#3E4A3C;border-radius:20px;padding:2px 10px">${imports.length} document${imports.length !== 1 ? 's' : ''}</span>
+      ${reviewableCount ? `<span style="font-size:11px;font-weight:600;background:#2D7A5514;color:#2D7A55;border:1px solid #2D7A5530;border-radius:20px;padding:2px 10px">${reviewableCount} ready to review</span>` : ''}
+      ${pendingCount ? `<span style="font-size:11px;font-weight:600;background:#8B691414;color:#8B6914;border:1px solid #8B691430;border-radius:20px;padding:2px 10px">${pendingCount} still reading…</span>` : ''}
+      ${doneCount ? `<span style="font-size:11px;font-weight:600;background:#F4F7F3;color:#6F7E6A;border-radius:20px;padding:2px 10px">${doneCount} lead${doneCount !== 1 ? 's' : ''} created</span>` : ''}
+      ${failedCount ? `<span style="font-size:11px;font-weight:600;background:#B4552E14;color:#B4552E;border:1px solid #B4552E30;border-radius:20px;padding:2px 10px">${failedCount} failed</span>` : ''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+      ${imports.map(imp => {
+        const meta = GW_PDF_BULK_STATUS_META[imp.status] || { label: imp.status, color: '#6F7E6A' };
+        const missingChips = (imp.missing_info || []).map(k =>
+          `<span style="font-size:10.5px;font-weight:600;background:#B4552E14;color:#B4552E;border-radius:20px;padding:1px 8px;margin-right:4px">${escapeHtml(GW_PDF_MISSING_LABELS[k] || k)}</span>`
+        ).join('');
+        const canReview = imp.status === 'needs_review';
+        const canRetry = imp.status === 'failed';
+        return `
+        <div style="display:flex;align-items:center;gap:10px;border:1px solid #E4EAE3;border-radius:10px;padding:10px 12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:#233123;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(imp.original_filename || imp.safe_filename || 'Document')}</div>
+            <div style="font-size:11.5px;color:${meta.color};font-weight:600;margin-top:2px">${escapeHtml(meta.label)}${imp.error_message ? ' — ' + escapeHtml(imp.error_message) : ''}</div>
+            ${missingChips ? `<div style="margin-top:4px">${missingChips}</div>` : ''}
+          </div>
+          ${canReview ? `<button class="primary-btn" style="padding:6px 14px;font-size:12.5px;flex-shrink:0" onclick="window._gwPdfLeadOpenReviewFor('${escapeHtml(batchId)}','${escapeHtml(imp.import_id)}')">Review</button>` : ''}
+          ${canRetry ? `<button class="secondary-btn" style="padding:6px 14px;font-size:12.5px;flex-shrink:0" onclick="window._gwPdfBulkRetryOne('${escapeHtml(batchId)}')">Retry</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="secondary-btn" style="flex:1" onclick="window._gwPdfBulkClose()">${(pendingCount === 0) ? 'Done' : 'Close (documents keep processing)'}</button>
+    </div>`;
+
+  // Poll while anything is still being read/extracted, so the queue moves
+  // from "Reading…" to "Ready to review" on its own without a manual
+  // refresh — matches the single-file flow's own auto-advancing progress
+  // screen, just for N documents instead of one.
+  if (pendingCount > 0) {
+    window._gwPdfBulkPollTimer = setTimeout(() => {
+      if (document.getElementById('gwPdfBulkModal')) _gwPdfBulkRefreshQueue(batchId);
+    }, 4000);
+  }
+}
+
+/**
+ * Retries extraction for a batch that has one or more 'failed' imports —
+ * calls the SAME POST /bulk/:batchId/extract route the initial upload
+ * flow uses; that route already only (re-)processes RETRY_ENTRY-eligible
+ * rows (uploaded/extracting/parsing/needs_review/failed), so this never
+ * re-runs anything already past review.
+ */
+window._gwPdfBulkRetryOne = async function(batchId) {
+  const body = document.getElementById('gwPdfBulkQueueBody');
+  if (body) body.innerHTML = `<div style="text-align:center;padding:24px;color:#6F7E6A;font-size:13px">Retrying…</div>`;
+  try {
+    const r = await fetch(`/api/lead-import/bulk/${batchId}/extract`, { method: 'POST', credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Retry failed.');
+  } catch (e) {
+    if (typeof showToast === 'function') showToast(e.message || 'Retry failed — please try again.', 'error');
+  }
+  _gwPdfBulkRefreshQueue(batchId);
 };
 
 // ── Mark Sold Modal ───────────────────────────────────────────────────────────
@@ -15263,6 +15617,10 @@ window._gwBuildNewMenu = function() {
       <button class="tnd-item" onclick="window._closeNewMenu();window._gwPdfLeadImport&&window._gwPdfLeadImport()" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>
         AI Lead Import (PDF)
+      </button>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwPdfBulkImport&&window._gwPdfBulkImport()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5h5L8.5 7H14v6.5H2z"/><path d="M2 5.5V3a1 1 0 0 1 1-1h2.5L7 3.5"/></svg>
+        AI Lead Import (Bulk PDF)
       </button>
       <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
