@@ -454,7 +454,7 @@ describe("POST /api/lead-import/:id/extract", () => {
       .bind(up.data.import_id).first();
     expect(row.status).toBe("needs_review");
     expect(row.error_message).toBe("ai_upstream");
-    // Column default is NOT NULL DEFAULT '' (migrations/0088), never actually
+    // Column default is NOT NULL DEFAULT '' (migrations/0089), never actually
     // NULL — asserting the empty-string default is what "never partially
     // written on a failed AI call" means at the schema level here.
     expect(row.proposed_json).toBe("");

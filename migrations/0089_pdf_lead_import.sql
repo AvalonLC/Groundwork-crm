@@ -1,4 +1,4 @@
--- Migration 0088: PDF-to-lead import — documents, imports, document links, batches
+-- Migration 0089: PDF-to-lead import — documents, imports, document links, batches
 --
 -- Extends the existing "Import from Email (AI)" flow (public/js/app_premium.js
 -- _gwAiLeadImport / /api/ai/parse-lead) to accept uploaded PDFs (proposals,
