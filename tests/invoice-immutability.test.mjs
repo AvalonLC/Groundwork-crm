@@ -184,3 +184,37 @@ test('IM-13 voiding goes through the void route, not a bare status PUT', () => {
   assert.doesNotMatch(body, /JSON\.stringify\(\{ status:'void' \}\)/, '_invVoid is back to a bare status PUT');
   assert.match(body, /A reason is required/, '_invVoid no longer requires a reason');
 });
+
+test('IM-14 archiving is the non-destructive alternative, and is not blocked', () => {
+  // Archiving is what a financially active invoice is FOR now that it cannot be
+  // deleted. Gating it on the same lifecycle rules would leave those invoices
+  // with no way out of the list at all.
+  const arch = routeBody("app.post('/api/invoices/:id/archive'");
+  assert.doesNotMatch(arch, /canHardDelete|canReturnToDraft/, 'archiving is gated on the delete rules');
+  assert.match(arch, /archived_at=datetime\('now'\)/);
+  assert.match(arch, /AND company_id=\?/, 'the archive route is not company-scoped');
+  assert.match(arch, /canInvoice\(c\.var\.role as string, 'manage'/, 'the archive route lost its role gate');
+  // No status change, no money touched — that is what makes it reversible.
+  assert.doesNotMatch(arch, /SET[^`]*status=/, 'archiving changes the status');
+  assert.doesNotMatch(arch, /amount_paid|balance_due|total_cents/, 'archiving touches money columns');
+});
+
+test('IM-15 archive and unarchive are symmetric and both audited', () => {
+  const arch = routeBody("app.post('/api/invoices/:id/archive'");
+  const un = routeBody("app.post('/api/invoices/:id/unarchive'");
+  assert.match(arch, /event: 'archive'/);
+  assert.match(un, /event: 'unarchive'/);
+  assert.match(un, /archived_at=NULL/);
+  // Each refuses the no-op rather than writing a second audit row for nothing.
+  assert.match(arch, /AND archived_at IS NULL/, 'archiving an archived invoice is not refused');
+  assert.match(un, /AND archived_at IS NOT NULL/, 'unarchiving a live invoice is not refused');
+});
+
+test('IM-16 archived invoices leave the default list, opt-in to see them', () => {
+  // Mirrors the work-orders convention exactly, including the reason
+  // archived_at is separate from status.
+  const list = routeBody("app.get('/api/invoices', requireAuth");
+  assert.match(list, /include_archived/, 'there is no way to see archived invoices');
+  assert.match(list, /AND archived_at IS NULL/, 'archived invoices still show in the default list');
+  assert.match(list, /if \(!includeArchived\)/);
+});
