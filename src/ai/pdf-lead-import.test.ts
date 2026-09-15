@@ -4,7 +4,7 @@ import { env } from "cloudflare:test";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { extractText, getDocumentProxy } from "unpdf";
 import {
-  MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_EXTRACTED_TEXT_CHARS, ABANDONED_RETENTION_HOURS,
+  MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_EXTRACTED_TEXT_CHARS, ABANDONED_RETENTION_HOURS, PARSE_TIMEOUT_MS,
   hasPdfMagicBytes, validateAndExtractPdf, computeContentHash, safeFilename,
   documentR2Key, canTransition, isRetryable, isTerminal, deriveMissingInfo,
   cleanupAbandonedImports,
@@ -127,7 +127,7 @@ describe("validateAndExtractPdf — file/extraction validation matrix", () => {
     const r = await validateAndExtractPdf(await makePdf("x"), neverResolves);
     expect(r.ok).toBe(false);
     expect(r.error).toBe("parse_timeout");
-  }, 25_000);
+  }, PARSE_TIMEOUT_MS + 5_000); // must exceed PARSE_TIMEOUT_MS (raised alongside MAX_PDF_BYTES) or vitest's own test timeout fires first
 
   it("PDF-12 an unrecognized thrown error still fails closed as 'malformed', never crashes the caller", async () => {
     const weird: PdfExtractor = async () => { throw "a bare string, not an Error object" as any; };

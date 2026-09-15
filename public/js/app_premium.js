@@ -14494,6 +14494,13 @@ window._gwAiLeadCreate = function() {
 // without the human having seen (and been able to edit) every field first —
 // mirrors _gwAiLeadCreate's own "review before creating" step above, just
 // against the PDF-backed backend state machine instead of a client-only draft.
+// Per-file MB cap shown in both the single-file and bulk drop-zone copy —
+// mirrors MAX_PDF_BYTES in src/ai/pdf-lead-import.ts. A single source here
+// (rather than the literal "15 MB" duplicated in two template strings)
+// means a future cap change only needs updating in one place instead of
+// two independently-drifting copies.
+const GW_PDF_MAX_MB = 40;
+
 /**
  * Builds (or rebuilds) the single-item PDF-lead-import modal shell. Shared
  * by the standalone entry point below and by the bulk-import queue's
@@ -14622,7 +14629,7 @@ function _gwPdfLeadRenderUpload() {
     <div id="gwPdfLeadDrop" style="border:2px dashed #C9D6C8;border-radius:12px;padding:28px 16px;text-align:center;transition:border-color .15s,background .15s;cursor:pointer">
       <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="#8FA08B" stroke-width="1.3" style="margin-bottom:8px"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>
       <div style="font-size:13.5px;color:#3E4A3C;font-weight:600;margin-bottom:4px">Drop a PDF here, or click to choose a file</div>
-      <div style="font-size:12px;color:#6F7E6A">One PDF at a time · up to 15 MB · proposals, work orders, signed contracts</div>
+      <div style="font-size:12px;color:#6F7E6A">One PDF at a time · up to ${GW_PDF_MAX_MB} MB · proposals, work orders, signed contracts</div>
       <input type="file" id="gwPdfLeadFile" accept=".pdf,application/pdf" style="display:none">
     </div>
     <div id="gwPdfLeadErr" style="display:none;margin-top:10px;font-size:13px;color:#B4552E"></div>
@@ -15024,7 +15031,7 @@ function _gwPdfBulkRenderUpload() {
     <div id="gwPdfBulkDrop" style="border:2px dashed #C9D6C8;border-radius:12px;padding:28px 16px;text-align:center;transition:border-color .15s,background .15s;cursor:pointer">
       <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="#8FA08B" stroke-width="1.3" style="margin-bottom:8px"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>
       <div style="font-size:13.5px;color:#3E4A3C;font-weight:600;margin-bottom:4px">Drop up to ${GW_PDF_BULK_MAX_FILES} PDFs here, or click to choose files</div>
-      <div style="font-size:12px;color:#6F7E6A">Multiple proposals, work orders, or signed contracts — each up to 15 MB</div>
+      <div style="font-size:12px;color:#6F7E6A">Multiple proposals, work orders, or signed contracts — each up to ${GW_PDF_MAX_MB} MB</div>
       <input type="file" id="gwPdfBulkFile" accept=".pdf,application/pdf" multiple style="display:none">
     </div>
     <div id="gwPdfBulkErr" style="display:none;margin-top:10px;font-size:13px;color:#B4552E"></div>
