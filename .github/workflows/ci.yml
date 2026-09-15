@@ -103,3 +103,23 @@ jobs:
           echo "If the failures above are many tests in different files all"
           echo "failing after one '[WebServer] ERROR', the dev server died and"
           echo "the assertions are collateral, not the defect."
+
+      # Reports what production is running that the deploy workflow never
+      # shipped. Deliberately NOT a gate: between a merge and the next manual
+      # dispatch, an unapplied migration is the normal state, and failing CI
+      # for it would teach everyone to ignore the one signal that matters when
+      # the window stops closing. continue-on-error keeps it a warning.
+      #
+      # It exists because that window was invisible. Migration 0088 landed on
+      # 2026-09-09 and was never applied; the void path that depends on it
+      # shipped on 2026-09-11 and spent four days writing to a table
+      # (invoice_lifecycle_events) that does not exist in production. Every
+      # check made in that window read deploy.yml's run history, which
+      # truthfully said no deploy had run -- while a Cloudflare Pages Git
+      # integration outside this repository shipped each merge anyway.
+      - name: report production drift
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !cancelled() }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-production-drift.mjs
