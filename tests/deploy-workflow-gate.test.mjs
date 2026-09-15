@@ -206,3 +206,19 @@ test('DG-10 verify carries every job-level env ci.yml gate sets', () => {
       `the verify job does not set ${key}, which ci.yml's gate does`);
   }
 });
+
+test('DG-11 a dead e2e dev server leaves evidence in both workflows', () => {
+  // When the dev server dies mid-run, every later test fails with an assertion
+  // about change orders or invoices and the only trace of the real cause is one
+  // `[WebServer] ERROR` line with an empty message. On #145 that read as twenty
+  // code failures; it was one crashed process, and the wrangler log the runner
+  // wrote was discarded with the runner.
+  //
+  // This does not fix the crash — the cause is still unknown. It makes the next
+  // occurrence diagnosable.
+  for (const [name, src] of [['deploy.yml', code], ['ci.yml', ci]]) {
+    assert.match(src, /dump the dev-server log/, `${name} no longer dumps the dev-server log`);
+    assert.match(src, /if: failure\(\)/, `${name}'s dump step is not failure-only`);
+    assert.match(src, /\.wrangler\/logs/, `${name} no longer reads the wrangler log directory`);
+  }
+});
