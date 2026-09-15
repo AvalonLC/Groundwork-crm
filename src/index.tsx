@@ -3296,9 +3296,55 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
     }
   }
   if (!updates.length) return err(c, 'Nothing to update')
-  await c.env.DB.prepare(
+  const upd = await c.env.DB.prepare(
     `UPDATE opportunities SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ? AND company_id = ?`
   ).bind(...vals, id, companyId).run()
+  // The client always generates its own id before the first save, so a brand
+  // new lead's very first write reaches this route as a PUT, not a POST — the
+  // id has never existed in this company's rows. WHERE id=? then matches
+  // nothing, the UPDATE is a genuine no-op, and it used to return 200 anyway,
+  // reporting a "successful" save that never wrote a row (the client had no
+  // way to tell the lead was never created, and the lead stayed permanently
+  // "saved locally, not synced" every time the UI re-rendered). Falling back
+  // to a real insert here makes PUT idempotent for a not-yet-existing id,
+  // matching how POST /api/opportunities and /bulk-upsert already create.
+  //
+  // opportunities.id is a global TEXT PRIMARY KEY, not scoped per company, so
+  // "0 rows matched this company" is ambiguous: the id may not exist at all,
+  // or it may belong to a different company entirely (e.g. two tenants'
+  // uid()-generated ids colliding, or a client sending a stale/foreign id).
+  // Only the first case may fall back to insertOpportunityRow — inserting
+  // blind would otherwise hit the id's UNIQUE constraint and 500, or worse,
+  // succeed and let one tenant overwrite/adopt a different tenant's lead.
+  let created = false
+  if (!upd.meta.changes) {
+    const existsElsewhere = await c.env.DB.prepare(
+      'SELECT 1 FROM opportunities WHERE id = ? LIMIT 1'
+    ).bind(id).first()
+    if (existsElsewhere) return err(c, 'Not found', 404)
+    created = true
+    const effRepId = b.repId ?? b.rep_id ?? null
+    const effStatus = b.status || await resolveDefaultPipelineStage(c.env.DB, companyId)
+    await insertOpportunityRow(c.env.DB, companyId, {
+      id, repId: effRepId, assignedToRepId: b.assignedToRepId ?? b.assigned_to_rep_id ?? effRepId ?? '',
+      client: b.client||'', phone: b.phone||'', email: b.email||'',
+      address: b.address||'', serviceLine: b.serviceLine||b.service_line||'', source: b.source||'',
+      status: effStatus, jobValue: Number(b.jobValue||b.job_value||0),
+      project: b.project||'', urgency: b.urgency||'', decisionMaker: b.decisionMaker||b.decision_maker||'',
+      budgetRange: b.budgetRange||b.budget_range||'', nextFollowUp: b.nextFollowUp||b.next_follow_up||'',
+      pipelineStage: b.pipelineStage||b.pipeline_stage||'',
+      estimateAmount: Number(b.estimateAmount||b.estimate_amount||0),
+      estimateSentDate: b.estimateSentDate||b.estimate_sent_date||'',
+      estimateCount: Number(b.estimateCount||b.estimate_count||0),
+      workType: b.workType||b.work_type||'', clientType: b.clientType||b.client_type||'',
+      prompt: b.prompt||'', desiredOutcome: b.desiredOutcome||b.desired_outcome||'',
+      fitConcerns: b.fitConcerns||b.fit_concerns||'',
+      commissionApproved: !!(b.commissionApproved||b.commission_approved),
+      collected: !!b.collected, soldDate: b.soldDate||b.sold_date||'',
+      soldAmount: Number(b.soldAmount||b.sold_amount||0),
+      clientId: b.clientId||b.client_id||''
+    })
+  }
   // Board drag-and-drop and record edits write legacy status labels; keep the
   // published-process stable assignment in step when the label matches a stage.
   if (b.status !== undefined || b.pipelineStage !== undefined || b.pipeline_stage !== undefined) {
@@ -3311,12 +3357,14 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
     ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run(),
     logActivity(c.env.DB, {
       companyId, actorId: c.var.repId, actorName: c.var.repId,
-      entityType: 'opportunity', entityId: id, entityLabel: id,
-      action: b.status ? 'status_changed' : 'updated',
-      afterJson: { fields: Object.keys(b).filter(k => k !== 'companyId') }
+      entityType: 'opportunity', entityId: id, entityLabel: created ? (b.client || id) : id,
+      action: created ? 'created' : (b.status ? 'status_changed' : 'updated'),
+      afterJson: created
+        ? { client: b.client, status: b.status, repId: b.repId ?? b.rep_id ?? null }
+        : { fields: Object.keys(b).filter(k => k !== 'companyId') }
     })
   ]))
-  return json(c, { updated: id })
+  return json(c, { updated: id, created })
 })
 
 // DELETE /api/opportunities/:id
