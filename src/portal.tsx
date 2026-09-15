@@ -227,7 +227,12 @@ const PREVIEW_MAX_AGE_HOURS = 2
 
 // D1-backed sliding-window rate limiter (keyed via settings table).
 // Returns true when the request is allowed.
-async function rateLimit(db: D1Database, key: string, max: number, windowSec: number): Promise<boolean> {
+// Exported so other standalone routers (e.g. src/ai/lead-import-routes.ts) can
+// reuse this exact limiter instead of inventing a second one — the codebase
+// has no dedicated CSRF-token mechanism (only SameSite=Lax + same-origin
+// fetch credentials), so this rate limiter is the "reuse" half of the spec's
+// "CSRF/rate-limit reuse" requirement for the lead-import upload/confirm routes.
+export async function rateLimit(db: D1Database, key: string, max: number, windowSec: number): Promise<boolean> {
   try {
     const now = Date.now()
     const skey = 'rl_' + key

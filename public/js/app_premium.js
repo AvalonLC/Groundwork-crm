@@ -7012,10 +7012,16 @@ function lead(){
         + '<span class="lf-hero-eyebrow">New Opportunity</span>'
         + '<h1 class="lf-hero-title">Add Lead</h1>'
       + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
       + '<button type="button" class="secondary-btn" onclick="window._gwAiLeadImport&&window._gwAiLeadImport()" title="Paste or drop an email — AI extracts the contact and every property address">'
         + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 5l6.5 4 6.5-4"/></svg>'
         + 'Import from Email (AI)'
       + '</button>'
+      + '<button type="button" class="secondary-btn" onclick="window._gwPdfLeadImport&&window._gwPdfLeadImport()" title="Drop a proposal or work order PDF — AI extracts the contact, every property, and pricing">'
+        + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>'
+        + 'Import from PDF (AI)'
+      + '</button>'
+      + '</div>'
     + '</div>'
     + '<form id="leadForm">'
 
@@ -14470,6 +14476,412 @@ window._gwAiLeadCreate = function() {
   else show('pipeline', createdIds[0]);
 };
 
+// ── PDF Lead Import ──────────────────────────────────────────────────────────
+// Frontend for the backend workflow in src/ai/lead-import-routes.ts:
+//   POST /api/lead-import/upload        -> { import_id, document_id, status:'uploaded' }
+//   POST /api/lead-import/:id/extract   -> { status:'needs_review', draft, division, warnings, missing_info }
+//   GET  /api/lead-import/:id           -> current draft + client_matches/property_matches (after a refresh)
+//   POST /api/lead-import/:id/confirm   -> { status:'finalized', result_client_id, result_opportunity_ids }
+// AI output is always a SUGGESTION here too: nothing below ever calls confirm
+// without the human having seen (and been able to edit) every field first —
+// mirrors _gwAiLeadCreate's own "review before creating" step above, just
+// against the PDF-backed backend state machine instead of a client-only draft.
+window._gwPdfLeadImport = function() {
+  document.getElementById('gwPdfLeadModal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gwPdfLeadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+<style>
+  #gwPdfLeadModal .um-input{color:#233123 !important;background:#FFFFFF !important;border:1px solid #C9D6C8 !important}
+  #gwPdfLeadModal .um-input::placeholder{color:#9AA79A}
+  #gwPdfLeadModal .um-input:focus{border-color:#2D7A55 !important}
+</style>
+<div class="gw-modal-card" style="width:min(720px,100%);max-height:92vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <h2 style="margin:0 0 4px;font-size:18px">PDF Lead Import</h2>
+      <p style="margin:0;font-size:13px;color:#6F7E6A">Drop a proposal or work order PDF — AI extracts the contact, every property, and any pricing. You confirm (and can edit anything) before a lead is created.</p>
+    </div>
+    <button onclick="window._gwPdfLeadClose()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <div id="gwPdfLeadBody"></div>
+</div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) window._gwPdfLeadClose(); });
+  document.body.appendChild(modal);
+  window._gwPdfLeadState = { importId: null, documentId: null, originalFilename: '', draft: null, division: null, warnings: [], missingInfo: [], clientMatches: [], propertyMatches: [] };
+  _gwPdfLeadRenderUpload();
+};
+
+window._gwPdfLeadClose = function() {
+  // A confirmed import is already safely persisted server-side; an
+  // in-progress-but-not-yet-confirmed one is left exactly as-is too (status
+  // stays 'uploaded'/'needs_review' in D1) — closing the modal never deletes
+  // anything, since the whole point of storing every original PDF durably is
+  // that a human can come back and resume later (spec's resume/retry
+  // requirement). There is currently no "resume an abandoned import" entry
+  // point in this UI yet — reopening this modal always starts a fresh
+  // upload — but nothing here destroys the abandoned import's server state.
+  document.getElementById('gwPdfLeadModal')?.remove();
+  window._gwPdfLeadState = null;
+};
+
+function _gwPdfLeadRenderUpload() {
+  const body = document.getElementById('gwPdfLeadBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div id="gwPdfLeadDrop" style="border:2px dashed #C9D6C8;border-radius:12px;padding:28px 16px;text-align:center;transition:border-color .15s,background .15s;cursor:pointer">
+      <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="#8FA08B" stroke-width="1.3" style="margin-bottom:8px"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>
+      <div style="font-size:13.5px;color:#3E4A3C;font-weight:600;margin-bottom:4px">Drop a PDF here, or click to choose a file</div>
+      <div style="font-size:12px;color:#6F7E6A">One PDF at a time · up to 15 MB · proposals, work orders, signed contracts</div>
+      <input type="file" id="gwPdfLeadFile" accept=".pdf,application/pdf" style="display:none">
+    </div>
+    <div id="gwPdfLeadErr" style="display:none;margin-top:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="secondary-btn" style="flex:1" onclick="window._gwPdfLeadClose()">Cancel</button>
+    </div>`;
+  const drop = document.getElementById('gwPdfLeadDrop');
+  const fileInput = document.getElementById('gwPdfLeadFile');
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#2D7A55'; drop.style.background = '#2D7A5508'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent'; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent';
+    const f = e.dataTransfer?.files?.[0];
+    if (f) _gwPdfLeadUpload(f);
+  });
+  fileInput.addEventListener('change', e => { const f = e.target.files?.[0]; if (f) _gwPdfLeadUpload(f); });
+}
+
+function _gwPdfLeadShowErr(msg) {
+  const errEl = document.getElementById('gwPdfLeadErr');
+  if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg; }
+}
+
+function _gwPdfLeadRenderProgress(label) {
+  const body = document.getElementById('gwPdfLeadBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:36px 16px">
+      <div style="width:32px;height:32px;border:3px solid #E4EAE3;border-top-color:#2D7A55;border-radius:50%;animation:gwSpin .8s linear infinite"></div>
+      <div style="font-size:13.5px;color:#3E4A3C;font-weight:600">${escapeHtml(label)}</div>
+    </div>
+    <style>@keyframes gwSpin{to{transform:rotate(360deg)}}</style>`;
+}
+
+async function _gwPdfLeadUpload(file) {
+  if (!file || file.type && file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) {
+    _gwPdfLeadShowErr('Please choose a PDF file.');
+    return;
+  }
+  _gwPdfLeadRenderProgress('Uploading document…');
+  const form = new FormData();
+  form.set('file', file);
+  let upload;
+  try {
+    const r = await fetch('/api/lead-import/upload', { method: 'POST', credentials: 'include', body: form });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Upload failed');
+    upload = j.data;
+  } catch (e) {
+    _gwPdfLeadRenderUpload();
+    _gwPdfLeadShowErr(e.message || 'Upload failed — please try again.');
+    return;
+  }
+  window._gwPdfLeadState.importId = upload.import_id;
+  window._gwPdfLeadState.documentId = upload.document_id;
+  // Upload response only ever has safe_filename (no original_filename) —
+  // GET /:id below fills in the true original_filename once available and
+  // takes priority; this is just an immediate fallback so the review screen
+  // never shows the generic 'uploaded PDF' string if that later fetch fails.
+  window._gwPdfLeadState.originalFilename = upload.safe_filename || '';
+
+  _gwPdfLeadRenderProgress(upload.duplicate ? 'This PDF was already uploaded — reading it again…' : 'Reading document and extracting lead details…');
+  let extract;
+  try {
+    const r = await fetch(`/api/lead-import/${upload.import_id}/extract`, { method: 'POST', credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Could not read this PDF');
+    extract = j.data;
+  } catch (e) {
+    _gwPdfLeadRenderUpload();
+    _gwPdfLeadShowErr(e.message || 'Extraction failed — please try again.');
+    return;
+  }
+
+  if (!extract.draft) {
+    // AI is not enabled for this tenant (or quota exceeded) — extraction
+    // itself still succeeded (extract.warning explains why there's no
+    // draft), so offer a blank reviewable form rather than a dead end.
+    window._gwPdfLeadState.draft = {
+      contact: { person_name: '', company_name: '', phone: '', email: '' },
+      client_type: 'Commercial', properties: [{ label: '', address: '', notes: '' }],
+      project: '', urgency: '', contract_hint: 'unknown', summary_note: '',
+      pricing_options: [], division_suggestion: { label: '', rationale: '' },
+    };
+    window._gwPdfLeadState.division = null;
+    window._gwPdfLeadState.warnings = extract.warning ? [extract.warning] : [];
+    window._gwPdfLeadState.missingInfo = [];
+    _gwPdfLeadFetchMatchesAndRender();
+    return;
+  }
+
+  window._gwPdfLeadState.draft = extract.draft;
+  window._gwPdfLeadState.division = extract.division;
+  window._gwPdfLeadState.warnings = extract.warnings || [];
+  window._gwPdfLeadState.missingInfo = extract.missing_info || [];
+  _gwPdfLeadFetchMatchesAndRender();
+}
+
+async function _gwPdfLeadFetchMatchesAndRender() {
+  const st = window._gwPdfLeadState;
+  if (!st || !st.importId) return;
+  // GET /:id recomputes client/property match suggestions fresh against the
+  // persisted draft — the spec's "matching against existing clients/
+  // properties" capability. Never applied automatically; only ever offered
+  // as a choice in the review screen below.
+  try {
+    const r = await fetch(`/api/lead-import/${st.importId}`, { credentials: 'include' });
+    const j = await r.json();
+    if (r.ok && j.ok !== false) {
+      st.clientMatches = j.data.client_matches || [];
+      st.propertyMatches = j.data.property_matches || [];
+      st.originalFilename = j.data.original_filename || j.data.safe_filename || st.originalFilename || '';
+    }
+  } catch { /* match suggestions are optional — proceed without them on failure */ }
+  _gwPdfLeadRenderReview();
+}
+
+/** Backend labels for missing_info keys (mirrors MISSING_INFO_LABELS in src/ai/pdf-lead-import.ts). */
+const GW_PDF_MISSING_LABELS = {
+  contact_identity: 'Contact name or company',
+  property_address: 'Property / service address',
+  contact_method: 'Phone or email',
+};
+
+function _gwPdfLeadRenderReview() {
+  const st = window._gwPdfLeadState;
+  const body = document.getElementById('gwPdfLeadBody');
+  if (!st || !st.draft || !body) return;
+  const d = st.draft;
+  const props = (d.properties && d.properties.length) ? d.properties : [{ label: '', address: '', notes: '' }];
+  const multi = props.length > 1;
+  const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
+  const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
+  const repSel = _ia
+    ? `<label style="display:grid;gap:4px"><span class="um-label">Assigned Rep</span><select id="gwPdfL_rep" class="um-input">${(window.REPS||[]).filter(r=>!_GW_FIELD_ROLES.includes(r.role)).map(r=>`<option value="${r.id}" ${_cr&&r.id===_cr.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></label>`
+    : `<input type="hidden" id="gwPdfL_rep" value="${_cr ? _cr.id : ''}">`;
+
+  // Division: server-classified suggestion, editable via a select of the
+  // tenant's real divisions (never a free-text id from the model — the
+  // dropdown's own <option value> is always a real division key/label
+  // pulled from gwDivisions(), matching the backend's own deterministic
+  // classifier data source, src/ai/lead-import-division.ts's
+  // {companyId}:company_divisions setting).
+  const divisions = (typeof gwDivisions === 'function') ? gwDivisions() : GW_DEFAULT_DIVISIONS;
+  const suggestedKey = st.division?.division?.key || '';
+  const divisionOptionsHtml = divisions.map(dv =>
+    `<option value="${escapeHtml(dv.key)}" ${dv.key === suggestedKey ? 'selected' : ''}>${escapeHtml(dv.label)}</option>`
+  ).join('');
+  const divisionNote = st.division
+    ? (st.division.isFallback
+        ? `Could not confidently classify this document — defaulted to "${escapeHtml(st.division.division.label)}". Please confirm.`
+        : `Matched "${escapeHtml(st.division.division.label)}" (${escapeHtml(st.division.source || '')}).`)
+    : 'AI division suggestion unavailable — please choose one.';
+
+  const missingChips = (st.missingInfo || []).map(k =>
+    `<span style="font-size:11px;font-weight:600;background:#B4552E14;color:#B4552E;border:1px solid #B4552E30;border-radius:20px;padding:2px 10px">Missing: ${escapeHtml(GW_PDF_MISSING_LABELS[k] || k)}</span>`
+  ).join('');
+  const otherWarnings = (st.warnings || []).filter(w => !/^Missing:/.test(w));
+  const contractLabel = d.contract_hint === 'annual' ? 'Annual contract' : d.contract_hint === 'multi_year' ? 'Multi-year contract' : d.contract_hint === 'one_time' ? 'One-time project' : '';
+
+  // Existing-client match suggestions (deterministic first) — a radio
+  // choice, never auto-applied. Defaults to "Create new client" unless a
+  // deterministic (email/phone) match exists, in which case that becomes
+  // the pre-selected default — still overridable by the human before confirm.
+  const detClientMatch = (st.clientMatches || []).find(m => m.strength === 'deterministic');
+  const clientMatchHtml = (st.clientMatches && st.clientMatches.length) ? `
+    <div class="um-label" style="margin:14px 0 6px">Existing client match</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+      ${st.clientMatches.map((m, i) => `
+        <label style="display:flex;align-items:flex-start;gap:8px;border:1px solid ${m.strength === 'deterministic' ? '#2D7A5540' : '#E4EAE3'};border-radius:8px;padding:8px 10px;cursor:pointer;background:${m.strength === 'deterministic' ? '#2D7A5508' : 'transparent'}">
+          <input type="radio" name="gwPdfL_clientChoice" value="${escapeHtml(m.client.id)}" ${i === 0 && m.strength === 'deterministic' ? 'checked' : ''} style="margin-top:3px;accent-color:#2D7A55">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#233123">${escapeHtml(m.client.name || '')} ${m.strength === 'deterministic' ? '<span style="font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.04em">· matched by ' + escapeHtml((m.basis||[]).join(', ')) + '</span>' : '<span style="font-size:10px;color:#6F7E6A">· possible match</span>'}</div>
+            <div style="font-size:12px;color:#6F7E6A">${escapeHtml(m.client.email || m.client.phone || m.client.address || '')}</div>
+          </div>
+        </label>`).join('')}
+      <label style="display:flex;align-items:center;gap:8px;border:1px solid #E4EAE3;border-radius:8px;padding:8px 10px;cursor:pointer">
+        <input type="radio" name="gwPdfL_clientChoice" value="" ${!detClientMatch ? 'checked' : ''} style="accent-color:#2D7A55">
+        <span style="font-size:13px;font-weight:600">Create a new client instead</span>
+      </label>
+    </div>` : '';
+
+  const body2 = body;
+  body2.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#2D7A55">Review before creating</span>
+      ${multi ? `<span style="font-size:11px;font-weight:600;background:#4D8A8618;color:#2E5E5A;border:1px solid #4D8A8640;border-radius:20px;padding:2px 10px">Multi-property document — 1 contact, ${props.length} sites</span>` : ''}
+      ${contractLabel ? `<span style="font-size:11px;font-weight:600;background:#8B691414;color:#8B6914;border:1px solid #8B691430;border-radius:20px;padding:2px 10px">${escapeHtml(contractLabel)}</span>` : ''}
+      ${missingChips}
+    </div>
+    ${otherWarnings.length ? `<div style="font-size:12.5px;color:#8B6914;background:#8B691410;border:1px solid #8B691425;border-radius:8px;padding:8px 12px;margin-bottom:12px">${otherWarnings.map(w=>escapeHtml(w)).join('<br>')}</div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
+      <label style="display:grid;gap:4px"><span class="um-label">Contact Name</span><input id="gwPdfL_name" class="um-input" value="${escapeHtml(d.contact?.person_name||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Company</span><input id="gwPdfL_company" class="um-input" value="${escapeHtml(d.contact?.company_name||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Phone</span><input id="gwPdfL_phone" class="um-input" value="${escapeHtml(d.contact?.phone||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Email</span><input id="gwPdfL_email" class="um-input" value="${escapeHtml(d.contact?.email||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Client Type</span><select id="gwPdfL_type" class="um-input"><option ${d.client_type==='Commercial'?'selected':''}>Commercial</option><option ${d.client_type==='Residential'?'selected':''}>Residential</option></select></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Division</span><select id="gwPdfL_division" class="um-input">${divisionOptionsHtml}</select></label>
+      ${repSel}
+    </div>
+    <div style="font-size:11.5px;color:#6F7E6A;margin-bottom:12px">${divisionNote}</div>
+    ${clientMatchHtml}
+    <label style="display:grid;gap:4px;margin-bottom:12px"><span class="um-label">Project / Scope</span><input id="gwPdfL_project" class="um-input" value="${escapeHtml(d.project||'')}"></label>
+    ${d.urgency ? `<div style="font-size:12.5px;color:#8B6914;background:#8B691410;border:1px solid #8B691425;border-radius:8px;padding:8px 12px;margin-bottom:12px"><strong>Timing:</strong> ${escapeHtml(d.urgency)}</div>` : ''}
+    <div class="um-label" style="margin-bottom:6px">Properties — one lead is created per checked site</div>
+    <div id="gwPdfL_props" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+      ${props.map((p, i) => {
+        const propMatchesForI = i === 0 ? (st.propertyMatches || []) : []; // only the first property's matches are computed server-side today (loadOwnedImport scopes to draft.properties[0])
+        const propMatchHtml = propMatchesForI.length ? `
+          <select class="um-input gwPdfL_prop_match" data-i="${i}" style="margin-top:4px;font-size:12px">
+            <option value="">— Create new property —</option>
+            ${propMatchesForI.map(pm => `<option value="${escapeHtml(pm.property.id)}">${escapeHtml(pm.property.label || pm.property.street || 'Existing property')} (${pm.strength === 'deterministic' ? 'matched' : 'possible match'})</option>`).join('')}
+          </select>` : '';
+        return `
+        <div style="display:flex;gap:8px;align-items:flex-start;border:1px solid #E4EAE3;border-radius:10px;padding:10px">
+          <input type="checkbox" class="gwPdfL_prop_ck" data-i="${i}" checked style="width:16px;height:16px;margin-top:8px;accent-color:#2D7A55;flex-shrink:0">
+          <div style="flex:1;display:grid;gap:6px">
+            <input class="um-input gwPdfL_prop_label" data-i="${i}" placeholder="Site name" value="${escapeHtml(p.label||'')}" style="font-weight:600">
+            <input class="um-input gwPdfL_prop_addr" data-i="${i}" placeholder="Address" value="${escapeHtml(p.address||'')}">
+            <input class="um-input gwPdfL_prop_notes" data-i="${i}" placeholder="Site notes (exclusions, instructions)" value="${escapeHtml(p.notes||'')}">
+            ${propMatchHtml}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${(d.pricing_options && d.pricing_options.length) ? `
+      <div class="um-label" style="margin-bottom:6px">Pricing extracted from document (reference only — not written to the lead automatically)</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+        ${d.pricing_options.map(po => `
+          <div style="font-size:12.5px;border:1px solid #E4EAE3;border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <span>${escapeHtml(po.label || 'Pricing option')}${po.property_label ? ' · ' + escapeHtml(po.property_label) : ''}${po.is_deposit ? ' · <strong>deposit</strong>' : ''}</span>
+            <span style="font-weight:700;color:#2D7A55">${_gwPdfLeadFmtPriceRange(po)}${po.billing_frequency && po.billing_frequency !== 'unknown' ? ' / ' + escapeHtml(po.billing_frequency.replace('_',' ')) : ''}</span>
+          </div>`).join('')}
+      </div>` : ''}
+    ${d.summary_note ? `<div style="font-size:12px;color:#6F7E6A;background:#F4F7F3;border-radius:8px;padding:10px 12px;margin-bottom:14px"><strong style="color:#3E4A3C">AI summary (saved as a note on each lead):</strong><br>${escapeHtml(d.summary_note)}</div>` : ''}
+    <div style="font-size:11px;color:#9AA79A;margin-bottom:10px">Source document: ${escapeHtml(st.originalFilename || 'uploaded PDF')} — stays attached to the client/lead this creates and can be reopened from there later.</div>
+    <div id="gwPdfLeadErr2" style="display:none;margin-bottom:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px">
+      <button class="primary-btn" id="gwPdfLeadCreateBtn" style="flex:1" onclick="window._gwPdfLeadConfirm()">Create</button>
+      <button class="secondary-btn" onclick="window._gwPdfLeadClose()">Cancel</button>
+    </div>`;
+  _gwPdfLeadSyncCreateBtn();
+  body2.querySelectorAll('.gwPdfL_prop_ck').forEach(ck => ck.addEventListener('change', _gwPdfLeadSyncCreateBtn));
+}
+
+function _gwPdfLeadFmtPriceRange(po) {
+  const fmt = (cents) => (cents == null) ? null : '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const lo = fmt(po.customer_price_low_cents), hi = fmt(po.customer_price_high_cents);
+  if (lo && hi && lo !== hi) return `${lo}–${hi}`;
+  return lo || hi || 'price not stated';
+}
+
+function _gwPdfLeadSyncCreateBtn() {
+  const btn = document.getElementById('gwPdfLeadCreateBtn');
+  if (!btn) return;
+  const n = document.querySelectorAll('.gwPdfL_prop_ck:checked').length;
+  btn.textContent = n > 1 ? `Create Account + ${n} Property Leads` : 'Create Lead';
+  btn.disabled = n === 0;
+}
+
+window._gwPdfLeadConfirm = async function() {
+  const st = window._gwPdfLeadState;
+  if (!st || !st.importId) return;
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const errEl = document.getElementById('gwPdfLeadErr2');
+  const name = g('gwPdfL_name'), company = g('gwPdfL_company');
+  if (!name && !company) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Enter at least a contact name or company.'; } return; }
+
+  const checkedIdx = [];
+  document.querySelectorAll('.gwPdfL_prop_ck:checked').forEach(ck => checkedIdx.push(Number(ck.dataset.i)));
+  if (!checkedIdx.length) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Select at least one property.'; } return; }
+
+  // Build the approved draft from the (possibly-edited) form fields —
+  // exactly the shape POST /:id/confirm's body.approved expects
+  // (LeadImportDraft), reduced to only the checked properties.
+  const approvedProperties = checkedIdx.map(i => ({
+    label: (document.querySelector(`.gwPdfL_prop_label[data-i="${i}"]`)?.value || '').trim(),
+    address: (document.querySelector(`.gwPdfL_prop_addr[data-i="${i}"]`)?.value || '').trim(),
+    notes: (document.querySelector(`.gwPdfL_prop_notes[data-i="${i}"]`)?.value || '').trim(),
+  }));
+  const propertyChoices = checkedIdx.map(i => {
+    const sel = document.querySelector(`.gwPdfL_prop_match[data-i="${i}"]`);
+    const propId = sel ? sel.value : '';
+    return propId ? { action: 'link', property_id: propId } : { action: 'create' };
+  });
+
+  const clientChoiceRaw = document.querySelector('input[name="gwPdfL_clientChoice"]:checked')?.value || '';
+  const clientChoice = clientChoiceRaw ? { action: 'link', client_id: clientChoiceRaw } : { action: 'create' };
+
+  const approved = {
+    contact: { person_name: name, company_name: company, phone: g('gwPdfL_phone'), email: g('gwPdfL_email') },
+    client_type: g('gwPdfL_type') || 'Commercial',
+    properties: approvedProperties,
+    project: g('gwPdfL_project'),
+    urgency: st.draft.urgency || '',
+    contract_hint: st.draft.contract_hint || 'unknown',
+    summary_note: st.draft.summary_note || '',
+    pricing_options: st.draft.pricing_options || [],
+    division_suggestion: st.draft.division_suggestion || { label: '', rationale: '' },
+  };
+  const divisionKey = g('gwPdfL_division');
+  const repId = document.getElementById('gwPdfL_rep')?.value || '';
+
+  const btn = document.getElementById('gwPdfLeadCreateBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+  if (errEl) errEl.style.display = 'none';
+
+  let result;
+  try {
+    const r = await fetch(`/api/lead-import/${st.importId}/confirm`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved, client_choice: clientChoice, property_choices: propertyChoices, division_key: divisionKey }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'Could not create the lead.');
+    result = j.data;
+  } catch (e) {
+    if (btn) { btn.disabled = false; _gwPdfLeadSyncCreateBtn(); }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message || 'Create failed — please try again.'; }
+    return;
+  }
+
+  // Server is now the source of truth for what got created — refresh this
+  // tab's local client/opportunity lists from D1 rather than reconstructing
+  // them client-side (the backend already wrote clients/properties/
+  // opportunities/notes/document-links; re-fetching avoids ever drifting
+  // from what confirm() actually persisted).
+  try {
+    if (window.DB && typeof window.DB.opportunities?.list === 'function' && typeof window.DB.clients?.list === 'function') {
+      const [opps, clients] = await Promise.all([window.DB.opportunities.list(), window.DB.clients.list()]);
+      if (Array.isArray(opps)) state.opportunities = opps;
+      if (Array.isArray(clients) && typeof saveClients === 'function') saveClients(clients);
+    }
+  } catch { /* non-fatal — the pipeline view will still pick up the new rows on its own next full reload */ }
+
+  window._gwPdfLeadClose();
+  const oppIds = result.result_opportunity_ids || [];
+  showToast(oppIds.length > 1
+    ? `Created ${oppIds.length} property leads from the imported PDF`
+    : 'Lead created from imported PDF');
+  if (oppIds.length > 1) show('pipeline');
+  else if (oppIds[0]) show('pipeline', oppIds[0]);
+  else show('pipeline');
+};
+
 // ── Mark Sold Modal ───────────────────────────────────────────────────────────
 function openMarkSoldModal(oppId) {
   const o = state.opportunities.find(x => x.id === oppId);
@@ -14846,7 +15258,11 @@ window._gwBuildNewMenu = function() {
       </button>
       <button class="tnd-item" onclick="window._closeNewMenu();window._gwAiLeadImport&&window._gwAiLeadImport()" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 5l6.5 4 6.5-4"/></svg>
-        AI Lead Import
+        AI Lead Import (Email)
+      </button>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwPdfLeadImport&&window._gwPdfLeadImport()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9.5 1.5Z"/><path d="M9.5 1.5V6h4"/></svg>
+        AI Lead Import (PDF)
       </button>
       <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
