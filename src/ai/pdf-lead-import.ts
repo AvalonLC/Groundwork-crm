@@ -21,14 +21,14 @@
 // Named limits — see spec's "use named constants" requirement. Values chosen
 // conservatively for Workers' CPU-time budget (PDF parsing + a downstream AI
 // call must fit inside one request) and to bound worst-case R2/D1 storage.
-export const MAX_PDF_BYTES = 15 * 1024 * 1024; // 15 MB — matches the existing photo/media upload cap (src/portal.tsx)
+export const MAX_PDF_BYTES = 40 * 1024 * 1024; // 40 MB — raised from the original 15 MB (matching src/portal.tsx's media cap) because real-world proposals/work-order PDFs run larger than that; still well under the 100 MB request-body ceiling Cloudflare enforces on this zone's plan (see MAX_BULK_TOTAL_BYTES below).
 export const MAX_PDF_PAGES = 40;
 export const MAX_EXTRACTED_TEXT_CHARS = 60_000; // matches the existing email-import slice(0, 60000) intake cap in app_premium.js
 export const MAX_MODEL_INPUT_CHARS = 16_000; // matches the existing /api/ai/parse-lead emailText.slice(0, 16000)
-export const PARSE_TIMEOUT_MS = 20_000; // unpdf text extraction budget
+export const PARSE_TIMEOUT_MS = 30_000; // unpdf text extraction budget — raised from 20s alongside MAX_PDF_BYTES since a larger PDF takes proportionally longer for pdf.js to walk
 export const MODEL_TIMEOUT_MS = 45_000; // AI chat-completion call budget
 export const MAX_BULK_FILES = 10;
-export const MAX_BULK_TOTAL_BYTES = 60 * 1024 * 1024; // conservative total-batch cap, well under Workers' request body limits
+export const MAX_BULK_TOTAL_BYTES = 90 * 1024 * 1024; // raised from 60 MB alongside MAX_PDF_BYTES. Kept at 90 MB, not files*MAX_PDF_BYTES (400 MB) — Cloudflare enforces a hard 100 MB total REQUEST body ceiling on this zone's Free plan (developers.cloudflare.com/workers/platform/limits/#request-limits); 90 MB leaves ~10 MB of headroom for multipart boundaries/headers so a maxed-out batch never gets rejected by Cloudflare itself before this check even runs.
 export const BULK_PARSE_CONCURRENCY = 3;
 export const ABANDONED_RETENTION_HOURS = 72;
 

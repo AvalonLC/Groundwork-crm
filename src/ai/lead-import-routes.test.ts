@@ -6,6 +6,7 @@ import { PDFDocument } from "pdf-lib";
 import { http, HttpResponse } from "msw";
 import { network } from "../../test/network";
 import { leadImportRouter } from "./lead-import-routes";
+import { MAX_PDF_BYTES, MAX_BULK_TOTAL_BYTES } from "./pdf-lead-import";
 
 const db = () => env.DB as D1Database;
 const TENANT = "t-lead-import-routes";
@@ -201,7 +202,9 @@ describe("POST /api/lead-import/upload", () => {
     // A tiny real PDF header followed by padding well past MAX_PDF_BYTES —
     // magic-byte check would pass, so the size gate must fire first and the
     // route must reject before ever reading the body into a hash/R2 write.
-    const big = new Uint8Array(16 * 1024 * 1024);
+    // Derived from the exported constant (not a hardcoded byte count) so
+    // this test stays correct if MAX_PDF_BYTES is ever changed again.
+    const big = new Uint8Array(MAX_PDF_BYTES + 1024 * 1024);
     big.set(new TextEncoder().encode("%PDF-1.4"), 0);
     const res = await postUpload(TENANT, uploadForm(big.buffer, "big.pdf"));
     expect(res.status).toBe(413);
@@ -1257,6 +1260,28 @@ describe("POST /api/lead-import/bulk/upload", () => {
     expect(j.ok).toBe(false);
     expect(j.error).toBe("too_many_files");
     const after = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import_batch WHERE company_id='t-libu-02'`).first<any>();
+    expect(after.n).toBe(before.n);
+  });
+
+  it("LIBU-02b rejects a batch whose combined size exceeds MAX_BULK_TOTAL_BYTES, without creating a batch row", async () => {
+    // Two files individually under MAX_PDF_BYTES but together over
+    // MAX_BULK_TOTAL_BYTES — the per-file cap alone must not be the only
+    // gate; the combined-size gate has to fire first, before any R2/D1 work.
+    const half = Math.floor(MAX_BULK_TOTAL_BYTES / 2) + 1024 * 1024;
+    const fileA = new Uint8Array(half);
+    fileA.set(new TextEncoder().encode("%PDF-1.4"), 0);
+    const fileB = new Uint8Array(half);
+    fileB.set(new TextEncoder().encode("%PDF-1.4"), 0);
+    const before = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import_batch WHERE company_id='t-libu-02b'`).first<any>();
+    const res = await postBulkUpload("t-libu-02b", bulkUploadForm([
+      { bytes: fileA.buffer, filename: "a.pdf" },
+      { bytes: fileB.buffer, filename: "b.pdf" },
+    ]));
+    expect(res.status).toBe(413);
+    const j: any = await res.json();
+    expect(j.ok).toBe(false);
+    expect(j.error).toBe("too_large");
+    const after = await db().prepare(`SELECT COUNT(*) AS n FROM lead_import_batch WHERE company_id='t-libu-02b'`).first<any>();
     expect(after.n).toBe(before.n);
   });
 
