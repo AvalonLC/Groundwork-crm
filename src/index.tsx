@@ -9187,7 +9187,15 @@ app.get('/api/invoices', requireAuth, async (c) => {
   const limit    = Math.min(Number(c.req.query('limit') || 200), 500)
   const offset   = Number(c.req.query('offset') || 0)
 
+  // Archived invoices drop out of the default view, exactly as archived work
+  // orders do (see the comment above the work-orders list query). archived_at
+  // is separate from status on purpose: overloading status='archived' onto it
+  // would collide with the real statuses (draft/sent/paid/void) and make
+  // "archived AND paid" unrepresentable. NULL for every pre-existing row, so
+  // this changes nothing about existing data.
+  const includeArchived = String(c.req.query('include_archived') || '') === '1'
   let q = `SELECT * FROM invoices WHERE company_id = ?`
+  if (!includeArchived) q += ` AND archived_at IS NULL`
   const params: any[] = [companyId]
   if (status)   { q += ` AND status = ?`;         params.push(status) }
   if (clientId) { q += ` AND client_id = ?`;      params.push(clientId) }
@@ -9476,6 +9484,65 @@ app.post('/api/invoices/:id/void', requireAuth, async (c) => {
 
   await logInvoiceLifecycle(db, {
     companyId, invoiceId: id, event: 'void', reason,
+    actorId: c.var.repId as string, actorRole: c.var.role as string,
+  })
+  return c.json({ ok: true })
+})
+
+/**
+ * Archive an invoice — the non-destructive way to get it out of the way.
+ *
+ * Deliberately NOT gated on the lifecycle rules: archiving is what a
+ * financially active invoice is FOR, now that it cannot be deleted. It hides
+ * the row from the default list and changes nothing else — no status change,
+ * no money touched, fully reversible.
+ *
+ * Who archived it lives in invoice_lifecycle_events rather than an
+ * `archived_by` column. work_orders carries both columns, but invoices already
+ * have a purpose-built audit trail with an actor on it, and a second place to
+ * record the same fact is a second place for it to disagree.
+ */
+app.post('/api/invoices/:id/archive', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Archiving invoices is limited to admin and office manager', 403)
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as any
+  const reason = String(body?.reason ?? '').trim().slice(0, 500)
+
+  const existing: any = await db.prepare(`SELECT id, archived_at FROM invoices WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(id, companyId).first()
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+  if (existing.archived_at) return c.json({ error: 'This invoice is already archived' }, 409)
+
+  const res = await db.prepare(
+    `UPDATE invoices SET archived_at=datetime('now'), updated_at=datetime('now')
+      WHERE id=? AND company_id=? AND archived_at IS NULL`
+  ).bind(id, companyId).run()
+  if (!res.meta.changes) return c.json({ error: 'Invoice could not be archived' }, 409)
+
+  await logInvoiceLifecycle(db, {
+    companyId, invoiceId: id, event: 'archive', reason: reason || null,
+    actorId: c.var.repId as string, actorRole: c.var.role as string,
+  })
+  return c.json({ ok: true })
+})
+
+/** Symmetric with archive. Archiving never deleted anything, so this restores. */
+app.post('/api/invoices/:id/unarchive', requireAuth, async (c) => {
+  if (!canInvoice(c.var.role as string, 'manage', { isSuperAdmin: c.var.isSuperAdmin as boolean })) return err(c, 'Archiving invoices is limited to admin and office manager', 403)
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const id = c.req.param('id')
+
+  const res = await db.prepare(
+    `UPDATE invoices SET archived_at=NULL, updated_at=datetime('now')
+      WHERE id=? AND company_id=? AND archived_at IS NOT NULL`
+  ).bind(id, companyId).run()
+  if (!res.meta.changes) return c.json({ error: 'This invoice is not archived', code: 'not_archived' }, 409)
+
+  await logInvoiceLifecycle(db, {
+    companyId, invoiceId: id, event: 'unarchive',
     actorId: c.var.repId as string, actorRole: c.var.role as string,
   })
   return c.json({ ok: true })
@@ -13996,7 +14063,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260911b001">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260826b002">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -14019,8 +14086,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260911b001"></script>
-  <script src="/js/client_portal.js?v=20260911b001"></script>  <script>
+  <script src="/js/platform_core.js?v=20260826b002"></script>
+  <script src="/js/client_portal.js?v=20260826b002"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -14654,10 +14721,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260911b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260911b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260911b001">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260911b001">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260826b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260826b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260826b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260826b002">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -15334,46 +15401,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260911b001"></script>
-<script src="/js/gw-icons.js?v=20260911b001"></script>
-<script src="/js/sales-process.js?v=20260911b001"></script>
-<script src="/js/richtext.js?v=20260911b001"></script>
-<script src="/js/db.js?v=20260911b001"></script>
-<script src="/js/data.js?v=20260911b001"></script>
-<script src="/js/reps.js?v=20260911b001"></script>
-<script src="/js/record-page.js?v=20260911b001"></script>
-<script src="/js/academy.js?v=20260911b001"></script>
-<script src="/js/task_engine.js?v=20260911b001"></script>
-<script src="/js/gw_i18n.js?v=20260911b001"></script>
-<script src="/js/app_premium.js?v=20260911b001"></script>
-<script src="/js/estimates.js?v=20260911b001"></script>
-<script src="/js/multiday.js?v=20260911b001"></script>
-<script src="/js/proposals.js?v=20260911b001"></script>
-<script src="/js/pricing.js?v=20260911b001"></script>
-<script src="/js/invoices.js?v=20260911b001"></script>
-<script src="/js/csv_import.js?v=20260911b001"></script>
-<script src="/js/onboarding.js?v=20260911b001"></script>
-<script src="/js/gw_copilot.js?v=20260911b001"></script>
-<script src="/js/groundwork_ai.js?v=20260911b001"></script>
-<script src="/js/recurring_plans.js?v=20260911b001"></script>
-<script src="/js/reviews.js?v=20260911b001"></script>
-<script src="/js/stripe.js?v=20260911b001"></script>
-<script src="/js/email.js?v=20260911b001"></script>
-<script src="/js/notifications.js?v=20260911b001"></script>
-<script src="/js/integrations.js?v=20260911b001"></script>
-<script src="/js/sms.js?v=20260911b001"></script>
-<script src="/js/calendar_sync.js?v=20260911b001"></script>
-<script src="/js/ai_followup.js?v=20260911b001"></script>
-<script src="/js/user_management.js?v=20260911b001"></script>
-<script src="/js/platform_admin.js?v=20260911b001"></script>
-<script src="/js/time_tracker.js?v=20260911b001"></script>
-<script src="/js/field_workday.js?v=20260911b001"></script>
-<script src="/js/platform_core.js?v=20260911b001"></script>
-<script src="/js/approval_engine.js?v=20260911b001"></script>
-<script src="/js/automation_engine.js?v=20260911b001"></script>
-<script src="/js/client_portal.js?v=20260911b001"></script>
-<script src="/js/field_mode.js?v=20260911b001"></script>
-<script src="/js/assets_hub.js?v=20260911b001"></script><script src="/js/marketing.js?v=20260911b001"></script><script>
+<script src="/js/gw_date.js?v=20260826b002"></script>
+<script src="/js/gw-icons.js?v=20260826b002"></script>
+<script src="/js/sales-process.js?v=20260826b002"></script>
+<script src="/js/richtext.js?v=20260826b002"></script>
+<script src="/js/db.js?v=20260826b002"></script>
+<script src="/js/data.js?v=20260826b002"></script>
+<script src="/js/reps.js?v=20260826b002"></script>
+<script src="/js/record-page.js?v=20260826b002"></script>
+<script src="/js/academy.js?v=20260826b002"></script>
+<script src="/js/task_engine.js?v=20260826b002"></script>
+<script src="/js/gw_i18n.js?v=20260826b002"></script>
+<script src="/js/app_premium.js?v=20260826b002"></script>
+<script src="/js/estimates.js?v=20260826b002"></script>
+<script src="/js/multiday.js?v=20260826b002"></script>
+<script src="/js/proposals.js?v=20260826b002"></script>
+<script src="/js/pricing.js?v=20260826b002"></script>
+<script src="/js/invoices.js?v=20260826b002"></script>
+<script src="/js/csv_import.js?v=20260826b002"></script>
+<script src="/js/onboarding.js?v=20260826b002"></script>
+<script src="/js/gw_copilot.js?v=20260826b002"></script>
+<script src="/js/groundwork_ai.js?v=20260826b002"></script>
+<script src="/js/recurring_plans.js?v=20260826b002"></script>
+<script src="/js/reviews.js?v=20260826b002"></script>
+<script src="/js/stripe.js?v=20260826b002"></script>
+<script src="/js/email.js?v=20260826b002"></script>
+<script src="/js/notifications.js?v=20260826b002"></script>
+<script src="/js/integrations.js?v=20260826b002"></script>
+<script src="/js/sms.js?v=20260826b002"></script>
+<script src="/js/calendar_sync.js?v=20260826b002"></script>
+<script src="/js/ai_followup.js?v=20260826b002"></script>
+<script src="/js/user_management.js?v=20260826b002"></script>
+<script src="/js/platform_admin.js?v=20260826b002"></script>
+<script src="/js/time_tracker.js?v=20260826b002"></script>
+<script src="/js/field_workday.js?v=20260826b002"></script>
+<script src="/js/platform_core.js?v=20260826b002"></script>
+<script src="/js/approval_engine.js?v=20260826b002"></script>
+<script src="/js/automation_engine.js?v=20260826b002"></script>
+<script src="/js/client_portal.js?v=20260826b002"></script>
+<script src="/js/field_mode.js?v=20260826b002"></script>
+<script src="/js/assets_hub.js?v=20260826b002"></script><script src="/js/marketing.js?v=20260826b002"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
