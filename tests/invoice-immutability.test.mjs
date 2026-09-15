@@ -123,13 +123,33 @@ test('IM-07 the reconciliation script cannot write, and refuses production', () 
   assert.match(script, /GROUP BY p\.company_id/, 'the report is no longer grouped per tenant');
 });
 
-test('IM-08 every migration file is still uniquely numbered and sequential', () => {
-  const files = readdirSync(new URL('../migrations/', import.meta.url))
-    .filter(f => /^\d{4}_.*\.sql$/.test(f)).sort();
-  const nums = files.map(f => Number(f.slice(0, 4)));
-  const dupes = nums.filter((v, i) => nums.indexOf(v) !== i);
-  assert.deepEqual(dupes, [], `duplicate migration numbers: ${dupes.join(', ')}`);
-  assert.equal(nums[nums.length - 1], 88, 'the new migration is not the highest-numbered one');
+test('IM-08 this PR\'s migration is present, by name', () => {
+  // This used to also re-implement the duplicate check and then assert
+  //
+  //   assert.equal(nums[nums.length - 1], 88)
+  //
+  // which reads as "the migration I just added is the newest" and IS that — for
+  // exactly as long as nobody adds another one. As a standing assertion it pins
+  // 0088 as the highest migration FOREVER, so it fails for any new migration by
+  // anyone. Verified with an empty 0089 probe that had nothing to do with any
+  // feature: IM-08 failed, clean-migrations passed.
+  //
+  // A parallel session hit it first and correctly refused to guess whether 88
+  // should become 89. The answer is neither — position is the wrong thing to
+  // assert, and bumping the number just hands the same landmine to whoever adds
+  // 0090.
+  //
+  // The numbering rules are not this file's job either. tests/clean-migrations.test.mjs
+  // already owns both and does them better: assertUniqueMigrationPrefixes() for
+  // duplicates, and a gapless check that names the missing number.
+  //
+  // What is left is the one thing only this file cares about.
+  const files = readdirSync(new URL('../migrations/', import.meta.url));
+  assert.ok(
+    files.includes('0088_invoice_lifecycle_audit.sql'),
+    'migrations/0088_invoice_lifecycle_audit.sql is gone — IM-05 and IM-06 read it, ' +
+    'and the lifecycle routes depend on the columns and table it adds',
+  );
 });
 
 test('IM-09 voiding requires a reason and records it', () => {
