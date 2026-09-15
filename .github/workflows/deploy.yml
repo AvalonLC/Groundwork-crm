@@ -166,6 +166,29 @@ jobs:
       - run: npx playwright install chromium
       - run: npm run db:migrate:local
       - run: npm run e2e
+      # When the e2e dev server dies mid-run, every test after it fails with an
+      # assertion about change orders or invoices, and the only trace of the
+      # real cause is one `[WebServer] ✘ [ERROR]` line with an EMPTY message.
+      # That happened on #145 and read as twenty code failures; it was one
+      # crashed process. wrangler writes a real log and the runner throws it
+      # away, so the next occurrence had no evidence either.
+      #
+      # This prints it. It does not fix the crash — the cause is still unknown
+      # and guessing at it would be worse than leaving it open — but it makes
+      # the next occurrence diagnosable and stops it reading as a code failure.
+      - name: e2e failed — dump the dev-server log
+        if: failure()
+        run: |
+          echo "::group::wrangler dev logs"
+          for f in "$HOME"/.config/.wrangler/logs/*.log; do
+            [ -e "$f" ] || continue
+            echo "--- $f ---"
+            tail -120 "$f"
+          done
+          echo "::endgroup::"
+          echo "If the failures above are many tests in different files all"
+          echo "failing after one '[WebServer] ERROR', the dev server died and"
+          echo "the assertions are collateral, not the defect."
       - run: npm run build
 
   # ── 3. Migrations, behind their own approval ───────────────────────────────
