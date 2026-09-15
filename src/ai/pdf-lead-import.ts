@@ -5,7 +5,7 @@
  * `extract()` callback so the actual PDF-parsing/AI call has no logic of its
  * own to test) and src/api/receipt-posting.ts (write-once-guard-first
  * idempotency), but for the CRM's lead-creation flow, never the finance
- * ledger. See migrations/0088_pdf_lead_import.sql for the schema this
+ * ledger. See migrations/0089_pdf_lead_import.sql for the schema this
  * module reads and writes.
  *
  * HARD INVARIANT (spec's non-negotiable constraint): AI output here is
