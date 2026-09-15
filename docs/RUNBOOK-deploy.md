@@ -37,7 +37,7 @@ merge the whole time.
 workflow never shipped -- and `ci.yml` runs it as a warning on every push to
 `main`.
 
-## One-time setup — REQUIRED, and not yet done
+## One-time setup — REQUIRED. Step 1 is still outstanding.
 
 ### 1. Disconnect the Cloudflare Pages Git integration
 
@@ -54,21 +54,33 @@ appears under the project's Deployments tab. `node scripts/check-production-drif
 reports the same thing from here: once disconnected, a merge that is not
 followed by a dispatch leaves production serving the older bundle.
 
-### 2. Create the two protected environments
+### 2. Create the two protected environments — DONE 2026-09-15
 
-The two protected environments do not exist. A workflow that references a
-missing environment causes GitHub to create it **with no protection rules**, so
-until this is done the approvals are decorative and a dispatch runs straight
-through to production. `preflight` now refuses to start unless both exist with
-required reviewers, so this is a hard prerequisite, not advice.
+Both now exist with `AvalonLC` as a required reviewer, so a dispatch stops for
+approval twice: once before migrations, once before the Pages deploy.
 
+Kept here because the failure mode is silent and recoverable only by noticing:
+a workflow that references a **missing** environment causes GitHub to create it
+**with no protection rules**, so deleting or renaming either one turns the
+approvals back into decoration without erroring. `preflight` refuses to start
+unless both exist with required reviewers, which is the backstop.
+
+How they were made, should either ever need recreating —
 **Settings → Environments → New environment**, twice:
 
 1. Name it `production` → **Required reviewers** → add yourself → Save.
 2. Name it `production-database` → **Required reviewers** → add yourself → Save.
 
-Verify: `gh api repos/AvalonLC/Groundwork-crm/environments --jq '.environments[].name'`
-should list both.
+Verify (names, and that the reviewers survived):
+
+```sh
+gh api repos/AvalonLC/Groundwork-crm/environments --jq '.environments[].name'
+
+for e in production production-database; do
+  gh api "repos/AvalonLC/Groundwork-crm/environments/$e" \
+    --jq '[.protection_rules[].type] | join(",")'
+done
+```
 
 ## Deploying
 
