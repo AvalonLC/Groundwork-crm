@@ -20,10 +20,17 @@ Groundwork CRM — a multi-tenant SaaS CRM for field-service companies
 
 1. **NO emojis** — not in code, UI strings, commit messages, or replies to the user.
 2. **Do not change what `.github/workflows/deploy.yml` DEPLOYS or when.**
-   It no longer runs on push. Production is reached only by dispatching
-   "Deploy to production" by hand, behind two protected environments — see
+   It no longer runs on push; it is reached only by dispatching "Deploy to
+   production" by hand, behind two protected environments — see
    `docs/RUNBOOK-deploy.md`. Hardening that gate is fine; re-coupling it to a
    merge, or adding another path to production, is not.
+
+   **That workflow is not the only path to production.** A Cloudflare Pages
+   Git integration, configured outside this repository, also deploys `main` on
+   every push; it is why a merge still ships code even though nothing here says
+   so. Do not write "merging does not deploy" in any doc or comment until the
+   runbook's disconnect step is done. `node scripts/check-production-drift.mjs`
+   reports whether it is still active.
 3. Frontend JS lives in `public/js/`. `public/static/` is a legacy mirror —
    never edit `public/static/` directly; it is synced by copy (see workflow below).
 4. Production HTML loads scripts from the `/js/` path. When verifying production,
@@ -52,11 +59,16 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000   # expect 200
 # 4. Syntax check any edited JS
 node --check public/js/app_premium.js
 
-# 5. Commit and push. This runs CI. It does NOT deploy — see RUNBOOK-deploy.md
+# 5. Commit and push. This runs CI (ci.yml). deploy.yml does NOT fire —
+#    it is manual-dispatch only. See RUNBOOK-deploy.md.
 git add -A && git commit -m "message" && git push origin main
 
-# 6. GitHub Actions builds and deploys to Cloudflare Pages (~100 s).
-#    Verify: curl -s https://groundwork-crm.com/js/<file> | grep <new symbol>
+# 6. A push to main IS still deployed, by the Cloudflare Pages Git integration
+#    (~100 s) — a second path this repo does not control and cannot see. The
+#    schema half is not: migrations apply only on a manual dispatch, so code
+#    can go live against a table that does not exist yet.
+#    Verify code:   curl -s https://groundwork-crm.com/js/<file> | grep <new symbol>
+#    Verify schema: node scripts/check-production-drift.mjs
 ```
 
 If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
@@ -84,6 +96,16 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   `groundwork-crm` on a MANUAL dispatch only, using repo secrets
   `CF_API_TOKEN` and `CF_ACCOUNT_ID`. Do not add other deploy paths.
   Procedure, rollback and smoke checks: `docs/RUNBOOK-deploy.md`.
+- One other path already exists and predates that instruction: a Cloudflare
+  Pages **Git integration** that builds and deploys `main` on every push. It
+  lives in the Cloudflare dashboard, not in this repo, so no file here records
+  it and no workflow run reports it. It is scheduled for disconnection — see
+  "One-time setup" in the runbook. Until then, treat every merge to `main` as
+  a production code deploy, and remember that migrations still do not follow.
+- `scripts/check-production-drift.mjs` (read-only, no database) reports
+  migrations on `main` that production has not had applied, and whether the
+  served bundle was shipped by something other than `deploy.yml`. `ci.yml`
+  runs it as a non-blocking warning on every push to `main`.
 
 ## Groundwork Finance OS (module)
 

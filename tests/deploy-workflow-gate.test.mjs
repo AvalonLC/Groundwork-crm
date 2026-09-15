@@ -222,3 +222,65 @@ test('DG-11 a dead e2e dev server leaves evidence in both workflows', () => {
     assert.match(src, /\.wrangler\/logs/, `${name} no longer reads the wrangler log directory`);
   }
 });
+
+test('DG-12 the second deploy path is documented and watched', () => {
+  // DG-01..DG-08 pin deploy.yml shut, and for eight days both docs read that
+  // as "production is reached only by dispatching". It never was: a Cloudflare
+  // Pages Git integration, configured in the Cloudflare dashboard and recorded
+  // in no file here, deploys main on every push. Migration 0088 landed
+  // 2026-09-09 and was never applied; the void path that needs it shipped
+  // 2026-09-11 and spent four days writing invoice_lifecycle_events, a table
+  // production does not have.
+  //
+  // Pinning deploy.yml cannot prevent that, so this pins the two things that
+  // can: the docs must name the other path, and CI must run the check that
+  // sees it.
+  const runbook = readFileSync(new URL('../docs/RUNBOOK-deploy.md', import.meta.url), 'utf8');
+  const agents = readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8');
+
+  for (const [name, doc] of [['RUNBOOK-deploy.md', runbook], ['AGENTS.md', agents]]) {
+    assert.match(doc, /Pages\s+\*{0,2}Git integration\*{0,2}/,
+      `${name} no longer names the Cloudflare Pages Git integration — the second ` +
+      `path to production. Do not restore a claim that dispatching is the only one.`);
+  }
+  assert.match(runbook, /Disconnect the Cloudflare Pages Git integration/,
+    'the runbook no longer carries the disconnect step. If it is disconnected, ' +
+    'delete this assertion and DG-12 deliberately — do not drop it silently.');
+
+  // Comments stripped: this file's own prose about the drift check, and the
+  // long comment above the CI step, both name the script. A guard that matches
+  // those passes against a workflow that does not run it — the EH-04 / XS-06 /
+  // IM-05 mistake, made three times in this repo already.
+  const ciCode = ci.split('\n').filter(l => !l.trim().startsWith('#')).join('\n');
+  assert.match(ciCode, /node scripts\/check-production-drift\.mjs/,
+    'ci.yml no longer runs the production drift check');
+
+  const start = ciCode.indexOf('- name: report production drift');
+  assert.ok(start >= 0, 'the drift-report step is gone from ci.yml');
+  const rest = ciCode.slice(start + 1);
+  const next = rest.search(/^      - (name|uses|run):/m);
+  const step = rest.slice(0, next === -1 ? rest.length : next);
+  // Non-blocking on purpose: between a merge and the next dispatch an unapplied
+  // migration is the normal state, and a red gate for it trains people to
+  // ignore the one signal that matters when the window stops closing.
+  assert.match(step, /continue-on-error:\s*true/,
+    'the drift report is now a gate. It reports a normal intermediate state and ' +
+    'must stay a warning, or it will be routinely ignored.');
+  assert.match(step, /!cancelled\(\)/,
+    "the drift step lost its !cancelled() guard — always() runs on cancellation too");
+});
+
+test('DG-13 the drift check cannot write anything', () => {
+  // It is pointed at production by definition, so it must stay inert: no DB
+  // handle at all, and nothing that could mutate one.
+  const src = readFileSync(new URL('../scripts/check-production-drift.mjs', import.meta.url), 'utf8');
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  for (const verb of ['INSERT', 'UPDATE ', 'DELETE', 'DROP', 'ALTER']) {
+    assert.ok(!code.includes(verb), `check-production-drift.mjs contains ${verb.trim()}; it must stay read-only`);
+  }
+  assert.ok(!/\bd1\b/.test(code),
+    'check-production-drift.mjs now touches D1. It answers its question from git ' +
+    'and one public HTTP GET; a database handle is not needed and not safe here.');
+});

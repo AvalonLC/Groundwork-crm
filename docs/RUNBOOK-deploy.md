@@ -1,8 +1,16 @@
 # Runbook — deploying to production
 
-Merging and deploying are separate decisions. A merge to `main` runs `ci.yml`
-and ships nothing. Production is reached only by dispatching **Deploy to
-production** by hand.
+Merging and deploying are separate decisions **in this repository**. A merge to
+`main` runs `ci.yml`, and `deploy.yml` is reached only by dispatching **Deploy
+to production** by hand.
+
+> **That is not yet the whole story.** A Cloudflare Pages **Git integration**,
+> configured in the Cloudflare dashboard and invisible to this repository,
+> also builds and deploys `main` on every push. Until it is disconnected (see
+> One-time setup below), merging still ships to production and the approvals
+> below govern only the migration step. This sentence used to read "Production
+> is reached only by dispatching"; it was written on 2026-09-07 and was never
+> true -- see Why.
 
 ## Why
 
@@ -12,21 +20,67 @@ deployments and three `d1 migrations apply --remote` runs in under a minute.
 Nothing was wrong with the changes; nobody chose to deploy three times. A
 routine merge should not be able to ship.
 
-## One-time setup — REQUIRED, and not yet done
+Removing that trigger decoupled **this workflow** from merges. It did not
+decouple *deployment* from merges, because `deploy.yml` was never the only way
+in. On 2026-09-15 production was found serving a bundle byte-identical to
+`main` (SHA-256 `3f1bde1a...`), while the last run that applied migrations was
+`248f586` on 2026-09-09 -- two migrations earlier. Migration 0088 landed that
+same day and was never applied, so when the void path shipped on 2026-09-11 it
+went live writing `invoice_lifecycle_events` and `invoices.void_reason`, a
+table and a column that do not exist in production. That ran for four days.
+Every check made in that window read this workflow's run history, which
+truthfully reported no deploy; the Pages Git integration had been shipping each
+merge the whole time.
 
-The two protected environments do not exist. A workflow that references a
-missing environment causes GitHub to create it **with no protection rules**, so
-until this is done the approvals are decorative and a dispatch runs straight
-through to production. `preflight` now refuses to start unless both exist with
-required reviewers, so this is a hard prerequisite, not advice.
+`scripts/check-production-drift.mjs` now reports both halves -- migrations on
+`main` that the last migrating run did not carry, and a served bundle the
+workflow never shipped -- and `ci.yml` runs it as a warning on every push to
+`main`.
 
+## One-time setup — REQUIRED. Step 1 is still outstanding.
+
+### 1. Disconnect the Cloudflare Pages Git integration
+
+While it is connected, everything below is decorative for the *code* half of a
+deploy: the push that merges a PR ships it before anyone dispatches anything.
+Nothing in this repository can turn it off, and nothing in this repository can
+see it -- it is configured in the Cloudflare dashboard.
+
+**Cloudflare dashboard → Workers & Pages → `groundwork-crm` → Settings →
+Builds & deployments → Git integration → Disconnect.**
+
+Verify by pushing a docs-only commit to `main` and confirming no new deployment
+appears under the project's Deployments tab. `node scripts/check-production-drift.mjs`
+reports the same thing from here: once disconnected, a merge that is not
+followed by a dispatch leaves production serving the older bundle.
+
+### 2. Create the two protected environments — DONE 2026-09-15
+
+Both now exist with `AvalonLC` as a required reviewer, so a dispatch stops for
+approval twice: once before migrations, once before the Pages deploy.
+
+Kept here because the failure mode is silent and recoverable only by noticing:
+a workflow that references a **missing** environment causes GitHub to create it
+**with no protection rules**, so deleting or renaming either one turns the
+approvals back into decoration without erroring. `preflight` refuses to start
+unless both exist with required reviewers, which is the backstop.
+
+How they were made, should either ever need recreating —
 **Settings → Environments → New environment**, twice:
 
 1. Name it `production` → **Required reviewers** → add yourself → Save.
 2. Name it `production-database` → **Required reviewers** → add yourself → Save.
 
-Verify: `gh api repos/AvalonLC/Groundwork-crm/environments --jq '.environments[].name'`
-should list both.
+Verify (names, and that the reviewers survived):
+
+```sh
+gh api repos/AvalonLC/Groundwork-crm/environments --jq '.environments[].name'
+
+for e in production production-database; do
+  gh api "repos/AvalonLC/Groundwork-crm/environments/$e" \
+    --jq '[.protection_rules[].type] | join(",")'
+done
+```
 
 ## Deploying
 
